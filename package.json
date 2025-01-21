@@ -1,0 +1,33 @@
+{
+  "name": "heimdall-plus",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "OpenID Connect and Tide Connect compatible client side JS library.",
+  "exports": {
+    ".": {
+      "types": "./lib/heimdall.d.ts",
+      "default": "./lib/heimdall.js"
+    }
+  },
+  "files": [
+    "lib"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tide-foundation/heimdall-plus.git"
+  },
+  "author": "Tide",
+  "homepage": "https://www.keycloak.org",
+  "keywords": [
+    "keycloak",
+    "tidecloak",
+    "tide",
+    "sso",
+    "oauth",
+    "oauth2",
+    "authentication"
+  ]
+}
