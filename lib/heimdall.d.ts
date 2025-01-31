@@ -37,6 +37,15 @@ export interface KeycloakConfig {
 	 * Client identifier, example: 'myapp'
 	 */
 	clientId: string;
+	/**
+	 * Vendor identifier in the tide network. Long alpha-numeric string e.g. '457077701541666578011904633370965396723168110436813759461392457773144766340'
+	 */
+	vendorId: string;
+	/**
+	 * Url of the home ork you would like to use. Some vendors may provide this for you.
+	 * @default https://ork1.tideprotocol.com
+	 */
+	homeOrkUrl?: string;
 }
 
 export interface Acr {
