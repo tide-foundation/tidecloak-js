@@ -1,0 +1,34 @@
+{
+  "name": "heimdall-plus",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Tide client side JS SDK",
+  "exports": {
+    ".": {
+      "types": "./lib/heimdall.d.ts",
+      "default": "./lib/heimdall.js"
+    }
+  },
+  "files": [
+    "lib"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tide-foundation/heimdall-plus.git"
+  },
+  "author": "Tide",
+  "homepage": "https://tide.org",
+  "license": "https://tide.org/licenses_tcoc2-0-0-en",
+  "keywords": [
+    "security",
+    "tidecloak",
+    "tide",
+    "authentication",
+    "oidc",
+    "oauth2",
+    "authorization"
+  ]
+}
