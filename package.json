@@ -10,7 +10,8 @@
     }
   },
   "files": [
-    "lib"
+    "lib",
+    "modules"
   ],
   "publishConfig": {
     "access": "public"
