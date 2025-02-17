@@ -44,3 +44,31 @@ const multi_encrypted_addresses = await heimdall.encrypt([
 ```
 When encrypting or decrypting data, a user must have permission for all the tags attached to that data. For instance, if data is tagged "street", a user with the _tide_street.selfencrypt role can handle that data, but if data includes multiple tags (like "street" and "suburb"), the user must have both corresponding roles to access it.
 
+## Decryption
+```javascript
+
+// heimdall.decrypt returns string[] where the list are the decrypted Uint8Arrays
+// passed in the parameter object. Order returned is same order as what was passed.
+const decrypted_dob = await heimdall.decrypt([
+  {
+    "encrypted": encrypted_dob, // from the encrypt code block above
+    "tags": ["dob"]
+  }
+]);
+
+// before testing the below code, make sure you've set up the respected roles
+const decrypted_addresses = await heimdall.decrypt([
+  {
+    "encrypted": multi_encrypted_addresses[0],
+    "tags": ["street"]
+  },
+  {
+    "encrypted": multi_encrypted_addresses[1],
+    "tags": ["suburb"]
+  },
+  {
+    "encrypted": multi_encrypted_addresses[2],
+    "tags": ["street", "suburb"]
+  }
+]);
+```
