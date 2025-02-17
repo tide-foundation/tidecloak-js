@@ -19,7 +19,7 @@ const heimdall = new Heimdall({
 ```
 ## Encryption
 ```javascript
-// heimdall.encrypt returns Uint8Array[] where the list are the encrypted strings
+// heimdall.encrypt returns string[] where the list are the encrypted strings
 // passed in the parameter object. Order returned is same order as what was passed.
 const encrypted_dob = await heimdall.encrypt([
   {
