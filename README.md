@@ -3,7 +3,7 @@ OpenIDConnect and TideConnect compatible client side JS library. This library wa
 
 ## Prerequisites can be found [here.](https://docs.tidecloak.com/docs/EncryptDecrypt/SetupED)
 
-## Encryption
+## Initialization
 > `npm install heimdall-plus`
 ```javascript
 import Heimdall from "heimdall-plus"
@@ -16,7 +16,9 @@ const heimdall = new Heimdall({
   vendorId: tcData['vendorId'],
   homeOrkUrl: tcData['homeOrkUrl']
 });
-
+```
+## Encryption
+```javascript
 // heimdall.encrypt returns Uint8Array[] where the list are the encrypted strings
 // passed in the parameter object. Order returned is same order as what was passed.
 const encrypted_dob = await heimdall.encrypt([
