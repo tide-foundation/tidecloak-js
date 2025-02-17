@@ -49,7 +49,7 @@ When encrypting or decrypting data, a user must have permission for all the tags
 ## Decryption
 ```javascript
 
-// heimdall.decrypt returns string[] where the list are the decrypted Uint8Arrays
+// heimdall.decrypt returns string[] where the list are the decrypted strings
 // passed in the parameter object. Order returned is same order as what was passed.
 const decrypted_dob = await heimdall.decrypt([
   {
