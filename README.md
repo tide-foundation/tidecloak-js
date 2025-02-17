@@ -26,7 +26,7 @@ const encrypted_dob = await heimdall.encrypt([
     "data": "03/04/2005",
     "tags": ["dob"]
   }
-]);
+])[0];
 
 // before testing the below code, make sure you've set up the respected roles
 const multi_encrypted_addresses = await heimdall.encrypt([
