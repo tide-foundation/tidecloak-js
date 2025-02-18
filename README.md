@@ -3,6 +3,34 @@ OpenIDConnect and TideConnect compatible client side JS library. This library wa
 
 ## Prerequisites can be found [here.](https://docs.tidecloak.com/docs/EncryptDecrypt/SetupED)
 
+## Network Flow of Heimdall Plus Encryption
+```mermaid
+sequenceDiagram
+
+box Blue Browser
+participant Heimdall-Plus
+participant Client
+end
+
+participant Tidecloak
+participant Orks
+
+Note over Client, Heimdall-Plus: User has already authenticated
+Note over Client: Collect sensitive user information. <br> Assign tags to each piece of info
+Client ->> Heimdall-Plus: Encrypt(data)
+critical Check user has access roles for the info tags
+Note over Heimdall-Plus: Check realm access roles in token
+option Not all tags found in access roles
+Heimdall-Plus --> Client: Error
+end
+Note over Heimdall-Plus: Encrypt each piece of data with its own ephermeral key
+Heimdall-Plus ->> Orks: Ephermal Keys, Tags, Encrypted data, Token
+Note over Orks: Check Token has all tags as part of access roles
+Orks ->> Heimdall-Plus: Signed emphermal keys
+Note over Heimdall-Plus: Serialize ephermeral keys + encrypted data into TideSerializedField
+Heimdall-Plus ->> Client: TideSerializedFields
+```
+
 ## Initialization
 > `npm install heimdall-plus`
 ```javascript
