@@ -2,7 +2,7 @@
   "name": "tidecloak-js",
   "version": "0.0.1",
   "type": "module",
-  "description": "Tide client side JS SDK",
+  "description": "TideCloak client side JS SDK",
   "exports": {
     ".": {
       "types": "./lib/heimdall.d.ts",
