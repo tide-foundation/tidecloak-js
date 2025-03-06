@@ -32,7 +32,11 @@ TideCloak-js ->> Client: TideSerializedFields
 ```
 
 ## Initialization
-> `npm install tidecloak-js`
+
+```bash
+npm install tidecloak-js
+```
+
 ```javascript
 import TideCloak from "tidecloak-js"
 import tcData from "/tidecloak.json";
@@ -72,7 +76,7 @@ const multi_encrypted_addresses = await tidecloak.encrypt([
   }
 ]);
 ```
-When encrypting or decrypting data, a user must have permission for all the tags attached to that data. For instance, if data is tagged "street", a user with the _tide_street.selfencrypt role can handle that data, but if data includes multiple tags (like "street" and "suburb"), the user must have both corresponding roles to access it.
+When encrypting or decrypting data, a user must have permission for all the tags attached to that data. For instance, if data is tagged "_street_", a user with the `_tide_street.selfencrypt` role can handle that data, but if data includes multiple tags (like "_street_" and "_suburb_"), the user must have both corresponding roles to access it.
 
 ## Decryption
 ```javascript
@@ -163,11 +167,11 @@ It has no other task than sending the received tokens to the main application an
 ```html
 <!doctype html>
 <html>
-<body>
+  <body>
     <script>
         parent.postMessage(location.href, location.origin);
     </script>
-</body>
+  </body>
 </html>
 ```
 
@@ -390,8 +394,8 @@ new TideCloak({
   homeOrkUrl: tcData['homeOrkUrl']
 });
 
-// Alternatively a string to the path of the `tidecloak.json` file.
-// Has some performance implications, as it will load the tidecloak.json file from the server.
+// Alternatively, a string to the path of the `tidecloak.json` file.
+// This has some performance implications, as it will load the tidecloak.json file from the server.
 new TideCloak("http://some-server/tidecloak.json");
 // This way requies absolute trust in `some-server` and is therefore not recommended.
 ```
@@ -399,54 +403,55 @@ new TideCloak("http://some-server/tidecloak.json");
 ### Properties
 
 **authenticated**
-    Is `true` if the user is authenticated, `false` otherwise.
+  - Is `true` if the user is authenticated, `false` otherwise.
 
 **token**
-    The base64 encoded token that can be sent in the `Authorization` header in requests to services.
+  - The base64 encoded token that can be sent in the `Authorization` header in requests to services.
 
 **tokenParsed**
-    The parsed token as a JavaScript object.
+  - The parsed token as a JavaScript object.
 
 **subject**
-    The user id.
+  - The user id.
 
 **idToken**
-    The base64 encoded ID token.
+  - The base64 encoded ID token.
 
 **idTokenParsed**
-    The parsed id token as a JavaScript object.
+  - The parsed id token as a JavaScript object.
 
 **realmAccess**
-    The realm roles associated with the token.
+  - The realm roles associated with the token.
 
 **resourceAccess**
-    The resource roles associated with the token.
+  - The resource roles associated with the token.
 
 **refreshToken**
-    The base64 encoded refresh token that can be used to retrieve a new token.
+  - The base64 encoded refresh token that can be used to retrieve a new token.
 
 **refreshTokenParsed**
-    The parsed refresh token as a JavaScript object.
+  - The parsed refresh token as a JavaScript object.
 
 **timeSkew**
-    The estimated time difference between the browser time and the TideCloak server in seconds. This value is just an estimation, but is accurate enough when determining if a token is expired or not.
+  - The estimated time difference between the browser time and the TideCloak server in seconds. This value is just an estimation, but is accurate enough when determining if a token is expired or not.
 
 **responseMode**
-    Response mode passed in init (default value is fragment).
+  - Response mode passed in init (default value is fragment).
 
 **flow**
-    Flow passed in init.
+  - Flow passed in init.
 
 **adapter**
-    Allows you to override the way that redirects and other browser-related functions will be handled by the library.
+  - Allows you to override the way that redirects and other browser-related functions will be handled by the library.
     Available options:
+    
     * "_default_" - the library uses the browser api for redirects (this is the default)
     * "_cordova_" - the library will try to use the InAppBrowser cordova plugin to load tidecloak login/registration pages (this is used automatically when the library is working in a cordova ecosystem)
     * "_cordova-native_" - the library tries to open the login and registration page using the phone's system browser using the BrowserTabs cordova plugin. This requires extra setup for redirecting back to the app (see (Hybrid Apps with Cordova)[Hybrid-Apps-with-Cordova] ).
     * "_custom_" - allows you to implement a custom adapter (only for advanced use cases)
 
 **responseType**
-    Response type sent to TideCloak with login requests. This is determined based on the flow value used during initialization, but can be overridden by setting this value.
+  - Response type sent to TideCloak with login requests. This is determined based on the flow value used during initialization, but can be overridden by setting this value.
 
 ## Methods
 
@@ -495,7 +500,7 @@ Options is an optional Object, where:
 and **Step-up authentication documentation** for more details.
 * **acrValues** - Generates the `acr_values` parameter which refers to authentication context class reference and allows clients to declare the required assurance level requirements, e.g. authentication mechanisms. See [Section 4. acr_values request values and level of assurance in OpenID Connect MODRNA Authentication Profile 1.0](https://openid.net/specs/openid-connect-modrna-authentication-1_0.html#acr_values).
 * **action** - If the value is `register`, the user is redirected to the registration page. See **Registration requested by client section** for more details. If the value is `UPDATE_PASSWORD` or another supported required action, the user will be redirected to the reset password page or the other required action page. However, if the user is not authenticated, the user will be sent to the login page and redirected after authentication. See **Application Initiated Action section** for more details.
-* **locale** - Sets the 'ui_locales' query param in compliance with **section 3.1.2.1 of the OIDC 1.0 specification**.
+* **locale** - Sets the 'ui_locales' query param in compliance with [section 3.1.2.1 of the OIDC 1.0 specification](https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest).
 * **cordovaOptions** - Specifies the arguments that are passed to the Cordova in-app-browser (if applicable). Options `hidden` and `location` are not affected by these arguments. All available options are defined at https://cordova.apache.org/docs/en/latest/reference/cordova-plugin-inappbrowser/. Example of use: `{ zoom: "no", hardwareback: "yes" }`;
 
 ### createLoginUrl(options)
