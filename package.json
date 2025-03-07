@@ -1,6 +1,6 @@
 {
   "name": "tidecloak-js",
-  "version": "0.0.1",
+  "version": "0.6.52",
   "type": "module",
   "description": "TideCloak client side JS SDK",
   "exports": {
