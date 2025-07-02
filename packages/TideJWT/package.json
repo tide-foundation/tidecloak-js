@@ -1,17 +1,16 @@
 {
-  "name": "tidecloak-js",
+  "name": "tide-jwt",
   "version": "0.0.1",
   "type": "module",
   "description": "TideCloak client side JS SDK",
   "exports": {
     ".": {
-      "types": "./lib/tidecloak.d.ts",
-      "default": "./lib/tidecloak.js"
+      "types": "./src/TideJWT.d.ts",
+      "default": "./src/TideJWT.js"
     }
   },
   "files": [
-    "lib",
-    "modules"
+    "src"
   ],
   "publishConfig": {
     "access": "public"
