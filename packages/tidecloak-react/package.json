@@ -1,18 +1,20 @@
 {
   "name": "@tidecloak/react",
   "version": "0.0.1",
-  "type": "module",
+  "type": "commonjs",
   "description": "TideCloak client-side React SDK",
   "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js"
     }
   },
   "files": [
-    "dist",
-    "scripts/postinstall.cjs"
+    "dist"
   ],
   "publishConfig": {
     "access": "public"
@@ -34,18 +36,17 @@
     "react"
   ],
   "peerDependencies": {
-    "react": ">=18.0.0"
-  },
-  "dependencies": {
+    "react": ">=18.0.0",
     "tidecloak-js": "file:../tidecloak-js/tidecloak-js-0.0.1.tgz"
   },
   "scripts": {
-    "build": "tsc && cp ./silent-check-sso.html dist/",
-    "prepare": "npm run build",
-    "postinstall": "node ./scripts/postinstall.cjs"
+    "build": "tsup",
+    "prepare": "npm run build"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6"
+    "@types/react-dom": "^19.1.6",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3"
   }
 }

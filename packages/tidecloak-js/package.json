@@ -5,20 +5,23 @@
   "description": "TideCloak client side JS SDK",
   "exports": {
     ".": {
-      "types": "./out/lib/heimdall.d.ts",
-      "default": "./lib/heimdall.js"
+      "types": "./dist/lib/heimdall.d.ts",
+      "default": "./dist/lib/heimdall.js"
     },
     "./IAMService": {
-      "types": "./out/src/IAMService.d.ts",
-      "default": "./src/IAMService.js"
+      "types": "./dist/src/IAMService.d.ts",
+      "default": "./dist/src/IAMService.js"
     }
   },
   "files": [
-    "lib",
-    "modules",
-    "src",
-    "out"
+    "dist",
+    "scripts/postinstall.cjs"
   ],
+  "scripts": {
+    "postinstall": "node ./scripts/postinstall.cjs",
+    "build": "tsc && cp ./silent-check-sso.html dist/",
+    "prepare": "npm run build"
+  },
   "publishConfig": {
     "access": "public"
   },
