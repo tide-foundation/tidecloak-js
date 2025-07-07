@@ -1,25 +1,26 @@
 {
   "name": "tidecloak-js",
   "version": "0.0.1",
-  "type": "module",
   "description": "TideCloak client side JS SDK",
-  "main": "dist/index.js",
-  "module": "dist/index.cjs",
-  "types": "dist/index.d.ts",
+  "main": "dist/cjs/src/index.js",
+  "module": "dist/esm/src/index.js",
+  "types": "dist/types/src/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.cjs",
-      "types": "./dist/index.d.ts",
-      "require": "./dist/index.js"
+      "import": "./dist/esm/src/index.js",
+      "types": "./dist/types/src/index.d.ts",
+      "require": "./dist/cjs/src/index.js"
     }
   },
   "files": [
     "dist",
-    "scripts/postinstall.cjs"
+    "scripts/postinstall.js"
   ],
   "scripts": {
-    "postinstall": "node ./scripts/postinstall.cjs",
-    "build": "tsup && cp ./silent-check-sso.html dist/",
+    "postinstall": "node ./scripts/postinstall.js",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build": "npm run build:cjs && npm run build:esm && cp ./silent-check-sso.html dist/",
     "prepare": "npm run build"
   },
   "publishConfig": {
@@ -40,9 +41,5 @@
     "oidc",
     "oauth2",
     "authorization"
-  ],
-  "devDependencies": {
-    "tsup": "^8.5.0",
-    "typescript": "^5.8.3"
-  }
+  ]
 }

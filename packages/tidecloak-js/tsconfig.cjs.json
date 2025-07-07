@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "outDir": "dist/cjs",
+    "declarationDir": "dist/types",
+    "rootDir": "."
+
+  },
+  "files": ["src/index.js", "lib/heimdall.js"],
+  "include": ["modules/tide-js/**/*.js"]
+}

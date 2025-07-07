@@ -1,21 +1,17 @@
 {
   "name": "@tidecloak/nextjs",
   "version": "0.0.1",
-  "type": "module",
   "description": "TideCloak client-side React SDK",
-  "main": "dist/index.js",
-  "module": "dist/index.cjs",
-  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts",
-      "require": "./dist/index.cjs"
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts",
+      "require": "./dist/cjs/index.js"
     },
     "./server": {
-      "import": "./dist/server/index.js",
-      "types": "./dist/server/index.d.ts",
-      "require": "./dist/server/index.cjs"
+      "import": "./dist/ems/server/index.js",
+      "types": "./dist/types/server/index.d.ts",
+      "require": "./dist/cjs/server/index.js"
     }
   },
   "files": [
@@ -45,7 +41,9 @@
     "react": ">=18.0.0"
   },
   "scripts": {
-    "build": "tsup",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build": "npm run build:cjs && npm run build:esm",
     "prepare": "npm run build"
   },
   "dependencies": {
@@ -55,8 +53,6 @@
   },
   "devDependencies": {
     "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6",
-    "tsup": "^8.5.0",
-    "typescript": "^5.8.3"
+    "@types/react-dom": "^19.1.6"
   }
 }

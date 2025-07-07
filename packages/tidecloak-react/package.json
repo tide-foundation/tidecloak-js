@@ -1,16 +1,15 @@
 {
   "name": "@tidecloak/react",
   "version": "0.0.1",
-  "type": "module",
   "description": "TideCloak client-side React SDK",
-  "main": "dist/index.js",
-  "module": "dist/index.cjs",
-  "types": "dist/index.d.ts",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.cjs",
-      "types": "./dist/index.d.ts",
-      "require": "./dist/index.js"
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts",
+      "require": "./dist/cjs/src/index.js"
     }
   },
   "files": [
@@ -39,14 +38,14 @@
     "react": ">=18.0.0"
   },
   "scripts": {
-    "build": "tsup",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build": "npm run build:cjs && npm run build:esm",
     "prepare": "npm run build"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6",
-    "tsup": "^8.5.0",
-    "typescript": "^5.8.3"
+    "@types/react-dom": "^19.1.6"
   },
   "dependencies": {
     "tidecloak-js": "file:../tidecloak-js/tidecloak-js-0.0.1.tgz"
