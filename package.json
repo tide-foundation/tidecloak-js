@@ -5,8 +5,8 @@
   "description": "TideCloak client side JS SDK",
   "exports": {
     ".": {
-      "types": "./lib/heimdall.d.ts",
-      "default": "./lib/heimdall.js"
+      "types": "./lib/tidecloak.d.ts",
+      "default": "./lib/tidecloak.js"
     }
   },
   "files": [
@@ -31,5 +31,8 @@
     "oidc",
     "oauth2",
     "authorization"
-  ]
+  ],
+  "dependencies": {
+    "heimdall-tide": "file:~/project/heimdall"
+  }
 }
