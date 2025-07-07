@@ -1,4 +1,4 @@
-import TideCloak from "../lib/heimdall";
+import TideCloak from "../lib/tidecloak";
 
 /**
  * Singleton IAMService wrapping the TideCloak client.

@@ -41,5 +41,9 @@
     "oidc",
     "oauth2",
     "authorization"
-  ]
+  ],
+  "dependencies": {
+    "heimdall-tide": "file:~/project/heimdall"
+  }
+
 }

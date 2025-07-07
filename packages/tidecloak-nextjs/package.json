@@ -1,5 +1,5 @@
 {
-  "name": "@tidecloak/nextjs",
+  "name": "tidecloak-nextjs",
   "version": "0.0.1",
   "description": "TideCloak client-side React SDK",
   "exports": {
