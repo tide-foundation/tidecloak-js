@@ -1,2 +1,2 @@
-export * from '@tidecloak/react';
+export * from 'tidecloak-react';
  
