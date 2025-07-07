@@ -1,11 +1,4 @@
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useRef,
-  ReactNode,
-} from "react";
+import React from "react";
 import IAMService from "tidecloak-js/IAMService";
 
 interface TideCloakContextValue {
@@ -17,19 +10,18 @@ interface TideCloakContextValue {
 
 interface TideCloakContextProviderProps {
   config: Record<string, any>;
-  children: ReactNode;
+  children: React.ReactNode;
 }
 
-const TideCloakContext = createContext<TideCloakContextValue | undefined>(undefined);
+const TideCloakContext = React.createContext<TideCloakContextValue | undefined>(undefined);
 
 export function TideCloakContextProvider({ config, children }: TideCloakContextProviderProps) {
-  const [authenticated, setAuthenticated] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [baseURL, setBaseURL] = useState<string>("");
-  const [reloadKey, setReloadKey] = useState<number>(0);
-  const initKey = useRef<number | null>(null);
+  const [authenticated, setAuthenticated] = React.useState<boolean>(false);
+  const [loading, setLoading] = React.useState<boolean>(true);
+  const [baseURL, setBaseURL] = React.useState<string>("");
+  const initKey = React.useRef<number | null>(null);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (initKey.current === reloadKey) return;
     initKey.current = reloadKey;
 
@@ -74,7 +66,7 @@ export function TideCloakContextProvider({ config, children }: TideCloakContextP
 
 // Custom hook for consuming the context
 export function useTideCloakContext(): TideCloakContextValue {
-  const ctx = useContext(TideCloakContext);
+  const ctx = React.useContext(TideCloakContext);
   if (!ctx) {
     throw new Error(
       "useTideCloakContext must be used within a <TideCloakContextProvider>"

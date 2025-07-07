@@ -1,16 +1,21 @@
 {
-  "name": "@tidecloak/react",
+  "name": "@tidecloak/nextjs",
   "version": "0.0.1",
   "type": "module",
   "description": "TideCloak client-side React SDK",
-  "main": "dist/index.js",
-  "module": "dist/index.cjs",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.cjs",
+      "import": "./dist/index.js",
       "types": "./dist/index.d.ts",
-      "require": "./dist/index.js"
+      "require": "./dist/index.cjs"
+    },
+    "./server": {
+      "import": "./dist/server/index.js",
+      "types": "./dist/server/index.d.ts",
+      "require": "./dist/server/index.cjs"
     }
   },
   "files": [
@@ -36,19 +41,22 @@
     "react"
   ],
   "peerDependencies": {
+    "next": ">=13",
     "react": ">=18.0.0"
   },
   "scripts": {
     "build": "tsup",
     "prepare": "npm run build"
   },
+  "dependencies": {
+    "@tidecloak/react": "file:../tidecloak-react/tidecloak-react-0.0.1.tgz",
+    "tide-jwt": "file:../TideJWT/tide-jwt-0.0.1.tgz",
+    "tidecloak-js": "file:../tidecloak-js/tidecloak-js-0.0.1.tgz"
+  },
   "devDependencies": {
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3"
-  },
-  "dependencies": {
-    "tidecloak-js": "file:../tidecloak-js/tidecloak-js-0.0.1.tgz"
   }
 }

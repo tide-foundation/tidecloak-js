@@ -36,15 +36,6 @@ const DEFAULTS: Omit<TideMiddlewareOptions, 'config'> & { protectedRoutes: Prote
   protectedRoutes: {},
   onRequest: undefined,
   onSuccess: undefined,
-  onFailure: (ctx, req) => {
-    // Redirect to login by default when unauthenticated or unauthorized
-    return NextResponse.redirect(new URL('/login', req.url))
-  },
-  onError: (err, req) => {
-    console.error('[TideCloak Middleware]', err)
-    // Let the request continue on error
-    return NextResponse.next()
-  }
 }
 
 /**
@@ -108,7 +99,10 @@ export function createTideMiddleware(opts: TideMiddlewareOptions) {
             // Custom onFailure hook or default redirect
             const result = settings.onFailure!({ token }, req)
             if (result) return result
-            return NextResponse.next()
+             return NextResponse.json(
+              { error: '[TideCloak Middleware] Access forbidden: invalid token' },
+              { status: 403 }
+            );
           }
 
           // Custom onSuccess hook if provided
@@ -125,8 +119,14 @@ export function createTideMiddleware(opts: TideMiddlewareOptions) {
       // No protected route matched; continue
       return NextResponse.next()
     } catch (err) {
+      
       // Handle unexpected errors
-      return settings.onError!(err, req)
+      if (settings.onError) {
+        return settings.onError!(err, req)
+      }
+
+      console.error("[TideCloak Middleware] ", err);
+      throw err;
     }
   }
 }
