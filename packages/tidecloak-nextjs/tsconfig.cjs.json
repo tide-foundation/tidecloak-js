@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "declaration": true,
+    "declarationMap": true,
+    "target": "ES2019",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "dist/cjs",
+    "declarationDir": "dist/types"
+  },
+  "files": ["src/index.ts", "src/server/index.ts"]
+
+}

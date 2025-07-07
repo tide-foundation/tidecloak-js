@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "declaration": true,
+    "declarationMap": true,
+    "target": "ES2019",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "rootDir": "src",
+    "moduleResolution": "bundler",
+    "outDir": "dist",
+  },
+  "files": ["src/index.ts", "src/server/index.ts"]
+}
