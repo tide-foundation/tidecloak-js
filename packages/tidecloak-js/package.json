@@ -3,14 +3,14 @@
   "version": "0.0.1",
   "type": "module",
   "description": "TideCloak client side JS SDK",
+  "main": "dist/index.js",
+  "module": "dist/index.cjs",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/lib/heimdall.d.ts",
-      "default": "./dist/lib/heimdall.js"
-    },
-    "./IAMService": {
-      "types": "./dist/src/IAMService.d.ts",
-      "default": "./dist/src/IAMService.js"
+      "import": "./dist/index.cjs",
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js"
     }
   },
   "files": [
@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "postinstall": "node ./scripts/postinstall.cjs",
-    "build": "tsc && cp ./silent-check-sso.html dist/",
+    "build": "tsup && cp ./silent-check-sso.html dist/",
     "prepare": "npm run build"
   },
   "publishConfig": {
@@ -40,5 +40,9 @@
     "oidc",
     "oauth2",
     "authorization"
-  ]
+  ],
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3"
+  }
 }

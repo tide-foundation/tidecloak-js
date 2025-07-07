@@ -7,6 +7,29 @@ import {
   ProtectedRoutesMap
 } from './routerMatcher'
 
+interface JWK {
+    kid: string;
+    kty: string;
+    alg: string;
+    use: string;
+    crv: string;
+    x: string;
+}
+
+export interface TidecloakConfig {
+  realm: string;
+  "auth-server-url": string;
+  "ssl-required": string;
+  resource: string;
+  "public-client": boolean;
+  "confidential-port": number;
+  jwk: {
+    keys: JWK[];
+  };
+  // any additional properties are allowed, but typed as unknown
+  [key: string]: unknown;
+}
+
 /**
  * Configuration options for TideCloak middleware.
  *
@@ -17,7 +40,7 @@ import {
  */
 export interface TideMiddlewareOptions {
   /** Keycloak client adapter JSON (downloaded from your Keycloak realm settings) */
-  config: any
+  config: TidecloakConfig
   /** Routes that always bypass authentication */
   publicRoutes?: RoutePattern[]
   /** Routes requiring a verified token and specific roles */

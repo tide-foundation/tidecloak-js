@@ -1,9 +1,7 @@
 import React, { ReactNode, FC } from 'react';
 
-export * from 'tidecloak-js';
-
 // Import the IAMService singleton
-import IAMService from 'tidecloak-js/IAMService';
+import { IAMService } from 'tidecloak-js'
 import {
   TideCloakContextProvider,
   useTideCloakContext,

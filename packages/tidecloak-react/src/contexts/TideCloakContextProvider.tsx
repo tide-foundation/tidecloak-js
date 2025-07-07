@@ -1,5 +1,5 @@
 import React from "react";
-import IAMService from "tidecloak-js/IAMService";
+import { IAMService } from 'tidecloak-js'
 
 interface TideCloakContextValue {
   baseURL: string;
@@ -19,6 +19,7 @@ export function TideCloakContextProvider({ config, children }: TideCloakContextP
   const [authenticated, setAuthenticated] = React.useState<boolean>(false);
   const [loading, setLoading] = React.useState<boolean>(true);
   const [baseURL, setBaseURL] = React.useState<string>("");
+  const [reloadKey, setReloadKey] = React.useState<number>(0);
   const initKey = React.useRef<number | null>(null);
 
   React.useEffect(() => {
