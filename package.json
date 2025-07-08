@@ -33,6 +33,6 @@
     "authorization"
   ],
   "dependencies": {
-    "heimdall-tide": "file:~/project/heimdall"
+    "heimdall-tide": ">=0.1.0 <=0.9.9"
   }
 }
