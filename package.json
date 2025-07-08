@@ -33,6 +33,6 @@
     "authorization"
   ],
   "dependencies": {
-    "heimdall-tide": ">=0.1.0 <=0.9.9"
+    "heimdall-tide": "0.1.0"
   }
 }
