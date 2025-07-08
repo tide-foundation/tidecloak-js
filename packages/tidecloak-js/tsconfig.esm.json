@@ -7,6 +7,6 @@
     "declarationMap": false,
     "rootDir": "."
   },
-  "files": ["src/index.js", "lib/heimdall.js"],
+  "files": ["src/index.js", "lib/tidecloak.js"],
   "include": ["modules/tide-js/**/*.js"]
 }
