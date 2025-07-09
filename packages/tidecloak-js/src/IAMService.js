@@ -57,7 +57,7 @@ class IAMService {
   /** @private */
   _emit(event, ...args) {
     (this._listeners[event] || []).forEach(fn => {
-      try { fn(...args); }
+      try { fn(event, ...args); }
       catch (e) { console.error(`Error in "${event}" handler:`, e); }
     });
   }
@@ -78,12 +78,12 @@ class IAMService {
 
     try {
       this._tc = new TideCloak({
-        url:        config["auth-server-url"],
-        realm:      config.realm,
-        clientId:   config.resource,
-        vendorId:   config.vendorId,
+        url: config["auth-server-url"],
+        realm: config.realm,
+        clientId: config.resource,
+        vendorId: config.vendorId,
         homeOrkUrl: config.homeOrkUrl,
-        pkceMethod: "S256",
+        clientOriginAuth: config['client-origin-auth-' + window.location.origin]
       });
     } catch (err) {
       console.error("[loadConfig] Failed to initialize TideCloak client:", err);
@@ -91,13 +91,13 @@ class IAMService {
     }
 
     // wire Keycloak callbacks → our emitter
-    this._tc.onReady              = auth => this._emit("ready", auth);
-    this._tc.onAuthSuccess        = ()   => this._emit("authSuccess");
-    this._tc.onAuthError          = err  => this._emit("authError", err);
-    this._tc.onAuthRefreshSuccess = ()   => this._emit("authRefreshSuccess");
-    this._tc.onAuthRefreshError   = err  => this._emit("authRefreshError", err);
-    this._tc.onAuthLogout         = ()   => this._emit("logout");
-    this._tc.onTokenExpired       = ()   => this._emit("tokenExpired");
+    this._tc.onReady = auth => this._emit("ready", auth);
+    this._tc.onAuthSuccess = () => this._emit("authSuccess");
+    this._tc.onAuthError = err => this._emit("authError", err);
+    this._tc.onAuthRefreshSuccess = () => this._emit("authRefreshSuccess");
+    this._tc.onAuthRefreshError = err => this._emit("authRefreshError", err);
+    this._tc.onAuthLogout = () => this._emit("logout");
+    this._tc.onTokenExpired = () => this._emit("tokenExpired");
 
     return this._config;
   }
@@ -109,20 +109,34 @@ class IAMService {
    * @returns {Promise<boolean>} true if authenticated, else false.
    */
   async initIAM(config, onReady) {
-    // if caller passed an onReady callback, register it immediately
+    console.debug("[IAMService] Initializing IAM...")
+    // register callback on "ready" if provided
     if (typeof onReady === "function") {
       this.on("ready", onReady);
     }
 
+    // no-op on server
     if (typeof window === "undefined") {
       this._emit("initError", new Error("SSR context: cannot initIAM on server"));
       return false;
     }
 
+    // load IAM config
     const loaded = await this.loadConfig(config);
     if (!loaded) {
       this._emit("initError", new Error("Failed to load config"));
       return false;
+    }
+
+    if (!this._tc) {
+      const err = new Error("TideCloak client not available");
+      this._emit("initError", err);
+      return false;
+    }
+
+    if (this._tc.didInitialize) {
+      console.debug("[IAMService] IAM Already initialized once.")
+      return this._tc.isLoggedIn();
     }
 
     let authenticated = false;
@@ -130,16 +144,18 @@ class IAMService {
       authenticated = await this._tc.init({
         onLoad: "check-sso",
         silentCheckSsoRedirectUri: `${window.location.origin}/silent-check-sso.html`,
+        pkceMethod: "S256",
       });
+
+      // if successful, store token for middleware
       if (authenticated && this._tc.token) {
         document.cookie = `kcToken=${this._tc.token}; path=/;`;
       }
     } catch (err) {
-      console.error("TideCloak init error:", err);
+      console.error("[IAMService] TideCloak init error:", err);
       this._emit("initError", err);
     }
 
-    // finally signal ready to everyone who cares
     this._emit("ready", authenticated);
     return authenticated;
   }
@@ -188,17 +204,32 @@ class IAMService {
     return this.getTideCloakClient().tokenParsed.preferred_username;
   }
 
-  /** @returns {boolean} Whether the user has a given realm role */
-  hasOneRole(role) {
+  /**
+   *  @param {string} role - the name of the role to check
+   *  @returns {boolean} Whether the user has a given realm role */
+  hasRealmRole(role) {
     return this.getTideCloakClient().hasRealmRole(role);
   }
 
-  /** @returns {*} Custom claim from access token */
+  /**
+   * @param {string} role - the name of the role to check
+   * @param {string} [client] - optional client-ID (defaults to the configured adapter resource)
+   * @returns {boolean} - whether the user has that role
+   */
+  hasClientRole(role, client) {
+    return this.getTideCloakClient().hasResourceRole(role, client);
+  }
+
+  /** 
+   * @param {string} key - The name of the claim to retrieve from the Access token's payload.
+   * @returns {*} Custom claim from access token */
   getValueFromToken(key) {
     return this.getTideCloakClient().tokenParsed[key] ?? null;
   }
 
-  /** @returns {*} Custom claim from ID token */
+  /**
+   * @param {string} key - The name of the claim to retrieve from the ID token's payload.
+   * @returns {*} Custom claim from access token */
   getValueFromIDToken(key) {
     return this.getTideCloakClient().idTokenParsed[key] ?? null;
   }

@@ -1,45 +1,43 @@
 #!/usr/bin/env node
 const { copyFileSync, existsSync, mkdirSync } = require('fs');
-const { join, dirname } = require('path');
+const { join, dirname, sep } = require('path');
 
-// utility to find nearest package.json
+// find the nearest package.json upwards, but skip anything inside node_modules
 function findProjectRoot(startDir) {
   let dir = startDir;
   while (dir !== dirname(dir)) {
-    if (existsSync(join(dir, 'package.json'))) return dir;
+    // if we're inside node_modules, ignore this level
+    if (!dir.split(sep).includes('node_modules') &&
+      existsSync(join(dir, 'package.json'))) {
+      return dir;
+    }
     dir = dirname(dir);
   }
   return null;
 }
 
-// find package root (the one that contains this script)
-const scriptDir = __dirname;
-const pkgRoot   = join(scriptDir, '..');
+// where npm/yarn was invoked (if available)
+const initialCwd = process.env.INIT_CWD || process.cwd();
 
-// find the host app’s root by looking for its package.json
-const projectRoot = findProjectRoot(process.cwd()) || process.cwd();
+// find the first non-node_modules package.json above that
+const projectRoot = findProjectRoot(initialCwd) || process.cwd();
 
-// set up source + destination
-const source  = join(pkgRoot, 'dist', 'silent-check-sso.html');
+// now build paths
+const pkgRoot = join(__dirname, '..');
+const source = join(pkgRoot, 'dist', 'silent-check-sso.html');
 const destDir = join(projectRoot, 'public');
-const dest    = join(destDir, 'silent-check-sso.html');
+const destFile = join(destDir, 'silent-check-sso.html');
+
+// debug logging—remove in production
+console.log(`[tidecloak-js] initialCwd: ${initialCwd}`);
+console.log(`[tidecloak-js] projectRoot: ${projectRoot}`);
 
 // ensure public/ exists
 if (!existsSync(destDir)) {
-  try {
-    mkdirSync(destDir, { recursive: true });
-    console.log(`[tidecloak-js] created directory ${destDir}`);
-  } catch (err) {
-    console.error(`[tidecloak-js] failed to create ${destDir}:`, err);
-    process.exit(1);
-  }
+  mkdirSync(destDir, { recursive: true });
+  console.log(`[tidecloak-js] created directory ${destDir}`);
 }
 
 // copy the HTML file
-try {
-  copyFileSync(source, dest);
-  console.log(`[tidecloak-js] copied silent-check-sso.html → ${destDir}/`);
-} catch (err) {
-  console.error(`[tidecloak-js] failed to copy file:`, err);
-  process.exit(1);
-}
+copyFileSync(source, destFile);
+console.log(`[tidecloak-js] copied silent-check-sso.html → ${destDir}/`);

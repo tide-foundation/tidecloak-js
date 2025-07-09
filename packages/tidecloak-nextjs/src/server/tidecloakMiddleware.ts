@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyTideCloakToken } from 'tide-jwt'
+import { verifyTideCloakToken } from '@tidecloak/verify'
 import {
   normalizePattern,
   normalizeProtectedRoutes,
@@ -88,7 +88,7 @@ const DEFAULTS: Omit<TideMiddlewareOptions, 'config'> & { protectedRoutes: Prote
  * }
  * ```
  */
-export function createTideMiddleware(opts: TideMiddlewareOptions) {
+export function createTideCloakMiddleware(opts: TideMiddlewareOptions) {
   const settings = { ...DEFAULTS, ...opts }
 
   // Prepare arrays of test functions for public and protected routes

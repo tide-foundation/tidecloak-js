@@ -3,13 +3,14 @@ import { jwtVerify, createLocalJWKSet, createRemoteJWKSet } from "jose";
 /**
  * Verify a TideCloak-issued JWT on the server side using your imported config object.
  *
- * @param {object} config            Imported TideCloak configuration (parsed JSON).
- * @param {string} token             JWT access token to verify.
- * @param {string[]} [allowedRoles]  Array of Keycloak realm or client roles; user must have at least one.
- * @returns {Promise<object|null>}    The token payload if valid and role-check passes, otherwise null.
+ * @param {object} config - Imported TideCloak configuration (parsed JSON).
+ * @param {string} token - access token to verify.
+ * @param {string[]} [allowedRoles] - Array of Keycloak realm or client roles; user must have at least one.
+ * @returns {Promise<object|null>} - The token payload if valid and role-check passes, otherwise null.
  */
 export async function verifyTideCloakToken(config, token, allowedRoles = []) {
   try {
+
     // Ensure token is provided
     if (!token) {
       throw new Error("No token provided");
@@ -34,13 +35,14 @@ export async function verifyTideCloakToken(config, token, allowedRoles = []) {
     const { payload } = await jwtVerify(token, jwkSet, { issuer });
 
     // Verify authorized party (client)
-    if (payload.azp !== config.resource) {
+    const client = config["resource"];
+    if (payload.azp !== client) {
       throw new Error(`AZP mismatch: expected '${config.resource}', got '${payload.azp}'`);
     }
 
-    // Gather all user roles from realm and resource_access
+    // Gather all user roles from realm and client roles for the specified resource from the config.
     const realmRoles = payload.realm_access?.roles || [];
-    const clientRoles = Object.values(payload.resource_access || {}).flatMap(r => r.roles);
+    const clientRoles = payload.resource_access?.[client]?.roles || [];
     const allRoles = new Set([...realmRoles, ...clientRoles]);
 
     // If allowedRoles specified, ensure at least one match
@@ -58,17 +60,4 @@ export async function verifyTideCloakToken(config, token, allowedRoles = []) {
     console.error("[TideJWT] Token verification failed:", err);
     return null;
   }
-}
-
-/**
- * Check if a verified token payload includes a given role.
- *
- * @param {object} payload    Decoded JWT payload.
- * @param {string} role       Role name to check.
- * @returns {boolean}
- */
-export function hasRole(payload, role) {
-  const realmRoles = payload.realm_access?.roles || [];
-  const clientRoles = Object.values(payload.resource_access || {}).flatMap(r => r.roles);
-  return [...realmRoles, ...clientRoles].includes(role);
 }

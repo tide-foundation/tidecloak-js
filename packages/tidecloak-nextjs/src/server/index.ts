@@ -1,2 +1,2 @@
-export { createTideMiddleware } from './tidecloakMiddleware'
-export { verifyTideCloakToken } from 'tide-jwt'
+export { createTideCloakMiddleware } from './tidecloakMiddleware'
+export { verifyTideCloakToken } from '@tidecloak/verify'

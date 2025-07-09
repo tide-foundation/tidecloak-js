@@ -1,5 +1,5 @@
 {
-  "name": "tidecloak-js",
+  "name": "@tidecloak/js",
   "version": "0.0.1",
   "description": "TideCloak client side JS SDK",
   "main": "dist/cjs/src/index.js",
@@ -43,7 +43,6 @@
     "authorization"
   ],
   "dependencies": {
-    "heimdall-tide": "file:~/project/heimdall"
+    "heimdall-tide": "^0.1.0"
   }
-
 }

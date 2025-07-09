@@ -1,5 +1,5 @@
 {
-  "name": "tide-jwt",
+  "name": "@tidecloak/verify",
   "version": "0.0.1",
   "type": "module",
   "description": "TideCloak client side JS SDK",
