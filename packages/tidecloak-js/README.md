@@ -8,13 +8,46 @@ Lightweight browser SDK for integrating TideCloak SSO into any JavaScript applic
 
 Before you begin, ensure you have:
 
+* Bundler like [Vite](https://vite.dev/) or [Webpack](https://webpack.js.org/)
 * A running TideCloak server (Keycloak-compatible)
-* A registered client in your realm (with valid `auth-server-url`, `realm`, `resource` and other adapter settings)
+* A registered client in your realm
 * Browser environment (SDK uses `window` and `document.cookie`)
 
 ---
 
-## 2. Install the SDK
+## 2. Getting Started
+
+To start a new Vite-powered vanilla JavaScript project with the TideCloak SDK:
+
+1. **Initialize** a Vite app:
+
+   ```bash
+   npm create vite@latest my-app -- --template vanilla
+   cd my-app
+   ```
+2. **Install** dependencies:
+
+   ```bash
+   npm install
+   ```
+3. **Run** the development server:
+
+   ```bash
+   npm run dev
+   ```
+
+Your folder structure will look like:
+
+```
+my-app/
+├─ index.html
+├─ main.js
+├─ package.json
+└─ vite.config.js
+```
+---
+
+## 3. Install the SDK
 
 ```bash
 npm install @tidecloak/js
@@ -27,20 +60,20 @@ This package exports two main items:
 * **`IAMService`** (singleton) — high-level wrapper around the TideCloak client
 * **`TideCloak`** — the underlying JS adapter (Keycloak-style API)
 
-> **Note**: For detailed documentation of the underlying adapter implementation, see [`docs`](./lib/README.md).
+> **Note**: For detailed documentation of the underlying adapter implementation, see [`packages/tidecloak-js/lib/README.md`](packages/tidecloak-js/lib/README.md).
 
 ---
 
-## 3. Adapter Configuration
+## 4. Adapter Configuration
 
 Download your adapter JSON directly from the Keycloak (TideCloak) admin console:
 
 1. Navigate to **Clients → `<your-client>` → Actions → Download adapter** (format: `keycloak-oidc-keycloak-json`).
 2. Save the downloaded file in your project root as `tidecloak.json`.
 
-In your code, simply import it:
+This JSON includes standard Keycloak fields (`auth-server-url`, `realm`, `resource`, etc.) along with any TideCloak extensions you configured (for example, `vendorId`, `homeOrkUrl`, per-origin secrets).
 
-> **Note**: Event handlers must be registered before initialization.
+In your code, simply import it:
 
 ```js
 import { IAMService } from "@tidecloak/js";
@@ -62,18 +95,19 @@ IAMService
 })();
 ```
 
-## 4. Simple Usage Example
+## 5. Simple Usage Example
 
-Register event listeners *before* initializing IAM to update UI in a vanilla JavaScript app.
+Use `index.html` and `main.js` in your Vite project root.
 
 ```html
 <!-- index.html -->
-<button id="login-btn" style="display:none">Log In</button>
+<button id="login-btn">Log In</button>
 <button id="logout-btn" style="display:none">Log Out</button>
-<div id="status"></div>
+<div id="status">Initializing...</div>
 ```
 
 ```js
+// main.js
 import { IAMService } from "@tidecloak/js";
 import config from "./tidecloak.json";
 
@@ -81,11 +115,11 @@ const loginBtn = document.getElementById("login-btn");
 const logoutBtn = document.getElementById("logout-btn");
 const statusEl = document.getElementById("status");
 
-// Attach click handlers
+// Click handlers
 loginBtn.onclick = () => IAMService.doLogin();
 logoutBtn.onclick = () => IAMService.doLogout();
 
-// Update UI based on authentication
+// UI update helper
 function updateUI(authenticated) {
   if (authenticated) {
     loginBtn.style.display = "none";
@@ -94,99 +128,103 @@ function updateUI(authenticated) {
   } else {
     loginBtn.style.display = "inline-block";
     logoutBtn.style.display = "none";
-    statusEl.textContent = "🔒 Not authenticated";
+    statusEl.textContent = "🔒 Please log in";
   }
 }
 
-// Register listeners
+// Register listeners before init
 IAMService
-  .on("ready", updateUI)
+  .on("ready", authenticated => updateUI(authenticated))
   .on("authError", err => statusEl.textContent = `❌ Auth error: ${err.message}`)
   .on("logout", () => updateUI(false));
 
-// Initialize IAM
+// Initialize IAM and update UI based on result
 (async () => {
   try {
     const authenticated = await IAMService.initIAM(config);
     updateUI(authenticated);
   } catch (err) {
     console.error("Failed to initialize IAM:", err);
+    statusEl.textContent = `❌ Initialization error`;
   }
 })();
 ```
 
-## 5. Advanced Usage Example: Securing a Note-Taking App
+---
+## 6. Encrypting & Decrypting Data
 
-```html
-<!-- index.html -->
-<div id="login-page">
-  <button id="login-btn">Log In</button>
-</div>
-<div id="notes-page" style="display:none">
-  <h1>Your Notes</h1>
-  <ul id="notes-list"></ul>
-  <button id="logout-btn">Log Out</button>
-</div>
-<div id="status"></div>
+TideCloak lets you protect sensitive fields with **tag-based** encryption. You pass in an array of `{ data, tags }` objects and receive an array of encrypted strings (or vice versa for decryption).
+
+### Syntax Overview
+
+```ts
+// Encrypt one or more payloads:
+const encryptedArray = await doEncrypt([
+  { data: /* any JSON-serializable value */, tags: ['tag1', 'tag2'] },
+  // …
+]);
+
+// Decrypt one or more encrypted blobs:
+const decryptedArray = await doDecrypt([
+  { encrypted: /* string from encrypt() */, tags: ['tag1', 'tag2'] },
+  // …
+]);
 ```
 
-```js
+> **Order guarantee**: the returned array matches the input order.
+
+---
+
+### Encryption Example
+
+```javascript
 import { IAMService } from "@tidecloak/js";
-import config from "./tidecloak.json";
 
-const loginPage = document.getElementById("login-page");
-const notesPage = document.getElementById("notes-page");
-const loginBtn = document.getElementById("login-btn");
-const logoutBtn = document.getElementById("logout-btn");
-const notesList = document.getElementById("notes-list");
-const statusEl = document.getElementById("status");
+async function encryptExamples() {
 
-loginBtn.onclick = () => IAMService.doLogin();
-logoutBtn.onclick = () => IAMService.doLogout();
+  // Simple single-item encryption:
+  const [encryptedDob] = await IAMService.doEncrypt([
+    { data: '2005-03-04', tags: ['dob'] }
+  ]);
 
-function showApp(authenticated) {
-  if (authenticated) {
-    loginPage.style.display = "none";
-    notesPage.style.display = "block";
-    statusEl.textContent = "✅ Authenticated";
-    loadNotes();
-  } else {
-    loginPage.style.display = "block";
-    notesPage.style.display = "none";
-    statusEl.textContent = "🔒 Not authenticated";
-  }
+  // Multi-field encryption:
+  const encryptedFields = await IAMService.doEncrypt([
+    { data: '10 Smith Street', tags: ['street'] },
+    { data: 'Southport', tags: ['suburb'] },
+    { data: { full: '20 James Street – Burleigh Heads' }, tags: ['street', 'suburb'] }
+  ]);
 }
-
-async function loadNotes() {
-  try {
-    const token = await IAMService.getToken();
-    const res = await fetch("/api/notes", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const notes = await res.json();
-    notesList.innerHTML = notes.map(n => `<li>${n}</li>`).join("");
-  } catch (err) {
-    console.error("Failed to load notes:", err);
-  }
-}
-
-IAMService
-  .on("ready", showApp)
-  .on("authError", err => statusEl.textContent = `❌ Auth error: ${err.message}`)
-  .on("logout", () => showApp(false));
-
-(async () => {
-  try {
-    const authenticated = await IAMService.initIAM(config);
-    showApp(authenticated);
-  } catch (err) {
-    console.error("Failed to initialize IAM:", err);
-  }
-})();
 ```
 
-## 6. Events & Lifecycle
-Event handlers must be set before initialization.
+> **Permissions**: Users need roles matching **every** tag on a payload. A payload tagged `['street','suburb']` requires both the `tide_street.selfencrypt` and `tide_suburb.selfencrypt` roles.
+
+---
+
+### Decryption Example
+
+```javascript
+import { IAMService } from "@tidecloak/js";
+
+async function decryptExamples(encryptedFields: string[]) {
+  // Single-item decryption:
+  const [decryptedDob] = await IAMService.doDecrypt([
+    { encrypted: encryptedFields[0], tags: ['dob'] }
+  ]);
+
+  // Multi-field decryption:
+  const decryptedFields = await IAMService.doDecrypt([
+    { encrypted: encryptedFields[0], tags: ['street'] },
+    { encrypted: encryptedFields[1], tags: ['suburb'] },
+    { encrypted: encryptedFields[2], tags: ['street','suburb'] }
+  ]);
+}
+```
+
+> **Permissions**: Like encryption, decryption requires the same tag-based roles (`tide_street.selfdecrypt`, `tide_suburb.selfdecrypt`, etc.).
+
+---
+
+## 7. Events & Lifecycle Events & Lifecycle
 
 Register handlers via `.on(event, handler)` or remove with `.off(event, handler)`.
 
@@ -209,7 +247,7 @@ IAMService
 
 ---
 
-## 7. Core Methods
+## 8. Core Methods
 
 After initialization, you can call these methods anywhere:
 
@@ -245,15 +283,12 @@ IAMService.doLogout();               // clears cookie & redirects
 await IAMService.doEncrypt([{ data: { secret: 123 }, tags: ["tag1"] }]);
 await IAMService.doDecrypt([{ encrypted: "...", tags: ["tag1"] }]);
 ```
-
 ---
 
-## 8. Tips & Best Practices
+## 9. Tips & Best Practices
 
 * **Single Init**: Call `initIAM` only once on page load or app bootstrap.
 * **Token Cookie**: `kcToken` is set automatically; ensure server-side middleware reads this cookie.
 * **Error Handling**: Listen to `initError` and `authError` to gracefully recover.
 * **Silent Refresh**: Built-in; you only need to call `updateIAMToken` if you want manual control.
 * **Event Cleanup**: Use `.off(...)` in SPAs before component unmount.
-
----
