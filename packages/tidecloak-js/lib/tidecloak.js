@@ -34,20 +34,9 @@
 
 // MODIFIED: Added dependency to external Tide helper libraries.
 
-<<<<<<< HEAD
 import { RequestEnclave, ApprovalEnclave } from "heimdall-tide"
 import { StringFromUint8Array, StringToUint8Array, CreateTideMemory } from "../modules/tide-js/Cryptide/Serialization.js";
 import { AuthorizedEncryptionFlow } from "../modules/tide-js/Flow/EncryptionFlows/AuthorizedEncryptionFlow.js";
-=======
-<<<<<<<< HEAD:packages/tidecloak-js/lib/heimdall.js
-import { RequestEnclave, ApprovalEnclave } from "heimdall-tide"
-import { StringFromUint8Array, StringToUint8Array, CreateTideMemory } from "../modules/tide-js/Cryptide/Serialization.js";
-import { AuthorizedEncryptionFlow } from "../modules/tide-js/Flow/EncryptionFlows/AuthorizedEncryptionFlow.js";
-========
-import { RequestEnclave } from "heimdall-tide"
-import { CreateTideMemory } from "../modules/tide-js/Cryptide/Serialization.js";
->>>>>>>> bf57cfa (rename packages):packages/tidecloak-js/lib/tidecloak.js
->>>>>>> bf57cfa (rename packages)
 import dVVKSigningFlow_DEPRECATED from "../modules/tide-js/Flow/SigningFlows/dVVKSigningFlow_DEPRECATED.js";
 import CardanoTxBodySignRequest from "../modules/tide-js/Models/Transactions/CardanoTxBodySignRequest.js"
 import RuleSettingsSignRequest from "../modules/tide-js/Models/Rules/RuleSettingSignRequest.js"
