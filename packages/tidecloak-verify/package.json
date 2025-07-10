@@ -1,7 +1,6 @@
 {
   "name": "@tidecloak/verify",
   "version": "0.0.1",
-  "type": "module",
   "description": "TideCloak client side JS SDK",
   "exports": {
     ".": {
@@ -12,6 +11,12 @@
   "files": [
     "src"
   ],
+  "scripts": {
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build": "npm run build:cjs && npm run build:esm",
+    "prepare": "npm run build"
+  },
   "publishConfig": {
     "access": "public"
   },
