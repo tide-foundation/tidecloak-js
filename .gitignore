@@ -1,2 +1,29 @@
 modules/*
 node_modules/*
+/dist/
+/modules/
+package-lock.json
+
+# dependencies
+**/node_modules/
+.pnp.js
+/.pnp
+
+# test output
+**/coverage/
+
+# Next.js
+**/.next/
+**/out/
+
+# build artifacts
+**/build/
+**/dist/
+**/modules/
+
+# logs
+*.log
+
+# env files
+.env
+.env*.local

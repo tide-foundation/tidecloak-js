@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "declaration": true,
+    "declarationMap": true,
+    "target": "ES2019",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "rootDir": "src",
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "outDir": "dist",
+  },
+  "files": ["src/TideJWT.js"]
+}

@@ -1,0 +1,57 @@
+{
+  "name": "@tidecloak/nextjs",
+  "version": "0.0.1",
+  "description": "TideCloak client-side React SDK",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts",
+      "require": "./dist/cjs/index.js"
+    },
+    "./server": {
+      "import": "./dist/esm/server/index.js",
+      "types": "./dist/types/server/index.d.ts",
+      "require": "./dist/cjs/server/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tide-foundation/tidecloak-js.git"
+  },
+  "author": "Tide",
+  "license": "https://tide.org/licenses_tcoc2-0-0-en",
+  "keywords": [
+    "security",
+    "tidecloak",
+    "tide",
+    "authentication",
+    "oidc",
+    "oauth2",
+    "authorization",
+    "react"
+  ],
+  "peerDependencies": {
+    "next": ">=13",
+    "react": ">=18.0.0"
+  },
+  "scripts": {
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build": "npm run build:cjs && npm run build:esm",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "@tidecloak/react": "file:../tidecloak-react/tidecloak-react-0.0.1.tgz",
+    "@tidecloak/verify": "file:../tidecloak-verify/tidecloak-verify-0.0.1.tgz"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6"
+  }
+}

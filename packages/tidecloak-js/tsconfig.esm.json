@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "outDir": "dist/esm",
+    "declaration": false,
+    "declarationMap": false,
+    "rootDir": "."
+  },
+  "files": ["src/index.js", "lib/tidecloak.js"],
+  "include": ["modules/tide-js/**/*.js"]
+}
