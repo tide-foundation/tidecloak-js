@@ -90,8 +90,8 @@ export function TideCloakContextProvider({ config, children }: TideCloakContextP
 
     const onTokenExpired = async () => {
       if (!mounted) return;
-      console.debug("[TideCloak Provider] Token expired, attempting refresh...");
-      setSessionExpired(true);
+        console.debug("[TideCloak Provider] Token expired, attempting refresh...");
+        setSessionExpired(true);
       try {
         await IAMService.updateIAMToken();
       } catch (refreshError) {
