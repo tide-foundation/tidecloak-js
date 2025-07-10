@@ -48,7 +48,7 @@
   },
   "dependencies": {
     "@tidecloak/react": "^0.9.11",
-    "@tidecloak/verify": "^0.9.11"
+    "@tidecloak/verify": "^0.9.12"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",
