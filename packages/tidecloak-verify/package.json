@@ -1,15 +1,16 @@
 {
   "name": "@tidecloak/verify",
   "version": "0.0.1",
-  "description": "TideCloak client side JS SDK",
+  "description": "A lightweight utility for server-side verification of TideCloak-issued JSON Web Tokens (JWTs).",
   "exports": {
     ".": {
-      "types": "./src/TideJWT.d.ts",
-      "default": "./src/TideJWT.js"
+      "import": "./dist/esm/TideJWT.js",
+      "types": "./dist/types/TideJWT.d.ts",
+      "require": "./dist/cjs/TideJWT.js"
     }
   },
   "files": [
-    "src"
+    "dist"
   ],
   "scripts": {
     "build:cjs": "tsc -p tsconfig.cjs.json",
