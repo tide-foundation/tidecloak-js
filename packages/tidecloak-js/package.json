@@ -1,6 +1,6 @@
 {
   "name": "@tidecloak/js",
-  "version": "0.0.1",
+  "version": "0.9.11",
   "description": "TideCloak client side JS SDK",
   "main": "dist/cjs/src/index.js",
   "module": "dist/esm/src/index.js",
