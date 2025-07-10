@@ -1,6 +1,6 @@
 # TideCloak Verify SDK
 
-A lightweight utility for server‑side verification of TideCloak‑issued JSON Web Tokens (JWTs).
+A lightweight utility for server-side verification of TideCloak-issued JSON Web Tokens (JWTs).
 
 This package exports a single function, `verifyTideCloakToken`, which you can use in your Next.js API routes, Node.js servers, or any backend to verify the authenticity, issuer, audience, and roles of a JWT issued by your TideCloak realm.
 

@@ -1,7 +1,7 @@
 {
   "name": "@tidecloak/nextjs",
-  "version": "0.0.1",
-  "description": "TideCloak client-side React SDK",
+  "version": "^0.9.11",
+  "description": "TideCloak nextjs SDK",
   "exports": {
     ".": {
       "import": "./dist/esm/index.js",
@@ -47,8 +47,8 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@tidecloak/react": "file:../tidecloak-react/tidecloak-react-0.0.1.tgz",
-    "@tidecloak/verify": "file:../tidecloak-verify/tidecloak-verify-0.0.1.tgz"
+    "@tidecloak/react": "^0.9.11",
+    "@tidecloak/verify": "^0.9.11"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",
