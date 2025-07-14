@@ -8,7 +8,7 @@ Secure your Next.js app with TideCloak: authentication, session management, data
 
 Before you begin, ensure you have:
 
-* A [running](https://github.com/tide-foundation/tidecloak-gettingstarted) TideCloak server you have admin control over.
+* A [running](https://github.com/tide-foundation/tidecloak-gettingstarted) TideCloak server you have admin control over. No need to set anything up - just start the server.
 
 As well as 
 * Next.js 13.5.7 or later
@@ -47,7 +47,11 @@ my-app/
 └── package.json
 ```
 
-## 3. Test your app! [localhost:3000](http://localhost:3000)
+## 3. Test your app!
+
+```npm run dev```
+
+Here it is - [localhost:3000](http://localhost:3000)
 
 ## 4. Implementing encryption/decryption
 This example will encrypt the username provided in the access token, store it in the browser, then decrypt it on request.
