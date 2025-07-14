@@ -8,23 +8,76 @@ Secure your Next.js app with TideCloak: authentication, session management, data
 
 Before you begin, ensure you have:
 
+* A [running](https://github.com/tide-foundation/tidecloak-gettingstarted) TideCloak server you have admin control over.
+
+As well as 
 * Next.js 13.5.7 or later
 * React 18 or later
 * Node.js ≥18.17.0
-* A running TideCloak server
-* A registered client in your realm
 
 ---
 
-## 2. Install the SDK
+## 2. Initialize the template project
 
-Add the NextJS bundle to your project:
+> [!NOTE]
+> The initialization will prompt you to create the realm and clients on your Tidecloak server. The script will also include Tide Realm Admin creation and IGA enablement.
 
 ```bash
-npm install @tidecloak/nextjs
-# or
-yarn add @tidecloak/nextjs
+npm init @tidecloak/nextjs my-app
 ```
+
+### 2.a Project structure
+
+```
+my-app/
+├── api/
+│   └── protected/
+│       └── route.js     <- A protected API on your NextJS server that verifies the user's access token
+|
+├── home/
+|   └── page.jsx     <- Your home page the user goes to once autenticated
+|
+├── public/
+│   └── silent-check-sso.html
+|
+├── page.jsx     <- Your login page the user is brought to when they need to authenticate
+├── layout.jsx     <- Entry point of your app before the user sees any actual pages
+├── tidecloak.json     <- Where your Tidecloak configuration sits
+├── next.config.json
+└── package.json
+```
+
+## 3. Test your app! [localhost:3000](http://localhost:3000)
+
+## 4. Implementing encryption/decryption
+This example will encrypt the username provided in the access token, store it in the browser, then decrypt it on request.
+
+But first, you need to create the required realm roles that enable each user to encrypt/decrypt their own usernames.
+
+> [!NOTE]
+> You have already completed the pre-requisites asked for in the documentation to set up encrypt/decrypt roles AND also set up the required client.
+> 
+> Name your newly created roles ```_tide_username.seflencrypt``` and ```_tide_username.selfdecrypt```
+
+[Set up encrypt/decrypt roles](https://docs.tidecloak.com/docs/EncryptDecrypt/SetupED)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 This bundle provides:
 
