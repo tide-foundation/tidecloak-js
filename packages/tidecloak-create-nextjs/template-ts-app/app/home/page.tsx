@@ -1,17 +1,27 @@
 'use client'
 
 import { useTideCloak } from '@tidecloak/nextjs'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import tcConfig from "../../tidecloak.json"
 
 
 export default function HomePage() {
   const { logout, getValueFromIdToken, hasRealmRole, token } = useTideCloak()
-  const username = getValueFromIdToken('preferred_username') ?? '…'
-  const hasDefaultRole = hasRealmRole(`default-roles-${tcConfig["realm"]}`)
 
+  const [username, setUsername] = useState("")
+  const [hasDefaultRole, setHasDefaultRole] = useState(false)
   const [verifyResult, setVerifyResult] = useState<string | null>(null)
   const [verifying, setVerifying] = useState(false)
+
+    useEffect(() => {
+    if (token) {
+      const name = getValueFromIdToken("preferred_username")
+      const defaultRole = hasRealmRole(`default-roles-${tcConfig["realm"]}`)
+      setUsername(name);
+      setHasDefaultRole(defaultRole)
+    }
+
+  }, [token])
 
   const onLogout = useCallback(() => {
     logout()
