@@ -29,7 +29,7 @@ As well as
 
 ```bash
 sudo apt update && sudo apt install -y curl jq
-npm init @tidecloak/nextjs my-app
+npm init @tidecloak/nextjs@latest my-app
 ```
 
 #### 2.a Project structure
