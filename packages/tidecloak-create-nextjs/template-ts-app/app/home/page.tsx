@@ -48,7 +48,7 @@ export default function HomePage() {
     } finally {
       setVerifying(false)
     }
-  }, [])
+  }, [token])
 
   return (
     <div style={containerStyle}>
