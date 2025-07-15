@@ -46,12 +46,12 @@ my-app/
 |   |   └── page.jsx                <- Your home page the user goes to once autenticated
 |   ├── public/
 │   |   └── silent-check-sso.html
-|   ├── layout.jsx                 <- Entry point of your app before the user sees any actual pages
-|   └── page.jsx                   <- Your login page the user is brought to when they need to authenticate
+|   ├── layout.jsx                  <- Entry point of your app before the user sees any actual pages
+|   └── page.jsx                    <- Your login page the user is brought to when they need to authenticate
 |
-├── tidecloak.json             <- Where your Tidecloak configuration sits
+├── tidecloak.json                  <- Where your Tidecloak configuration sits
 ├── next.config.json
-├── middleware.js              <- Run on each page navigation - this is where the Tideccloak token is verified
+├── middleware.js                   <- Run on each page navigation - this is where the Tideccloak token is verified
 └── package.json
 ```
 
