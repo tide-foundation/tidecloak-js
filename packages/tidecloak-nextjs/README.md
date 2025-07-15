@@ -28,6 +28,7 @@ As well as
 > The initialization will prompt you to create the realm and clients on your Tidecloak server. The script will also include Tide Realm Admin creation and IGA enablement.
 
 ```bash
+sudo apt update && sudo apt install -y curl jq
 npm init @tidecloak/nextjs my-app
 ```
 
