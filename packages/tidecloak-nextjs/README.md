@@ -8,7 +8,7 @@ Jump to:
 ---
 # Quickstart
 
-Secure your Next.js app with TideCloak: authentication, session management, data encryption, and edge-middleware integration-all in minutes.
+Secure your Next.js app with TideCloak: authentication, session management, data encryption, and edge-middleware integration all in minutes.
 
 ### 1. Prerequisites
 
