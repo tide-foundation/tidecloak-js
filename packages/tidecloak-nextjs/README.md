@@ -88,7 +88,7 @@ const encryptedArray = await doEncrypt([
 
 // Decrypt blobs:
 const decryptedArray = await doDecrypt([
-  { encrypted: /* string from encrypt() */, tags: ['tag1', 'tag2'] },
+  { encrypted: /* string from doEncrypt */, tags: ['tag1', 'tag2'] },
   // …
 ]);
 ```
