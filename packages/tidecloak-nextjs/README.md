@@ -37,17 +37,17 @@ npm init @tidecloak/nextjs my-app
 my-app/
 ├── api/
 │   └── protected/
-│       └── route.js     <- A protected API on your NextJS server that verifies the user's access token
+│       └── route.js            <- A protected API on your NextJS server that verifies the user's access token
 |
 ├── home/
-|   └── page.jsx     <- Your home page the user goes to once autenticated
+|   └── page.jsx                <- Your home page the user goes to once autenticated
 |
 ├── public/
 │   └── silent-check-sso.html
 |
-├── page.jsx     <- Your login page the user is brought to when they need to authenticate
-├── layout.jsx     <- Entry point of your app before the user sees any actual pages
-├── tidecloak.json     <- Where your Tidecloak configuration sits
+├── page.jsx                   <- Your login page the user is brought to when they need to authenticate
+├── layout.jsx                 <- Entry point of your app before the user sees any actual pages
+├── tidecloak.json             <- Where your Tidecloak configuration sits
 ├── next.config.json
 └── package.json
 ```
