@@ -35,20 +35,23 @@ npm init @tidecloak/nextjs my-app
 
 ```
 my-app/
-├── api/
-│   └── protected/
-│       └── route.js            <- A protected API on your NextJS server that verifies the user's access token
+├── app
+|   └── api/
+|   │   └── protected/
+|   │       └── route.js            <- A protected API on your NextJS server that verifies the user's access token
+|   ├── auth/
+|   │   └── redirect/
+|   │       └── page.jsx            <- A dedicated page to redirect the user back to once authentication is complete
+|   ├── home/
+|   |   └── page.jsx                <- Your home page the user goes to once autenticated
+|   ├── public/
+│   |   └── silent-check-sso.html
+|   ├── layout.jsx                 <- Entry point of your app before the user sees any actual pages
+|   └── page.jsx                   <- Your login page the user is brought to when they need to authenticate
 |
-├── home/
-|   └── page.jsx                <- Your home page the user goes to once autenticated
-|
-├── public/
-│   └── silent-check-sso.html
-|
-├── page.jsx                   <- Your login page the user is brought to when they need to authenticate
-├── layout.jsx                 <- Entry point of your app before the user sees any actual pages
 ├── tidecloak.json             <- Where your Tidecloak configuration sits
 ├── next.config.json
+├── middleware.js              <- Run on each page navigation - this is where the Tideccloak token is verified
 └── package.json
 ```
 
