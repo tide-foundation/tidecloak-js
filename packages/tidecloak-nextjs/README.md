@@ -60,7 +60,7 @@ my-app/
 ```npm run dev```
 
 Here it is - [localhost:3000](http://localhost:3000)
-
+🎉
 ---
 # Expanding from the template
 
