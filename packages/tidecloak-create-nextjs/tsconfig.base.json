@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2019",           
+    "module": "ESNext",          
+    "strict": true,              
+    "esModuleInterop": true,     
+    "skipLibCheck": true,        
+    "sourceMap": true,           
+    "rootDir": ".",              
+    "declaration": true,         
+    "declarationMap": true,      
+    "types": ["node"]            
+  }
+}

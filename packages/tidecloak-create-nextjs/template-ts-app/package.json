@@ -1,0 +1,22 @@
+{
+  "name": "my-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "init": "bash init/tcinit.sh"
+  },
+  "dependencies": {
+    "next": "14.x",
+    "react": "18.x",
+    "react-dom": "18.x",
+    "@tidecloak/nextjs": "^0.9.11"
+  },
+    "devDependencies": {
+    "@types/node": "24.0.13",
+    "@types/react": "19.1.8",
+    "typescript": "5.8.3"
+  }
+}

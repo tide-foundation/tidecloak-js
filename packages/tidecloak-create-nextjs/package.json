@@ -1,0 +1,40 @@
+{
+  "name": "@tidecloak/create-nextjs",
+  "version": "0.0.1",
+  "type": "module",
+
+  "bin": {
+    "create-nextjs": "./dist/cjs/create.cjs"
+  },
+
+  "main": "./dist/cjs/create.cjs",
+  "module": "./dist/esm/create.js",
+  "exports": {
+    ".": {
+      "require": "./dist/cjs/create.cjs",
+      "import":  "./dist/esm/create.js"
+    }
+  },
+
+  "files": [
+    "dist/",
+    "template-ts-app/",
+    "template-js-app/",
+    "init/"
+  ],
+
+  "scripts": {
+    "build:cjs": "tsc -p tsconfig.cjs.json && mv dist/cjs/create.js dist/cjs/create.cjs",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build":      "npm run build:cjs && npm run build:esm",
+    "prepare": "npm run build"
+  },
+
+  "dependencies": {
+    "enquirer": "^2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.13",
+    "typescript":  "^5.0.0"
+  }
+}
