@@ -5,7 +5,7 @@ import { useTideCloak } from '@tidecloak/nextjs'
 import tcConfig from "../../tidecloak.json"
 
 export default function HomePage() {
-  const { logout, getValueFromIdToken, hasRealmRole, getAccessToken } = useTideCloak()
+  const { logout, getValueFromIdToken, hasRealmRole, token } = useTideCloak()
   const username = getValueFromIdToken('preferred_username') || '…'
   const hasDefaultRole = hasRealmRole(`default-roles-${tcConfig["realm"]}`)
 
@@ -20,7 +20,6 @@ export default function HomePage() {
     setVerifying(true)
     setVerifyResult(null)
     try {
-      const token = await getAccessToken()
       const res = await fetch('/api/protected', {
         method: 'GET',
         headers: { Authorization: `Bearer ${token}` },
@@ -36,7 +35,7 @@ export default function HomePage() {
     } finally {
       setVerifying(false)
     }
-  }, [getAccessToken])
+  }, [token])
 
   return (
     <div style={containerStyle}>

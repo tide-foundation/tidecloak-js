@@ -144,7 +144,7 @@ approve_and_commit clients
 # Step 4: create admin user + assign role
 # ─────────────────────────────────────────────────────────────────────────────
 TOKEN="$(get_admin_token)"
-echo "👤 Creating admin user..."
+echo "👤 Creating new admin user..."
 curl -s -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/users" \
      -H "Authorization: Bearer ${TOKEN}" \
      -H "Content-Type: application/json" \

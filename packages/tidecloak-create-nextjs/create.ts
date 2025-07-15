@@ -6,6 +6,15 @@ import Enquirer from 'enquirer'
 
 const { prompt } = Enquirer
 
+function hasCommand(cmd: string): boolean {
+  try {
+    execSync(`command -v ${cmd}`, { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function main(): Promise<void> {
   const [, , targetDir] = process.argv as string[]
   if (!targetDir) {
@@ -17,7 +26,7 @@ async function main(): Promise<void> {
   const { language } = await prompt<{ language: 'TypeScript' | 'JavaScript' }>({
     type:    'select',
     name:    'language',
-    message: 'Which language would you like?',
+    message: 'Preferred app language?',
     choices: ['TypeScript', 'JavaScript']
   })
 
@@ -34,12 +43,38 @@ async function main(): Promise<void> {
   const { initialize } = await prompt<{ initialize: boolean }>({
     type:    'confirm',
     name:    'initialize',
-    message: 'Run TideCloak initialization now? Ensure your server is running.',
+    message: 'Initialize TideCloak now? Your server must be running.',
     initial: true
   })
 
-  if (initialize) {
-    // 4. Collect config values
+  if (!initialize) {
+    console.log('Initialization skipped.')
+  } else {
+    // 4. Check prerequisites
+    let missing = ['curl', 'jq'].filter(cmd => !hasCommand(cmd))
+    if (missing.length > 0) {
+      console.warn(`Missing prerequisites: ${missing.join(', ')}`)
+      const { action } = await prompt<{ action: string }>({
+        type:    'input',
+        name:    'action',
+        message: `Please install the missing prerequisites (${missing.join(', ')}), then press ENTER to retry, or type 'skip' to skip initialization`
+      })
+      if (action.trim().toLowerCase() === 'skip') {
+        console.log('Initialization skipped.')
+        console.log(`"${targetDir}" is ready!`)
+        console.log(`"Start developing your app here: `)
+        console.log(`  cd ${targetDir} && npm install`)
+        return
+      }
+      // retry
+      missing = ['curl', 'jq'].filter(cmd => !hasCommand(cmd))
+      if (missing.length > 0) {
+        console.warn(`Still missing: ${missing.join(', ')}. Skipping initialization.`)
+        return
+      }
+    }
+
+    // 5. Collect config values
     const { tideUrl } = await prompt<{ tideUrl: string }>({
       type:    'input',
       name:    'tideUrl',
@@ -52,7 +87,7 @@ async function main(): Promise<void> {
     const { realmName } = await prompt<{ realmName: string }>({
       type:    'input',
       name:    'realmName',
-      message: 'Realm name:',
+      message: 'TideCloak new Realm name:',
       initial: 'nextjs-test',
       validate: (input: string) =>
         input.trim().length > 0 || 'Please enter a realm name'
@@ -61,7 +96,7 @@ async function main(): Promise<void> {
     const { clientName } = await prompt<{ clientName: string }>({
       type:    'input',
       name:    'clientName',
-      message: 'Client name:',
+      message: 'TideCloak new Client name:',
       initial: 'myclient',
       validate: (input: string) =>
         input.trim().length > 0 || 'Please enter a client name'
@@ -70,7 +105,7 @@ async function main(): Promise<void> {
     const { clientAppUrl } = await prompt<{ clientAppUrl: string }>({
       type:    'input',
       name:    'clientAppUrl',
-      message: 'Client App URL (e.g. http://localhost:3000):',
+      message: 'This App URL (e.g. http://localhost:3000):',
       initial: 'http://localhost:3000',
       validate: (input: string) =>
         input.trim().length > 0 || 'Please enter your app URL'
@@ -79,7 +114,7 @@ async function main(): Promise<void> {
     const { kcUser } = await prompt<{ kcUser: string }>({
       type:    'input',
       name:    'kcUser',
-      message: 'Master admin username:',
+      message: 'TideCloak bootstrap / master admin username:',
       initial: 'admin',
       validate: (input: string) =>
         input.trim().length > 0 || 'Please enter a username'
@@ -88,17 +123,17 @@ async function main(): Promise<void> {
     const { kcPassword } = await prompt<{ kcPassword: string }>({
       type:    'input',
       name:    'kcPassword',
-      message: 'Master admin password:',
+      message: 'TideCloak bootstrap / master admin password:',
       initial: 'password',
       validate: (input: string) =>
         input.trim().length > 0 || 'Please enter a password'
     })
 
-    // 5. Run initialization script
+    // 6. Run initialization script
     const { runInit } = await prompt<{ runInit: boolean }>({
       type:    'confirm',
       name:    'runInit',
-      message: 'Continue with tidecloak initialization?',
+      message: 'Ready to initialize TideCloak?',
       initial: true
     })
 
@@ -139,12 +174,11 @@ async function main(): Promise<void> {
     } else {
       console.log(`To run init later: cd ${targetDir} && bash init/tcinit.sh`)
     }
-  } else {
-    console.log('Initialization skipped.')
   }
 
-  // 6. Final instructions
+  // 7. Final instructions
   console.log(`"${targetDir}" is ready!`)
+  console.log("Proceed to run your app:")
   console.log(`cd ${targetDir} && npm install && npm run dev`)
 }
 
