@@ -67,15 +67,15 @@ export default function App() {
 }
 ```
 
-> ⚠️ If you don't define a route at `/auth/redirect`, and you're using the default `redirecturi`, your app **will break after login/logout**. Either create this route or override `redirecturi` in the provider config.
+> ⚠️ If you don't define a route at `/auth/redirect`, and you're using the default `redirectUri`, your app **will break after login/logout**. Either create this route or override `redirectUri` in the provider config.
 >
-> If you override the `redirecturi`, you **must** ensure that the custom path exists in your router. Otherwise, the app will redirect to a non-existent route and fail.
+> If you override the `redirectUri`, you **must** ensure that the custom path exists in your router. Otherwise, the app will redirect to a non-existent route and fail.
 
 ---
 
 ## 4. Redirect URI Handling
 
-TideCloak supports an optional `redirecturi` config field. This defines where the user is sent after login/logout.
+TideCloak supports an optional `redirectUri` config field. This defines where the user is sent after login/logout.
 
 If omitted, it defaults to:
 
@@ -88,12 +88,12 @@ If omitted, it defaults to:
 You must **create this route** if you use the default, or explicitly override it:
 
 ```tsx
-<TideCloakProvider config={{ ...adapter, redirecturi: 'https://yourapp.com/auth/callback' }}>
+<TideCloakProvider config={{ ...adapter, redirectUri: 'https://yourapp.com/auth/callback' }}>
   <YourApp />
 </TideCloakProvider>
 ```
 
-> ⚠️ If you override the `redirecturi`, make sure the specified path exists in your app. Missing this route will cause failed redirects.
+> ⚠️ If you override the `redirectUri`, make sure the specified path exists in your app. Missing this route will cause failed redirects.
 
 ### Example: Redirect Handling Page
 
@@ -137,7 +137,7 @@ export default function RedirectPage() {
 }
 ```
 
-**Description:** This page helps finalize the login or logout flow, and also reacts to token expiration events that may have triggered a redirect. It's required if you're using the default `redirecturi`. If you override the redirect URI, the file is optional—but the **route** for the redirect **must** still exist in your app.
+**Description:** This page helps finalize the login or logout flow, and also reacts to token expiration events that may have triggered a redirect. It's required if you're using the default `redirectUri`. If you override the redirect URI, the file is optional—but the **route** for the redirect **must** still exist in your app.
 
 ---
 

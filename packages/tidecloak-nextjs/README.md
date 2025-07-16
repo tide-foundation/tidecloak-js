@@ -111,7 +111,7 @@ export default MyApp;
 
 ## 4. Redirect URI Handling
 
-TideCloak supports an optional `redirecturi` parameter. This is the URL users are sent to after login or logout.
+TideCloak supports an optional `redirectUri` parameter. This is the URL users are sent to after login or logout.
 
 If omitted, it defaults to:
 
@@ -121,14 +121,14 @@ If omitted, it defaults to:
 
 > If your app runs at `http://localhost:3000`, then by default users will be redirected to `http://localhost:3000/auth/redirect` after login or logout.
 >
-> If that route doesn't exist in your project, you must create it or explicitly define a different `redirecturi` in your TideCloak config.
+> If that route doesn't exist in your project, you must create it or explicitly define a different `redirectUri` in your TideCloak config.
 
 If you use the default, you **must create a page** at `/auth/redirect` in your app.
 
 You can customize this URI in your provider config:
 
 ```tsx
-<TideCloakProvider config={{ ...adapter, redirecturi: 'https://yourapp.com/auth/callback' }}>
+<TideCloakProvider config={{ ...adapter, redirectUri: 'https://yourapp.com/auth/callback' }}>
   {children}
 </TideCloakProvider>
 ```
