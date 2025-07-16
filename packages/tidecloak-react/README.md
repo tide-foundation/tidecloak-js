@@ -29,7 +29,7 @@ yarn add @tidecloak/react
 
 This bundle provides:
 
-* `<TideCloakProvider>` — application-level context
+* `<TideCloakContextProvider>` — application-level context
 * `useTideCloak()` hook — access tokens and auth actions
 * `<Authenticated>` / `<Unauthenticated>` — UI guards
 * `doEncrypt()` / `doDecrypt()` — tag-based encryption/decryption
@@ -38,7 +38,7 @@ This bundle provides:
 
 ## 3. Initialize the Provider
 
-Wrap your app’s root with `<TideCloakProvider>` to enable authentication context throughout the component tree.
+Wrap your app’s root with `<TideCloakContextProvider>` to enable authentication context throughout the component tree.
 
 If you're using React Router, your setup might look like this:
 
@@ -47,14 +47,14 @@ If you're using React Router, your setup might look like this:
 ```tsx
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { TideCloakProvider } from '@tidecloak/react';
+import { TideCloakContextProvider } from '@tidecloak/react';
 import adapter from '../tidecloakAdapter.json';
 import Home from './pages/Home';
 import RedirectPage from './pages/auth/RedirectPage';
 
 export default function App() {
   return (
-    <TideCloakProvider config={adapter}>
+    <TideCloakContextProvider config={adapter}>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Home />} />
@@ -62,7 +62,7 @@ export default function App() {
           {/* Add additional routes here */}
         </Routes>
       </BrowserRouter>
-    </TideCloakProvider>
+    </TideCloakContextProvider>
   );
 }
 ```
@@ -88,9 +88,9 @@ If omitted, it defaults to:
 You must **create this route** if you use the default, or explicitly override it:
 
 ```tsx
-<TideCloakProvider config={{ ...adapter, redirectUri: 'https://yourapp.com/auth/callback' }}>
+<TideCloakContextProvider config={{ ...adapter, redirectUri: 'https://yourapp.com/auth/callback' }}>
   <YourApp />
-</TideCloakProvider>
+</TideCloakContextProvider>
 ```
 
 > ⚠️ If you override the `redirectUri`, make sure the specified path exists in your app. Missing this route will cause failed redirects.
@@ -252,6 +252,6 @@ const decryptedArray = await doDecrypt([
 * **Error Handling**: check `initError` from `useTideCloak`
 * **Custom Claims**: access token fields with `getValueFromToken()` / `getValueFromIdToken()`
 * **Role-Based UI**: combine `hasRealmRole`, `hasClientRole`, and guard components
-* **Lazy Initialization**: optionally wrap `<TideCloakProvider>` around only protected routes
+* **Lazy Initialization**: optionally wrap `<TideCloakContextProvider>` around only protected routes
 
 ---
