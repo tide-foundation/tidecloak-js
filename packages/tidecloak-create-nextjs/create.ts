@@ -24,8 +24,8 @@ async function main(): Promise<void> {
 
   // 1. Select language
   const { language } = await prompt<{ language: 'TypeScript' | 'JavaScript' }>({
-    type:    'select',
-    name:    'language',
+    type: 'select',
+    name: 'language',
     message: 'Preferred app language?',
     choices: ['TypeScript', 'JavaScript']
   })
@@ -41,8 +41,8 @@ async function main(): Promise<void> {
 
   // 3. Prompt for initialization
   const { initialize } = await prompt<{ initialize: boolean }>({
-    type:    'confirm',
-    name:    'initialize',
+    type: 'confirm',
+    name: 'initialize',
     message: 'Initialize TideCloak now? Your server must be running.',
     initial: true
   })
@@ -55,8 +55,8 @@ async function main(): Promise<void> {
     if (missing.length > 0) {
       console.warn(`Missing prerequisites: ${missing.join(', ')}`)
       const { action } = await prompt<{ action: string }>({
-        type:    'input',
-        name:    'action',
+        type: 'input',
+        name: 'action',
         message: `Please install the missing prerequisites (${missing.join(', ')}), then press ENTER to retry, or type 'skip' to skip initialization`
       })
       if (action.trim().toLowerCase() === 'skip') {
@@ -64,20 +64,25 @@ async function main(): Promise<void> {
         console.log(`"${targetDir}" is ready!`)
         console.log(`"Start developing your app here: `)
         console.log(`  cd ${targetDir} && npm install`)
+        console.log(`To run init later: cd ${targetDir} && bash init/tcinit.sh`)
         return
       }
       // retry
       missing = ['curl', 'jq'].filter(cmd => !hasCommand(cmd))
       if (missing.length > 0) {
         console.warn(`Still missing: ${missing.join(', ')}. Skipping initialization.`)
+        console.log(`"${targetDir}" is ready!`)
+        console.log(`"Start developing your app here: `)
+        console.log(`  cd ${targetDir} && npm install`)
+        console.log(`To run init later: cd ${targetDir} && bash init/tcinit.sh`)
         return
       }
     }
 
     // 5. Collect config values
     const { tideUrl } = await prompt<{ tideUrl: string }>({
-      type:    'input',
-      name:    'tideUrl',
+      type: 'input',
+      name: 'tideUrl',
       message: 'TideCloak server URL:',
       initial: 'http://localhost:8080',
       validate: (input: string) =>
@@ -85,8 +90,8 @@ async function main(): Promise<void> {
     })
 
     const { realmName } = await prompt<{ realmName: string }>({
-      type:    'input',
-      name:    'realmName',
+      type: 'input',
+      name: 'realmName',
       message: 'TideCloak new Realm name:',
       initial: 'nextjs-test',
       validate: (input: string) =>
@@ -94,8 +99,8 @@ async function main(): Promise<void> {
     })
 
     const { clientName } = await prompt<{ clientName: string }>({
-      type:    'input',
-      name:    'clientName',
+      type: 'input',
+      name: 'clientName',
       message: 'TideCloak new Client name:',
       initial: 'myclient',
       validate: (input: string) =>
@@ -103,8 +108,8 @@ async function main(): Promise<void> {
     })
 
     const { clientAppUrl } = await prompt<{ clientAppUrl: string }>({
-      type:    'input',
-      name:    'clientAppUrl',
+      type: 'input',
+      name: 'clientAppUrl',
       message: 'This App URL (e.g. http://localhost:3000):',
       initial: 'http://localhost:3000',
       validate: (input: string) =>
@@ -112,8 +117,8 @@ async function main(): Promise<void> {
     })
 
     const { kcUser } = await prompt<{ kcUser: string }>({
-      type:    'input',
-      name:    'kcUser',
+      type: 'input',
+      name: 'kcUser',
       message: 'TideCloak bootstrap / master admin username:',
       initial: 'admin',
       validate: (input: string) =>
@@ -121,18 +126,43 @@ async function main(): Promise<void> {
     })
 
     const { kcPassword } = await prompt<{ kcPassword: string }>({
-      type:    'input',
-      name:    'kcPassword',
+      type: 'input',
+      name: 'kcPassword',
       message: 'TideCloak bootstrap / master admin password:',
       initial: 'password',
       validate: (input: string) =>
         input.trim().length > 0 || 'Please enter a password'
     })
 
+    const { subscriptionEmail } = await prompt<{ subscriptionEmail: string }>({
+      type: 'input',
+      name: 'subscriptionEmail',
+      message: 'Enter an email to manage your license',
+      initial: '',
+      validate: (input: string) =>
+        input.trim().length > 0 || 'Please enter an email'
+    })
+
+    const { termsAccepted } = await prompt<{ termsAccepted: boolean }>([{
+      type: 'confirm',
+      name: 'termsAccepted',
+      message: 'I agree to the Terms & Conditions (https://tide.org/legal)',
+      initial: false
+    }]);
+
+    if (!termsAccepted) {
+        console.log('Initialization skipped.')
+        console.log(`"${targetDir}" is ready!`)
+        console.log(`"Start developing your app here: `)
+        console.log(`cd ${targetDir} && npm install`)
+        console.log(`To run init later: cd ${targetDir} && bash init/tcinit.sh`)
+        return
+    }
+
     // 6. Run initialization script
     const { runInit } = await prompt<{ runInit: boolean }>({
-      type:    'confirm',
-      name:    'runInit',
+      type: 'confirm',
+      name: 'runInit',
       message: 'Ready to initialize TideCloak?',
       initial: true
     })
@@ -148,11 +178,12 @@ async function main(): Promise<void> {
             env: {
               ...process.env,
               TIDECLOAK_LOCAL_URL: tideUrl,
-              NEW_REALM_NAME:      realmName,
-              CLIENT_NAME:         clientName,
-              CLIENT_APP_URL:      clientAppUrl,
-              KC_USER:             kcUser,
-              KC_PASSWORD:         kcPassword
+              NEW_REALM_NAME: realmName,
+              CLIENT_NAME: clientName,
+              CLIENT_APP_URL: clientAppUrl,
+              KC_USER: kcUser,
+              KC_PASSWORD: kcPassword,
+              SUBSCRIPTION_EMAIL: subscriptionEmail
             }
           }
         )

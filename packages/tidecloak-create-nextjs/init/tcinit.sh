@@ -26,6 +26,7 @@ ADMIN_ROLE_NAME="tide-realm-admin"
 KC_USER="${KC_USER:-admin}"
 KC_PASSWORD="${KC_PASSWORD:-password}"
 CLIENT_NAME="${CLIENT_NAME:-myclient}"
+SUBSCRIPTION_EMAIL="${SUBSCRIPTION_EMAIL:-test@demo.org}"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # sed -i portability
@@ -90,7 +91,7 @@ echo "🔐 Initializing Tide realm + IGA..."
 response=$(curl -i -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/vendorResources/setUpTideRealm" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  --data-urlencode "email=email@tide.org" 2>&1)
+  --data-urlencode "email=${SUBSCRIPTION_EMAIL}" 2>&1)
 
 # parse status code from response
 status=$(printf "%s" "${response}" | awk '/HTTP\/1\.[01]/ { code=$2 } END { print code }')
