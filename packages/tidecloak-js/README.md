@@ -95,7 +95,7 @@ IAMService
 
 (async () => {
   try {
-    await IAMService.initIAM(config); // You can add redirecturi here if customizing
+    await IAMService.initIAM(config); // You can add redirectUri here if customizing
   } catch (err) {
     console.error("Failed to initialize IAM:", err);
     statusEl.textContent = "❌ Initialization error";
@@ -126,12 +126,12 @@ If not explicitly set, the default value is:
 > This means your app **must contain a static file or route** at `/auth/redirect`.
 > In Vite, this typically means adding a file like `public/auth/redirect.html`.
 
-You can override this behavior by passing a `redirecturi` to `initIAM()`:
+You can override this behavior by passing a `redirectUri` to `initIAM()`:
 
 ```js
 await IAMService.initIAM({
   ...config,
-  redirecturi: "https://yourdomain.com/auth/callback"
+  redirectUri: "https://yourdomain.com/auth/callback"
 });
 ```
 
@@ -157,7 +157,7 @@ await IAMService.initIAM({
 
 **Description:** This file ensures that the default redirect URI resolves without a 404.
 
-If you override the `redirecturi` in `initIAM`, make sure to **update the corresponding redirect path** and that it exists in `public/` or your router.
+If you override the `redirectUri` in `initIAM`, make sure to **update the corresponding redirect path** and that it exists in `public/` or your router.
 
 ---
 
@@ -300,6 +300,6 @@ await IAMService.doDecrypt([{ encrypted: "...", tags: ["tag1"] }]);
 * **Error Handling**: Listen to `initError` and `authError` to gracefully recover.
 * **Silent Refresh**: Built-in; you only need to call `updateIAMToken` if you want manual control.
 * **Event Cleanup**: Use `.off(...)` in SPAs before component unmount.
-* **Redirect URI**: If using a custom `redirecturi`, ensure the route or file exists.
+* **Redirect URI**: If using a custom `redirectUri`, ensure the route or file exists.
 
 ---
