@@ -34,7 +34,8 @@
     "oidc",
     "oauth2",
     "authorization",
-    "react"
+    "react",
+    "nextjs"
   ],
   "peerDependencies": {
     "next": ">=13",

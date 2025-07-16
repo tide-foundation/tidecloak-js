@@ -1,23 +1,25 @@
 # TideCloak React SDK
 
-Secure your React app with TideCloak: authentication, session management, and data encryption—all in minutes.
+Secure your React app with TideCloak: authentication, session management, data encryption, and role-based access.
 
 ---
 
 ## 1. Prerequisites
 
-Before you begin, ensure you have:
+Before you begin, ensure you have the following:
 
-- React 18 or later
-- Node.js >=18.17.0 or later
-- A running TideCloak server.
-- A registered client in your realm.
+* **React 18** or later
+* **Node.js ≥18.17.0**
+* A [running](https://github.com/tide-foundation/tidecloak-gettingstarted) TideCloak server you have admin control over
+* IGA enabled realm
+* A registered client in your realm with default user contexts approved and committed
+* A valid Keycloak adapter JSON file (e.g., `tidecloakAdapter.json`)
 
 ---
 
-## 2. Install the SDK
+## 2. Install `@tidecloak/react`
 
-Add the React package to your project:
+Add the TideCloak React SDK to your project:
 
 ```bash
 npm install @tidecloak/react
@@ -27,41 +29,121 @@ yarn add @tidecloak/react
 
 This bundle provides:
 
-- `<TideCloakProvider>` — application-level context.
-- `useTideCloak()` hook — access tokens and auth actions.
-- `<Authenticated>` / `<Unauthenticated>` — UI guards.
+* `<TideCloakProvider>` — application-level context
+* `useTideCloak()` hook — access tokens and auth actions
+* `<Authenticated>` / `<Unauthenticated>` — UI guards
+* `doEncrypt()` / `doDecrypt()` — tag-based encryption/decryption
 
 ---
 
 ## 3. Initialize the Provider
 
-Wrap your root component in `<TideCloakProvider>` to load adapter settings and bootstrap auth:
+Wrap your app’s root with `<TideCloakProvider>` to enable authentication context throughout the component tree.
+
+If you're using React Router, your setup might look like this:
+
+**File:** `src/App.tsx`
 
 ```tsx
 import React from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { TideCloakProvider } from '@tidecloak/react';
 import adapter from '../tidecloakAdapter.json';
+import Home from './pages/Home';
+import RedirectPage from './pages/auth/RedirectPage';
 
 export default function App() {
   return (
     <TideCloakProvider config={adapter}>
-      <YourApp />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/auth/redirect" element={<RedirectPage />} />
+          {/* Add additional routes here */}
+        </Routes>
+      </BrowserRouter>
     </TideCloakProvider>
   );
 }
 ```
 
-**What it does:**
-
-- **Loads** your adapter JSON.
-- **Initializes** internal auth flows and listeners.
-- **Provides** auth state & methods via React Context.
+> ⚠️ If you don't define a route at `/auth/redirect`, and you're using the default `redirecturi`, your app **will break after login/logout**. Either create this route or override `redirecturi` in the provider config.
+>
+> If you override the `redirecturi`, you **must** ensure that the custom path exists in your router. Otherwise, the app will redirect to a non-existent route and fail.
 
 ---
 
-## 4. Using the `useTideCloak` Hook
+## 4. Redirect URI Handling
 
-Use this hook anywhere to manage auth:
+TideCloak supports an optional `redirecturi` config field. This defines where the user is sent after login/logout.
+
+If omitted, it defaults to:
+
+```ts
+`${window.location.origin}/auth/redirect`
+```
+
+> Example: If your app runs at `http://localhost:3000`, then by default the redirect path is `http://localhost:3000/auth/redirect`.
+
+You must **create this route** if you use the default, or explicitly override it:
+
+```tsx
+<TideCloakProvider config={{ ...adapter, redirecturi: 'https://yourapp.com/auth/callback' }}>
+  <YourApp />
+</TideCloakProvider>
+```
+
+> ⚠️ If you override the `redirecturi`, make sure the specified path exists in your app. Missing this route will cause failed redirects.
+
+### Example: Redirect Handling Page
+
+**File:** `src/pages/auth/RedirectPage.tsx`
+
+```tsx
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useTideCloak } from '@tidecloak/react';
+
+export default function RedirectPage() {
+  const { authenticated, isInitializing, logout } = useTideCloak();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("auth") === "failed") {
+      sessionStorage.setItem("tokenExpired", "true");
+      logout();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isInitializing) {
+      navigate(authenticated ? '/home' : '/');
+    }
+  }, [authenticated, isInitializing, navigate]);
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: '1rem',
+      color: '#555',
+    }}>
+      <p>Waiting for authentication...</p>
+    </div>
+  );
+}
+```
+
+**Description:** This page helps finalize the login or logout flow, and also reacts to token expiration events that may have triggered a redirect. It's required if you're using the default `redirecturi`. If you override the redirect URI, the file is optional—but the **route** for the redirect **must** still exist in your app.
+
+---
+
+## 5. Using the `useTideCloak` Hook
+
+Use this hook anywhere in your component tree to manage authentication:
 
 ```tsx
 import { useTideCloak } from '@tidecloak/react';
@@ -78,6 +160,8 @@ function Header() {
     getValueFromIdToken,
     hasRealmRole,
     hasClientRole,
+    doEncrypt,
+    doDecrypt,
   } = useTideCloak();
 
   return (
@@ -98,26 +182,24 @@ function Header() {
 }
 ```
 
-**Key methods & props:**
-
-| Name                               | Type                                         | Description                                                             |
-| ---------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------- |
-| `authenticated`                    | `boolean`                                    | Whether the user is logged in.                                          |
-| `login()` / `logout()`             | `() => void`                                 | Trigger the login or logout flows.                                      |
-| `token`, `tokenExp`                | `string`, `number`                           | Access token and its expiration timestamp.                              |
-| Automatic token refresh            | built-in                                     | Tokens refresh silently on expiration—no manual setup needed.           |
-| `refreshToken()`                   | `() => Promise<boolean>`                     | Force a silent token renewal.                                           |
-| `getValueFromToken(key)`           | `(key: string) => any`                       | Read a custom claim from the access token.                              |
-| `getValueFromIdToken(key)`         | `(key: string) => any`                       | Read a custom claim from the ID token.                                  |
-| `hasRealmRole(role)`               | `(role: string) => boolean`                  | Check a realm-level role.                                               |
-| `hasClientRole(role, client?)`     | `(role: string, client?: string) => boolean` | Check a client-level role; defaults to your app’s client ID if omitted. |
-| `doEncrypt(data)``doDecrypt(data)` | `(data: any) => Promise<any>`                | Encrypt or decrypt payloads via TideCloak’s built-in service.           |
+| Name                                  | Type                                         | Description                                                             |
+| ------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------- |
+| `authenticated`                       | `boolean`                                    | Whether the user is logged in.                                          |
+| `login()` / `logout()`                | `() => void`                                 | Trigger the login or logout flows.                                      |
+| `token`, `tokenExp`                   | `string`, `number`                           | Access token and its expiration timestamp.                              |
+| Automatic token refresh               | built-in                                     | Tokens refresh silently on expiration—no manual setup needed.           |
+| `refreshToken()`                      | `() => Promise<boolean>`                     | Force a silent token renewal.                                           |
+| `getValueFromToken(key)`              | `(key: string) => any`                       | Read a custom claim from the access token.                              |
+| `getValueFromIdToken(key)`            | `(key: string) => any`                       | Read a custom claim from the ID token.                                  |
+| `hasRealmRole(role)`                  | `(role: string) => boolean`                  | Check a realm-level role.                                               |
+| `hasClientRole(role, client?)`        | `(role: string, client?: string) => boolean` | Check a client-level role; defaults to your app’s client ID if omitted. |
+| `doEncrypt(data)` / `doDecrypt(data)` | `(data: any) => Promise<any>`                | Encrypt or decrypt payloads via TideCloak’s built-in service.           |
 
 ---
 
-## 5. Guard Components
+## 6. Guard Components
 
-Use out-of-the-box components to show or hide content:
+Use these components to show or hide content based on authentication state:
 
 ```tsx
 import { Authenticated, Unauthenticated } from '@tidecloak/react';
@@ -138,93 +220,38 @@ function Dashboard() {
 }
 ```
 
-- `<Authenticated>`: renders children only when `authenticated === true`.
-- `<Unauthenticated>`: renders children only when `authenticated === false`.
+* `<Authenticated>`: renders children only when `authenticated === true`
+* `<Unauthenticated>`: renders children only when `authenticated === false`
 
 ---
 
-## 6. Encrypting & Decrypting Data
+## 7. Encrypting & Decrypting Data
 
-TideCloak lets you protect sensitive fields with **tag-based** encryption. You pass in an array of `{ data, tags }` objects and receive an array of encrypted strings (or vice versa for decryption).
-
-### Syntax Overview
+Protect sensitive payloads using tag-based encryption/decryption:
 
 ```ts
-// Encrypt one or more payloads:
-const encryptedArray: string[] = await doEncrypt([
-  { data: /* any JSON-serializable value */, tags: ['tag1', 'tag2'] },
-  // …
+// Encrypt:
+const encryptedArray = await doEncrypt([
+  { data: { email: 'user@example.com' }, tags: ['email'] },
 ]);
 
-// Decrypt one or more encrypted blobs:
-const decryptedArray: any[] = await doDecrypt([
-  { encrypted: /* string from encrypt() */, tags: ['tag1', 'tag2'] },
-  // …
+// Decrypt:
+const decryptedArray = await doDecrypt([
+  { encrypted: encryptedArray[0], tags: ['email'] },
 ]);
 ```
 
-> **Order guarantee**: the returned array matches the input order.
+> **Permissions**: Encryption requires `tide_<tag>.selfencrypt`; decryption requires `tide_<tag>.selfdecrypt`.
+> **Order guarantee**: Output preserves input order.
 
 ---
 
-### Encryption Example
+## 8. Advanced & Best Practices
 
-```tsx
-import { useTideCloak } from '@tidecloak/react';
-
-async function encryptExamples() {
-  const { doEncrypt } = useTideCloak();
-
-  // Simple single-item encryption:
-  const [encryptedDob] = await doEncrypt([
-    { data: '2005-03-04', tags: ['dob'] }
-  ]);
-
-  // Multi-field encryption:
-  const encryptedFields = await doEncrypt([
-    { data: '10 Smith Street', tags: ['street'] },
-    { data: 'Southport', tags: ['suburb'] },
-    { data: { full: '20 James Street – Burleigh Heads' }, tags: ['street', 'suburb'] }
-  ]);
-}
-```
-
-> **Permissions**: Users need roles matching **every** tag on a payload. A payload tagged `['street','suburb']` requires both the `tide_street.selfencrypt` and `tide_suburb.selfencrypt` roles.
-
----
-
-### Decryption Example
-
-```tsx
-import { useTideCloak } from '@tidecloak/react';
-
-async function decryptExamples(encryptedFields: string[]) {
-  const { doDecrypt } = useTideCloak();
-
-  // Single-item decryption:
-  const [decryptedDob] = await doDecrypt([
-    { encrypted: encryptedFields[0], tags: ['dob'] }
-  ]);
-
-  // Multi-field decryption:
-  const decryptedFields = await doDecrypt([
-    { encrypted: encryptedFields[0], tags: ['street'] },
-    { encrypted: encryptedFields[1], tags: ['suburb'] },
-    { encrypted: encryptedFields[2], tags: ['street','suburb'] }
-  ]);
-}
-```
-
-> **Permissions**: Like encryption, decryption requires the same tag-based roles (`tide_street.selfdecrypt`, `tide_suburb.selfdecrypt`, etc.).
-
----
-
-## 7. Advanced & Best Practices
-
-- **Auto-Refresh**: built into the provider—no manual token timers needed.
-- **Error Handling**: use the `initError` value from `useTideCloak` to catch startup issues.
-- **Custom Claims**: store app-specific data in JWT claims and access via `getValueFromToken()` / `getValueFromIdToken()`.
-- **Role-Based Access**: combine `hasRealmRole` and `hasClientRole` with guard components for fine-grained control.
-- **Lazy Initialization**: wrap `<TideCloakProvider>` around only authenticated sections in large apps.
+* **Auto-Refresh**: built-in, no manual timer setup required
+* **Error Handling**: check `initError` from `useTideCloak`
+* **Custom Claims**: access token fields with `getValueFromToken()` / `getValueFromIdToken()`
+* **Role-Based UI**: combine `hasRealmRole`, `hasClientRole`, and guard components
+* **Lazy Initialization**: optionally wrap `<TideCloakProvider>` around only protected routes
 
 ---

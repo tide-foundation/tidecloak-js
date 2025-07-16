@@ -1,19 +1,11 @@
 import React, { ReactNode, FC } from 'react';
 import {
-  TideCloakContextProvider,
   useTideCloakContext,
 } from './contexts/TideCloakContextProvider';
 
-/**
- * Wrap your app and bootstrap TideCloak with the given config object.
- * tidecloak-js expects a plain JSON config, so we type config as Record<string, any>.
- */
-export const TideCloakProvider: FC<{ config: Record<string, any>; children: ReactNode }> =
-  ({ config, children }) => (
-    <TideCloakContextProvider config={config}>
-      {children}
-    </TideCloakContextProvider>
-  );
+export { TideCloakProvider } from './contexts/TideCloakProvider';
+export  { TideCloakContextProvider } from './contexts/TideCloakContextProvider';
+
 
 /**
  * Hook to access authentication state and helpers.

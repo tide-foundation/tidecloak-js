@@ -8,46 +8,42 @@ Lightweight browser SDK for integrating TideCloak SSO into any JavaScript applic
 
 Before you begin, ensure you have:
 
-* Bundler like [Vite](https://vite.dev/) or [Webpack](https://webpack.js.org/)
-* A running TideCloak server (Keycloak-compatible)
-* A registered client in your realm
-* Browser environment (SDK uses `window` and `document.cookie`)
+* A bundler like [Vite](https://vite.dev/) or [Webpack](https://webpack.js.org/)
+* A [running](https://github.com/tide-foundation/tidecloak-gettingstarted) TideCloak server
+* A registered client in your realm with default user contexts committed
+* A valid Keycloak adapter JSON file (e.g., `tidecloak.json`)
+* A browser environment (SDK uses `window`, `document.cookie`, etc.)
 
 ---
 
-## 2. Getting Started
+## 2. Project Setup
 
-To start a new Vite-powered vanilla JavaScript project with the TideCloak SDK:
+Start a new project with Vite + TideCloak:
 
-1. **Initialize** a Vite app:
+```bash
+npm create vite@latest my-app -- --template vanilla
+cd my-app
+npm install
+npm run dev
+```
 
-   ```bash
-   npm create vite@latest my-app -- --template vanilla
-   cd my-app
-   ```
-2. **Install** dependencies:
-
-   ```bash
-   npm install
-   ```
-3. **Run** the development server:
-
-   ```bash
-   npm run dev
-   ```
-
-Your folder structure will look like:
+Folder structure:
 
 ```
 my-app/
 ├─ index.html
 ├─ main.js
+├─ tidecloak.json
+├─ public/
+│  └─ auth/
+│     └─ redirect.html
 ├─ package.json
 └─ vite.config.js
 ```
+
 ---
 
-## 3. Install the SDK
+## 3. Install `@tidecloak/js`
 
 ```bash
 npm install @tidecloak/js
@@ -55,59 +51,20 @@ npm install @tidecloak/js
 yarn add @tidecloak/js
 ```
 
-This package exports two main items:
+This package exports:
 
-* **`IAMService`** (singleton) — high-level wrapper around the TideCloak client
-* **`TideCloak`** — the underlying JS adapter (Keycloak-style API)
-
-> **Note**: For detailed documentation of the underlying adapter implementation, see [`packages/tidecloak-js/lib/README.md`](packages/tidecloak-js/lib/README.md).
+* `IAMService` — high-level wrapper and lifecycle manager
+* `TideCloak` — lower-level Keycloak-style adapter instance
 
 ---
 
-## 4. Adapter Configuration
+## 4. Initialize the SDK
 
-Download your adapter JSON directly from the Keycloak (TideCloak) admin console:
+In your main entry file, initialize IAM and register lifecycle listeners. You may also choose to handle lifecycle events such as session expiration here:
 
-1. Navigate to **Clients → `<your-client>` → Actions → Download adapter** (format: `keycloak-oidc-keycloak-json`).
-2. Save the downloaded file in your project root as `tidecloak.json`.
-
-This JSON includes standard Keycloak fields (`auth-server-url`, `realm`, `resource`, etc.) along with any TideCloak extensions you configured (for example, `vendorId`, `homeOrkUrl`, per-origin secrets).
-
-In your code, simply import it:
+**File:** `main.js`
 
 ```js
-import { IAMService } from "@tidecloak/js";
-import config from "./tidecloak.json";
-
-// Register lifecycle event listeners
-IAMService
-  .on("ready", authenticated => showPage(authenticated))
-  .on("authError", err => statusEl.textContent = `❌ Auth error: ${err.message}`)
-  .on("logout", () => showPage(false));
-
-// Initialize IAM (silent SSO check)
-(async () => {
-  try {
-    await IAMService.initIAM(config);
-  } catch (err) {
-    console.error("Failed to initialize IAM:", err);
-  }
-})();
-```
-
-## 5. Simple Usage Example
-
-Use `index.html` and `main.js` in your Vite project root.
-
-```html
-<!-- index.html -->
-<button id="login-btn">Log In</button>
-<button id="logout-btn" style="display:none">Log Out</button>
-<div id="status">Initializing...</div>
-```
-
-```js
-// main.js
 import { IAMService } from "@tidecloak/js";
 import config from "./tidecloak.json";
 
@@ -115,42 +72,95 @@ const loginBtn = document.getElementById("login-btn");
 const logoutBtn = document.getElementById("logout-btn");
 const statusEl = document.getElementById("status");
 
-// Click handlers
 loginBtn.onclick = () => IAMService.doLogin();
 logoutBtn.onclick = () => IAMService.doLogout();
 
-// UI update helper
 function updateUI(authenticated) {
-  if (authenticated) {
-    loginBtn.style.display = "none";
-    logoutBtn.style.display = "inline-block";
-    statusEl.textContent = "✅ Authenticated";
-  } else {
-    loginBtn.style.display = "inline-block";
-    logoutBtn.style.display = "none";
-    statusEl.textContent = "🔒 Please log in";
-  }
+  loginBtn.style.display = authenticated ? "none" : "inline-block";
+  logoutBtn.style.display = authenticated ? "inline-block" : "none";
+  statusEl.textContent = authenticated ? "✅ Authenticated" : "🔒 Please log in";
 }
 
-// Register listeners before init
 IAMService
-  .on("ready", authenticated => updateUI(authenticated))
+  .on("ready", updateUI)
   .on("authError", err => statusEl.textContent = `❌ Auth error: ${err.message}`)
-  .on("logout", () => updateUI(false));
+  .on("logout", () => {
+    console.log("User logged out");
+    updateUI(false);
+  })
+  .on("tokenExpired", () => {
+    alert("Session expired, please log in again");
+    updateUI(false);
+  });
 
-// Initialize IAM and update UI based on result
 (async () => {
   try {
-    const authenticated = await IAMService.initIAM(config);
-    updateUI(authenticated);
+    await IAMService.initIAM(config); // You can add redirecturi here if customizing
   } catch (err) {
     console.error("Failed to initialize IAM:", err);
-    statusEl.textContent = `❌ Initialization error`;
+    statusEl.textContent = "❌ Initialization error";
   }
 })();
 ```
 
+**File:** `index.html`
+
+```html
+<button id="login-btn">Log In</button>
+<button id="logout-btn" style="display:none">Log Out</button>
+<div id="status">Initializing...</div>
+```
+
 ---
+
+## 5. Redirect URI Handling
+
+TideCloak will redirect users after login/logout to a URI defined in your adapter config.
+
+If not explicitly set, the default value is:
+
+```js
+`${window.location.origin}/auth/redirect`
+```
+
+> This means your app **must contain a static file or route** at `/auth/redirect`.
+> In Vite, this typically means adding a file like `public/auth/redirect.html`.
+
+You can override this behavior by passing a `redirecturi` to `initIAM()`:
+
+```js
+await IAMService.initIAM({
+  ...config,
+  redirecturi: "https://yourdomain.com/auth/callback"
+});
+```
+
+> ⚠️ Regardless of the value used, the **actual route or file must exist** in your deployed project. If the redirect target doesn’t exist, users will land on a 404 page after login/logout.
+
+**File:** `public/auth/redirect.html`
+
+```html
+<!-- This file ensures the /auth/redirect path exists -->
+<!DOCTYPE html>
+<html>
+  <head><title>Redirecting...</title></head>
+  <body>
+    <p>Redirecting, please wait...</p>
+    <script>
+      // Optionally show loading UI or transition
+      // Auth state will be handled once initIAM runs again in your main.js
+      window.location.href = "/"; // or redirect elsewhere
+    </script>
+  </body>
+</html>
+```
+
+**Description:** This file ensures that the default redirect URI resolves without a 404.
+
+If you override the `redirecturi` in `initIAM`, make sure to **update the corresponding redirect path** and that it exists in `public/` or your router.
+
+---
+
 ## 6. Encrypting & Decrypting Data
 
 TideCloak lets you protect sensitive fields with **tag-based** encryption. You pass in an array of `{ data, tags }` objects and receive an array of encrypted strings (or vice versa for decryption).
@@ -161,13 +171,11 @@ TideCloak lets you protect sensitive fields with **tag-based** encryption. You p
 // Encrypt one or more payloads:
 const encryptedArray = await doEncrypt([
   { data: /* any JSON-serializable value */, tags: ['tag1', 'tag2'] },
-  // …
 ]);
 
 // Decrypt one or more encrypted blobs:
 const decryptedArray = await doDecrypt([
   { encrypted: /* string from encrypt() */, tags: ['tag1', 'tag2'] },
-  // …
 ]);
 ```
 
@@ -177,11 +185,10 @@ const decryptedArray = await doDecrypt([
 
 ### Encryption Example
 
-```javascript
+```js
 import { IAMService } from "@tidecloak/js";
 
 async function encryptExamples() {
-
   // Simple single-item encryption:
   const [encryptedDob] = await IAMService.doEncrypt([
     { data: '2005-03-04', tags: ['dob'] }
@@ -202,10 +209,10 @@ async function encryptExamples() {
 
 ### Decryption Example
 
-```javascript
+```js
 import { IAMService } from "@tidecloak/js";
 
-async function decryptExamples(encryptedFields: string[]) {
+async function decryptExamples(encryptedFields) {
   // Single-item decryption:
   const [decryptedDob] = await IAMService.doDecrypt([
     { encrypted: encryptedFields[0], tags: ['dob'] }
@@ -224,26 +231,26 @@ async function decryptExamples(encryptedFields: string[]) {
 
 ---
 
-## 7. Events & Lifecycle Events & Lifecycle
+## 7. Events & Lifecycle
 
-Register handlers via `.on(event, handler)` or remove with `.off(event, handler)`.
-
-| Event                | Emitted When…                                               |          |
-| -------------------- | ----------------------------------------------------------- | -------- |
-| `ready`              | Initial silent-SSO check completes (handler receives \`true | false\`) |
-| `initError`          | Config load or init failure                                 |          |
-| `authSuccess`        | Interactive login succeeded                                 |          |
-| `authError`          | Interactive login failed                                    |          |
-| `authRefreshSuccess` | Silent token refresh succeeded                              |          |
-| `authRefreshError`   | Silent token refresh failed                                 |          |
-| `logout`             | User logged out                                             |          |
-| `tokenExpired`       | Token expired before refresh                                |          |
+Register handlers via `.on(event, handler)` or remove with `.off(event, handler)`:
 
 ```js
 IAMService
   .on("logout", () => console.log("User logged out"))
   .on("tokenExpired", () => alert("Session expired, please log in again"));
 ```
+
+| Event                | Emitted When…                                                           |
+| -------------------- | ----------------------------------------------------------------------- |
+| `ready`              | Initial silent-SSO check completes (handler receives `true` or `false`) |
+| `initError`          | Config load or init failure                                             |
+| `authSuccess`        | Interactive login succeeded                                             |
+| `authError`          | Interactive login failed                                                |
+| `authRefreshSuccess` | Silent token refresh succeeded                                          |
+| `authRefreshError`   | Silent token refresh failed                                             |
+| `logout`             | User logged out                                                         |
+| `tokenExpired`       | Token expired before refresh                                            |
 
 ---
 
@@ -283,6 +290,7 @@ IAMService.doLogout();               // clears cookie & redirects
 await IAMService.doEncrypt([{ data: { secret: 123 }, tags: ["tag1"] }]);
 await IAMService.doDecrypt([{ encrypted: "...", tags: ["tag1"] }]);
 ```
+
 ---
 
 ## 9. Tips & Best Practices
@@ -292,3 +300,6 @@ await IAMService.doDecrypt([{ encrypted: "...", tags: ["tag1"] }]);
 * **Error Handling**: Listen to `initError` and `authError` to gracefully recover.
 * **Silent Refresh**: Built-in; you only need to call `updateIAMToken` if you want manual control.
 * **Event Cleanup**: Use `.off(...)` in SPAs before component unmount.
+* **Redirect URI**: If using a custom `redirecturi`, ensure the route or file exists.
+
+---

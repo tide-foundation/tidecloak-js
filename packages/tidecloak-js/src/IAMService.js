@@ -266,7 +266,7 @@ class IAMService {
   /** Start login redirect */
   doLogin() {
     this.getTideCloakClient().login({
-      redirectUri: `${window.location.origin}/auth/redirect`
+      redirectUri: this._config["redirectUri"] ?? `${window.location.origin}/auth/redirect`
     });
   }
 
@@ -284,7 +284,7 @@ class IAMService {
   doLogout() {
     document.cookie = 'kcToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     this.getTideCloakClient().logout({
-      redirectUri: `${window.location.origin}/auth/redirect`
+      redirectUri: this._config["redirectUri"] ?? `${window.location.origin}/auth/redirect`
     });
   }
 
