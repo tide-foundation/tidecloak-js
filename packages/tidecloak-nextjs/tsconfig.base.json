@@ -10,5 +10,6 @@
     "rootDir": "src",
     "moduleResolution": "bundler",
     "outDir": "dist",
+    "jsx": "react-jsx", 
   }
 }

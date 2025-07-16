@@ -11,6 +11,6 @@
     "outDir": "dist/cjs",
     "declarationDir": "dist/types"
   },
-  "files": ["src/index.tsx", "src/server/index.ts"]
+  "files": ["src/index.ts", "src/server/index.ts"]
 
 }
