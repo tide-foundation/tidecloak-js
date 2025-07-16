@@ -1,6 +1,6 @@
 {
   "name": "@tidecloak/nextjs",
-  "version": "0.0.1",
+  "version": "0.9.12",
   "description": "TideCloak nextjs SDK",
   "exports": {
     ".": {
@@ -48,7 +48,7 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@tidecloak/react": "^0.9.11",
+    "@tidecloak/react": "^0.9.12",
     "@tidecloak/verify": "^0.9.12"
   },
   "devDependencies": {
