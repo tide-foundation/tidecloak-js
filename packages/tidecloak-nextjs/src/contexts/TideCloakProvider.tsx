@@ -1,14 +1,10 @@
 'use client'
-import React, { ReactNode, FC } from "react";
-import { TideCloakContextProvider } from "@tidecloak/react";
+import { FC } from "react";
+import { InternalTideCloakProvider, TideCloakProviderProps } from "./InternalTideCloakProvider";
 
-interface TideCloakProviderProps {
-  config: Record<string, any>;
-  children: ReactNode;
-}
 
 export const TideCloakProvider: FC<TideCloakProviderProps> = ({ config, children }) => (
-  <TideCloakContextProvider config={config}>
+  <InternalTideCloakProvider config={config}>
     {children}
-  </TideCloakContextProvider>
+  </InternalTideCloakProvider>
 );

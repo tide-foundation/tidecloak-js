@@ -1,6 +1,10 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
-import { Provider } from './provider'
+import {
+  TideCloakProvider
+} from '@tidecloak/nextjs'
+import tcConfig from '../tidecloak.json'
+
 
 export const metadata: Metadata = {
   title: 'My Tidecloak App',
@@ -15,9 +19,9 @@ export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
       <body>
-        <Provider>
+        <TideCloakProvider config={tcConfig}>
           {children}
-        </Provider>
+        </TideCloakProvider>
       </body>
     </html>
   )

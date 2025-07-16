@@ -3,9 +3,7 @@ import {
   useTideCloakContext,
 } from './contexts/TideCloakContextProvider';
 
-export { TideCloakProvider } from './contexts/TideCloakProvider';
 export  { TideCloakContextProvider } from './contexts/TideCloakContextProvider';
-
 
 /**
  * Hook to access authentication state and helpers.

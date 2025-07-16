@@ -1,4 +1,17 @@
-export * from '@tidecloak/react';
-export { TideCloakProvider as ReactTideCloakProvider } from '@tidecloak/react';
+'use client'
+
+import {
+  useTideCloak,
+  Authenticated,
+  Unauthenticated,
+  TideCloakContextProvider
+} from '@tidecloak/react';
+
+export {
+  useTideCloak,
+  Authenticated,
+  Unauthenticated,
+  TideCloakContextProvider
+};
 export { TideCloakProvider } from "./contexts/TideCloakProvider"
  

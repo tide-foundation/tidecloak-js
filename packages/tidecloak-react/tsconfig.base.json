@@ -12,5 +12,5 @@
     "moduleResolution": "bundler",
     "outDir": "dist",
   },
-  "files": ["src/index.tsx"]
+  "include": ["src"]
 }

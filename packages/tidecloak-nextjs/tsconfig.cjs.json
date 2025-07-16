@@ -11,6 +11,5 @@
     "outDir": "dist/cjs",
     "declarationDir": "dist/types"
   },
-  "files": ["src/index.ts", "src/server/index.ts"]
-
+  "include": ["src"]
 }

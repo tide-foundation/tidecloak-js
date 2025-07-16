@@ -6,5 +6,5 @@
     "declaration": false,
     "declarationMap": false
   },
-  "files": ["src/index.ts", "src/server/index.ts"]
+  "include": ["src"]
 }
