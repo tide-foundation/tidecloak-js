@@ -25,4 +25,4 @@ Welcome to the TideCloak SDK. This repository contains multiple packages for int
 
 **@tidecloak/create-nextjs**
   Scaffold a TideCloak-ready Next.js app with optional IAM setup and working auth - start building instantly with a live example
-  [README](packages/tidecloak-create/nextjs/README.md)
+  [README](packages/tidecloak-create-nextjs/README.md)
