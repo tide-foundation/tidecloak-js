@@ -286,8 +286,10 @@ const decryptedArray = await doDecrypt([
 > const encryptedArray = await doEncrypt([{ data: dataToEncrypt, tags: ['note'] }]);
 > ```
 
-> **Permissions:** Encryption requires `tide_<tag>.selfencrypt`; decryption requires `tide_<tag>.selfdecrypt`.
+> **Permissions:** Encryption requires `_tide_<tag>.selfencrypt`; decryption requires `_tide_<tag>.selfdecrypt`.
+>
 > **Order guarantee:** Output preserves input order.
+>
 
 ---
 

@@ -56,6 +56,16 @@ This package exports:
 * `IAMService` — high-level wrapper and lifecycle manager
 * `TideCloak` — lower-level Keycloak-style adapter instance
 
+> **Note:** Installing this package automatically adds a `silent-check-sso.html` file to your `public` directory. This file is required for silent SSO checks; if it doesn’t exist, create it manually at `public/silent-check-sso.html` with the following content, otherwise the app will break:
+>
+> ```html
+> <html>
+>   <body>
+>     <script>parent.postMessage(location.href, location.origin)</script>
+>   </body>
+> </html>
+> ```
+
 ---
 
 ## 4. Initialize the SDK
@@ -179,7 +189,44 @@ const decryptedArray = await doDecrypt([
 ]);
 ```
 
-> **Order guarantee**: the returned array matches the input order.
+> **Important:** The `data` property **must** be a string when encrypting. Passing a non-string (e.g., an object) will cause an error.
+>
+> **Valid example:**
+>
+> ```ts
+> // Before testing below, ensure you've set up the necessary roles:
+> const multi_encrypted_addresses = await doEncrypt([
+>   {
+>     data: "10 Smith Street",
+>     tags: ["street"]
+>   },
+>   {
+>     data: "Southport",
+>     tags: ["suburb"]
+>   },
+>   {
+>     data: "20 James Street - Burleigh Heads",
+>     tags: ["street", "suburb"]
+>   }
+> ]);
+> ```
+>
+> **Invalid (will fail):**
+>
+> ```ts
+> // Prepare data for encryption
+> const dataToEncrypt = {
+>   title: noteData.title,
+>   content: noteData.content
+> };
+>
+> // Encrypt the note data using TideCloak (this will error)
+> const encryptedArray = await doEncrypt([{ data: dataToEncrypt, tags: ['note'] }]);
+> ```
+
+* **Permissions:** Encryption requires `_tide_<tag>.selfencrypt`; decryption requires `_tide_<tag>.selfdecrypt`.
+* **Order guarantee:** Output preserves input order.
+
 
 ---
 
@@ -198,12 +245,12 @@ async function encryptExamples() {
   const encryptedFields = await IAMService.doEncrypt([
     { data: '10 Smith Street', tags: ['street'] },
     { data: 'Southport', tags: ['suburb'] },
-    { data: { full: '20 James Street – Burleigh Heads' }, tags: ['street', 'suburb'] }
+    { data: '20 James Street – Burleigh Heads', tags: ['street', 'suburb'] }
   ]);
 }
 ```
 
-> **Permissions**: Users need roles matching **every** tag on a payload. A payload tagged `['street','suburb']` requires both the `tide_street.selfencrypt` and `tide_suburb.selfencrypt` roles.
+> **Permissions**: Users need roles matching **every** tag on a payload. A payload tagged `['street','suburb']` requires both the `_tide_street.selfencrypt` and `_tide_suburb.selfencrypt` roles.
 
 ---
 
@@ -227,7 +274,7 @@ async function decryptExamples(encryptedFields) {
 }
 ```
 
-> **Permissions**: Like encryption, decryption requires the same tag-based roles (`tide_street.selfdecrypt`, `tide_suburb.selfdecrypt`, etc.).
+> **Permissions**: Like encryption, decryption requires the same tag-based roles (`_tide_street.selfdecrypt`, `_tide_suburb.selfdecrypt`, etc.).
 
 ---
 
