@@ -1,5 +1,12 @@
 # TideCloak React SDK
 
+> ## Quick Start Guide
+>
+> If you're new to TideCloak, the fastest way to get started with React + Vite is to follow our official Getting Started guide:
+> [https://github.com/tide-foundation/tidecloak-gettingstarted](https://github.com/tide-foundation/tidecloak-gettingstarted)
+>
+> ---
+
 Secure your React app with TideCloak: authentication, session management, data encryption, and role-based access.
 
 ---
@@ -29,12 +36,12 @@ yarn add @tidecloak/react
 
 This bundle provides:
 
-* `<TideCloakContextProvider>` — application-level context
-* `useTideCloak()` hook — access tokens and auth actions
-* `<Authenticated>` / `<Unauthenticated>` — UI guards
-* `doEncrypt()` / `doDecrypt()` — tag-based encryption/decryption
+* `<TideCloakContextProvider>` - application-level context
+* `useTideCloak()` hook - access tokens and auth actions
+* `<Authenticated>` / `<Unauthenticated>` - UI guards
+* `doEncrypt()` / `doDecrypt()` - tag-based encryption/decryption
 
-> **Note:** Installing this package automatically adds a `silent-check-sso.html` file to your `public` directory. This file is required for silent SSO checks; if it doesn’t exist, create it manually at `public/silent-check-sso.html` with the following content, otherwise the app will break:
+> **Note:** Installing this package automatically adds a `silent-check-sso.html` file to your `public` directory. This file is required for silent SSO checks; if it doesn't exist, create it manually at `public/silent-check-sso.html` with the following content, otherwise the app will break:
 >
 > ```html
 > <html>
@@ -48,7 +55,7 @@ This bundle provides:
 
 ## 3. Initialize the Provider
 
-Wrap your app’s root with `<TideCloakContextProvider>` to enable authentication context throughout the component tree.
+Wrap your app's root with `<TideCloakContextProvider>` to enable authentication context throughout the component tree.
 
 If you're using React Router, your setup might look like this:
 
@@ -147,7 +154,7 @@ export default function RedirectPage() {
 }
 ```
 
-**Description:** This page helps finalize the login or logout flow, and also reacts to token expiration events that may have triggered a redirect. It's required if you're using the default `redirectUri`. If you override the redirect URI, the file is optional—but the **route** for the redirect **must** still exist in your app.
+**Description:** This page helps finalize the login or logout flow, and also reacts to token expiration events that may have triggered a redirect. It's required if you're using the default `redirectUri`. If you override the redirect URI, the file is optional-but the **route** for the redirect **must** still exist in your app.
 
 ---
 
@@ -197,13 +204,13 @@ function Header() {
 | `authenticated`                       | `boolean`                                    | Whether the user is logged in.                                          |
 | `login()` / `logout()`                | `() => void`                                 | Trigger the login or logout flows.                                      |
 | `token`, `tokenExp`                   | `string`, `number`                           | Access token and its expiration timestamp.                              |
-| Automatic token refresh               | built-in                                     | Tokens refresh silently on expiration—no manual setup needed.           |
+| Automatic token refresh               | built-in                                     | Tokens refresh silently on expiration-no manual setup needed.           |
 | `refreshToken()`                      | `() => Promise<boolean>`                     | Force a silent token renewal.                                           |
 | `getValueFromToken(key)`              | `(key: string) => any`                       | Read a custom claim from the access token.                              |
 | `getValueFromIdToken(key)`            | `(key: string) => any`                       | Read a custom claim from the ID token.                                  |
 | `hasRealmRole(role)`                  | `(role: string) => boolean`                  | Check a realm-level role.                                               |
-| `hasClientRole(role, client?)`        | `(role: string, client?: string) => boolean` | Check a client-level role; defaults to your app’s client ID if omitted. |
-| `doEncrypt(data)` / `doDecrypt(data)` | `(data: any) => Promise<any>`                | Encrypt or decrypt payloads via TideCloak’s built-in service.           |
+| `hasClientRole(role, client?)`        | `(role: string, client?: string) => boolean` | Check a client-level role; defaults to your app's client ID if omitted. |
+| `doEncrypt(data)` / `doDecrypt(data)` | `(data: any) => Promise<any>`                | Encrypt or decrypt payloads via TideCloak's built-in service.           |
 
 ---
 
