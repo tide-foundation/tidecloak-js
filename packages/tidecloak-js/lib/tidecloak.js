@@ -400,7 +400,7 @@ function TideCloak (config) {
                 }
             }
             if (!Array.isArray(e.tags)) throw 'tags must be provided as a string array in object to encrypt';
-            if (typeof e.data !== "string") throw 'data must be provded as string in object to encrypt';
+            if (typeof e.data !== "string" && !(e.data instanceof Uint8Array)) throw 'data must be provded as string or Uint8Array in object to encrypt';
 
             // Check that the user has the roles required to encrypt the datas
             for (const tag of e.tags) {
@@ -409,8 +409,9 @@ function TideCloak (config) {
                 if (!tagAccess) throw `'User has not been given any access to '${tag}'`;
             }
             return {
-                data: StringToUint8Array(e.data),
-                tags: e.tags
+                data: typeof e.data === "string" ? StringToUint8Array(e.data) : e.data, // convert data to byte array or leave as is if its already a byte array
+                tags: e.tags,
+                isRaw: typeof e.data === "string" ? false : true // indicate whether this piece of data was encrypted raw or not
             }
         });
 
@@ -418,7 +419,7 @@ function TideCloak (config) {
 
         // Now lets actually encrypt
         // Construct Tide serialized data payloads
-        return (await kc.requestEnclave.encrypt(dataToSend)).map(e => bytesToBase64(e));
+        return (await kc.requestEnclave.encrypt(dataToSend)).map((e, i) => dataToSend[i].isRaw ? e : bytesToBase64(e)); // return a byte array cipher if encrypted as byte array, or a string cipher if encrypted as a string
     }
 
     function StringToUint8Array(string) {
@@ -487,7 +488,7 @@ function TideCloak (config) {
                 }
             }
             if (!Array.isArray(e.tags)) throw 'tags must be provided as a string array in object to decrypt';
-            if (typeof e.encrypted !== "string") throw 'data must be provded as string in object to decrypt';
+            if (typeof e.encrypted !== "string" && !(e.encrypted instanceof Uint8Array)) throw 'data must be provded as string or Uint8Array in object to decrypt';
 
             // Check that the user has the roles required to encrypt the datas
             for (const tag of e.tags) {
@@ -496,8 +497,9 @@ function TideCloak (config) {
                 if (!tagAccess) throw `'User has not been given any access to '${tag}'`;
             }
             return {
-                encrypted: base64ToBytes(e.encrypted),
-                tags: e.tags
+                encrypted: typeof e.encrypted === "string" ? base64ToBytes(e.encrypted) : e.encrypted,
+                tags: e.tags,
+                isRaw: typeof e.encrypted === "string" ? false : true
             }
         });
 
@@ -505,7 +507,7 @@ function TideCloak (config) {
 
         // Now lets actually decrypt
         // Construct Tide serialized data payloads
-        return (await kc.requestEnclave.decrypt(dataToSend)).map(d => StringFromUint8Array(d));
+        return (await kc.requestEnclave.decrypt(dataToSend)).map((d, i) => dataToSend[i].isRaw ? d : StringFromUint8Array(d));
     }
 
     function generateRandomData(len) {
