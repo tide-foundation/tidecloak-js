@@ -1,16 +1,9 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Determine paths
-# ─────────────────────────────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Load overrides from .env in the project root
-if [ -f "${PROJECT_ROOT}/.env.example" ]; then
+if [ -f "./.env.example" ]; then
   # shellcheck disable=SC1090
-  source "${PROJECT_ROOT}/.env.example"
+  source "./.env.example"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -18,8 +11,8 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 TIDECLOAK_LOCAL_URL="${TIDECLOAK_LOCAL_URL:-http://localhost:8080}"
 CLIENT_APP_URL="${CLIENT_APP_URL:-http://localhost:3000}"
-REALM_JSON_PATH="${REALM_JSON_PATH:-${SCRIPT_DIR}/realm.json}"
-ADAPTER_OUTPUT_PATH="${ADAPTER_OUTPUT_PATH:-${PROJECT_ROOT}/tidecloak.json}"
+REALM_JSON_PATH="${REALM_JSON_PATH:-./realm.json}"
+ADAPTER_OUTPUT_PATH="${ADAPTER_OUTPUT_PATH:-./tidecloak.json}"
 NEW_REALM_NAME="${NEW_REALM_NAME:-nextjs-test}"
 REALM_MGMT_CLIENT_ID="realm-management"
 ADMIN_ROLE_NAME="tide-realm-admin"
@@ -53,7 +46,7 @@ get_admin_token() {
 # Step 1: prepare realm JSON
 # ─────────────────────────────────────────────────────────────────────────────
 REALM_NAME="${NEW_REALM_NAME}"
-echo "${REALM_NAME}" > "${PROJECT_ROOT}/.realm_name"
+echo "${REALM_NAME}" > "./.realm_name"
 
 TMP_REALM_JSON="$(mktemp)"
 cp "${REALM_JSON_PATH}" "${TMP_REALM_JSON}"
@@ -91,13 +84,6 @@ response=$(curl -i -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/ve
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "email=email@tide.org" 2>&1)
-
-# parse status code from response
-status=$(printf "%s" "${response}" | awk '/HTTP\/1\.[01]/ { code=$2 } END { print code }')
-if [[ "${status}" != "200" && "${status}" != "201" && "${status}" != "204" ]]; then
-  echo "❌ setUpTideRealm failed with HTTP ${status}" >&2
-  exit 1
-fi
 
 # toggle IGA
 curl -s -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/tide-admin/toggle-iga" \
