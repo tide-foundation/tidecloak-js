@@ -93,13 +93,6 @@ response=$(curl -i -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/ve
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "email=${SUBSCRIPTION_EMAIL}" 2>&1)
 
-# parse status code from response
-status=$(printf "%s" "${response}" | awk '/HTTP\/1\.[01]/ { code=$2 } END { print code }')
-if [[ "${status}" != "200" && "${status}" != "201" && "${status}" != "204" ]]; then
-  echo "❌ setUpTideRealm failed with HTTP ${status}" >&2
-  exit 1
-fi
-
 # toggle IGA
 curl -s -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/tide-admin/toggle-iga" \
      -H "Authorization: Bearer ${TOKEN}" \
