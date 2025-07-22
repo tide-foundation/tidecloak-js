@@ -189,9 +189,11 @@ const decryptedArray = await doDecrypt([
 ]);
 ```
 
-> **Important:** The `data` property **must** be a string when encrypting. Passing a non-string (e.g., an object) will cause an error.
->
-> **Valid example:**
+> **Important:** The `data` property **must** be either a string or a `Uint8Array` (raw bytes).\
+> When you encrypt a string, decryption returns a string.\
+> When you encrypt a `Uint8Array`, decryption returns a `Uint8Array`.
+
+### Valid Example
 >
 > ```ts
 > // Before testing below, ensure you've set up the necessary roles:
@@ -211,7 +213,7 @@ const decryptedArray = await doDecrypt([
 > ]);
 > ```
 >
-> **Invalid (will fail):**
+### Invalid (will fail):
 >
 > ```ts
 > // Prepare data for encryption
