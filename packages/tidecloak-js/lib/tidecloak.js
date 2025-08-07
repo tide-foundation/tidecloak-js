@@ -62,7 +62,7 @@ function TideCloak (config) {
     if (isObject(config)) {
         const requiredProperties = 'oidcProvider' in config
             ? ['clientId']
-            : ['url', 'realm', 'clientId', 'homeOrkUrl', 'vendorId', 'clientOriginAuth'];
+            : ['url', 'realm', 'clientId', 'vendorId', 'clientOriginAuth'];
 
         for (const property of requiredProperties) {
             if (!config[property]) {
