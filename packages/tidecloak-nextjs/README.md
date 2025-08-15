@@ -11,6 +11,8 @@
 
 Secure your Next.js app with TideCloak: authentication, session management, data encryption, and edge-middleware integration.
 
+[![Developer Walkthrough](http://img.youtube.com/vi/xsMwqMYS4ew/0.jpg)](https://www.youtube.com/watch?v=xsMwqMYS4eww "TideCloak your Next.js apps for provable security. Full walkthrough.")
+
 ---
 
 ## 1. Prerequisites
@@ -421,3 +423,4 @@ export async function GET(req: NextRequest) {
 * **Lazy Initialization**: wrap `<TideCloakProvider>` around only protected sections in large apps.
 
 ---
+
