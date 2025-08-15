@@ -1,6 +1,6 @@
 # TideCloak JavaScript SDK (`@tidecloak/js`)
 
-Lightweight browser SDK for integrating TideCloak SSO into any JavaScript application—vanilla, SPA, or framework-agnostic.
+Lightweight browser SDK for integrating TideCloak SSO into any JavaScript application-vanilla, SPA, or framework-agnostic.
 
 ---
 
@@ -53,8 +53,8 @@ yarn add @tidecloak/js
 
 This package exports:
 
-* `IAMService` — high-level wrapper and lifecycle manager
-* `TideCloak` — lower-level Keycloak-style adapter instance
+* `IAMService` - high-level wrapper and lifecycle manager
+* `TideCloak` - lower-level Keycloak-style adapter instance
 
 > **Note:** Installing this package automatically adds a `silent-check-sso.html` file to your `public` directory. This file is required for silent SSO checks; if it doesn’t exist, create it manually at `public/silent-check-sso.html` with the following content, otherwise the app will break:
 >

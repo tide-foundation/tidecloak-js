@@ -20,7 +20,7 @@ Before you begin, ensure you have the following:
 * A [running](https://github.com/tide-foundation/tidecloak-gettingstarted) TideCloak server you have admin control over
 * IGA enabled realm
 * A registered client in your realm with default user contexts approved and committed
-* A valid Keycloak adapter JSON file (e.g., `tidecloakAdapter.json`)
+* A valid Tidecloak adapter JSON file (e.g., `tidecloakAdapter.json`)
 
 ---
 

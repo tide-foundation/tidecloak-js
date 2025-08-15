@@ -4,7 +4,7 @@
 >
 > If you're new to TideCloak, the fastest way to get started is with our official Next.js template:  
 > [`@tidecloak/create-nextjs`](../tidecloak-create-nextjs/README.md)  
-> It scaffolds a working project with authentication, middleware, and optional IAM setup — so you can start building right away.
+> It scaffolds a working project with authentication, middleware, and optional IAM setup - so you can start building right away.
 >
 >---
 
@@ -26,7 +26,7 @@ Before you begin, ensure you have the following:
 * A [running](https://github.com/tide-foundation/tidecloak-gettingstarted) TideCloak server you have admin control over.
 * IGA enabled realm
 * A registered client in your realm with default user contexts approved and committed
-* A valid Keycloak adapter JSON file (e.g., `tidecloakAdapter.json`)
+* A valid Tidecloak adapter JSON file (e.g., `tidecloakAdapter.json`)
 
 > Note: Choose either the App Router or the Pages Router for your project. You only need one routing system active.
 
@@ -42,12 +42,12 @@ yarn add @tidecloak/nextjs
 
 This bundle provides:
 
-* `<TideCloakProvider>` — application-level context
-* `useTideCloak()` hook — access tokens and auth actions
-* `verifyTideCloakToken()` — server-side JWT verification
-* `<Authenticated>` / `<Unauthenticated>` — UI guards
-* `doEncrypt()` / `doDecrypt()` — tag-based encryption/decryption
-* `createTideCloakMiddleware()` — Edge middleware for route protection (supports both Pages & App routers)
+* `<TideCloakProvider>` - application-level context
+* `useTideCloak()` hook - access tokens and auth actions
+* `verifyTideCloakToken()` - server-side JWT verification
+* `<Authenticated>` / `<Unauthenticated>` - UI guards
+* `doEncrypt()` / `doDecrypt()` - tag-based encryption/decryption
+* `createTideCloakMiddleware()` - Edge middleware for route protection (supports both Pages & App routers)
 
 > **Note:** Installing this package automatically adds a `silent-check-sso.html` file to your `public` directory. This file is required for silent SSO checks; if it doesn’t exist, create it manually at `public/silent-check-sso.html` with the following content, otherwise the app will break:
 >
@@ -65,7 +65,7 @@ This bundle provides:
 
 To begin using the SDK, wrap your application with `<TideCloakProvider>`.
 
-This makes authentication state, token access, and authorization tools available throughout your app. You only need to wrap once—at the top level entry point depending on which routing system you're using.
+This makes authentication state, token access, and authorization tools available throughout your app. You only need to wrap once-at the top level entry point depending on which routing system you're using.
 
 ---
 
@@ -237,7 +237,7 @@ export default function Header() {
 | `authenticated`                       | `boolean`                                    | Whether the user is logged in.                                          |
 | `login()` / `logout()`                | `() => void`                                 | Trigger the login or logout flows.                                      |
 | `token`, `tokenExp`                   | `string`, `number`                           | Access token and its expiration timestamp.                              |
-| Automatic token refresh               | built-in                                     | Tokens refresh silently on expiration—no manual setup needed.           |
+| Automatic token refresh               | built-in                                     | Tokens refresh silently on expiration-no manual setup needed.           |
 | `refreshToken()`                      | `() => Promise<boolean>`                     | Force a silent token renewal.                                           |
 | `getValueFromToken(key)`              | `(key: string) => any`                       | Read a custom claim from the access token.                              |
 | `getValueFromIdToken(key)`            | `(key: string) => any`                       | Read a custom claim from the ID token.                                  |
@@ -344,12 +344,11 @@ Place your middleware at the project root for both routers.
 
 ```ts
 import { NextResponse } from 'next/server';
-import config from './tidecloak.config.json';
+import tidecloakConfig from './tidecloakAdapter.json';
 import { createTideCloakMiddleware } from '@tidecloak/nextjs/server/tidecloakMiddleware';
 
 export default createTideCloakMiddleware({
-  config,
-  publicRoutes: ['/', '/about'],
+  config: tidecloakConfig,
   protectedRoutes: {
     '/admin/*': ['admin'],
     '/api/private/*': ['user'],
@@ -415,7 +414,7 @@ export async function GET(req: NextRequest) {
 
 ## 9. Advanced & Best Practices
 
-* **Auto-Refresh**: built into the provider—no manual timers.
+* **Auto-Refresh**: built into the provider-no manual timers.
 * **Error Handling**: use the `initError` property from `useTideCloak`.
 * **Custom Claims**: read via `getValueFromToken()` / `getValueFromIdToken()`.
 * **Role-Based UI**: combine hooks & guard components for fine-grained control.

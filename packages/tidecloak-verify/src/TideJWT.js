@@ -5,7 +5,7 @@ import { jwtVerify, createLocalJWKSet, createRemoteJWKSet } from "jose";
  *
  * @param {object} config - Imported TideCloak configuration (parsed JSON).
  * @param {string} token - access token to verify.
- * @param {string[]} [allowedRoles] - Array of Keycloak realm or client roles; user must have at least one.
+ * @param {string[]} [allowedRoles] - Array of Tidecloak realm or client roles; user must have at least one.
  * @returns {Promise<object|null>} - The token payload if valid and role-check passes, otherwise null.
  */
 export async function verifyTideCloakToken(config, token, allowedRoles = []) {
