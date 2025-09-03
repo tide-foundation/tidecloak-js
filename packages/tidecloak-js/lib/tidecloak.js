@@ -47,6 +47,8 @@ import { ModelRegistry } from "../modules/tide-js/Models/ModelRegistry.js";
 import processThresholdRules from "../modules/tide-js/RulesEngine/thresholdRules.js";
 import dVVKDecryptionFlow from "../modules/tide-js/Flow/DecryptionFlows/dVVKDecryptionFlow.js";
 import dVVKSigningFlow from "../modules/tide-js/Flow/SigningFlows/dVVKSigningFlow.js";
+import BaseTideRequest  from "../modules/tide-js/Models/BaseTideRequest.js";
+import HederaTxBodySignRequest from "../modules/tide-js/Models/Transactions/HederaTxBodySignRequest.js";
 
 
 // MODIFIED: Refactored `Keycloak` class into `TideCloak`.
@@ -400,7 +402,7 @@ function TideCloak (config) {
                 }
             }
             if (!Array.isArray(e.tags)) throw 'tags must be provided as a string array in object to encrypt';
-            if (typeof e.data !== "string" && !(e.data instanceof Uint8Array)) throw 'data must be provded as string or Uint8Array in object to encrypt';
+            if (typeof e.data !== "string") throw 'data must be provded as string in object to encrypt';
 
             // Check that the user has the roles required to encrypt the datas
             for (const tag of e.tags) {
@@ -409,9 +411,8 @@ function TideCloak (config) {
                 if (!tagAccess) throw `'User has not been given any access to '${tag}'`;
             }
             return {
-                data: typeof e.data === "string" ? StringToUint8Array(e.data) : e.data, // convert data to byte array or leave as is if its already a byte array
-                tags: e.tags,
-                isRaw: typeof e.data === "string" ? false : true // indicate whether this piece of data was encrypted raw or not
+                data: StringToUint8Array(e.data),
+                tags: e.tags
             }
         });
 
@@ -419,7 +420,7 @@ function TideCloak (config) {
 
         // Now lets actually encrypt
         // Construct Tide serialized data payloads
-        return (await kc.requestEnclave.encrypt(dataToSend)).map((e, i) => dataToSend[i].isRaw ? e : bytesToBase64(e)); // return a byte array cipher if encrypted as byte array, or a string cipher if encrypted as a string
+        return (await kc.requestEnclave.encrypt(dataToSend)).map(e => bytesToBase64(e));
     }
 
     function StringToUint8Array(string) {
@@ -488,7 +489,7 @@ function TideCloak (config) {
                 }
             }
             if (!Array.isArray(e.tags)) throw 'tags must be provided as a string array in object to decrypt';
-            if (typeof e.encrypted !== "string" && !(e.encrypted instanceof Uint8Array)) throw 'data must be provded as string or Uint8Array in object to decrypt';
+            if (typeof e.encrypted !== "string") throw 'data must be provded as string in object to decrypt';
 
             // Check that the user has the roles required to encrypt the datas
             for (const tag of e.tags) {
@@ -497,9 +498,8 @@ function TideCloak (config) {
                 if (!tagAccess) throw `'User has not been given any access to '${tag}'`;
             }
             return {
-                encrypted: typeof e.encrypted === "string" ? base64ToBytes(e.encrypted) : e.encrypted,
-                tags: e.tags,
-                isRaw: typeof e.encrypted === "string" ? false : true
+                encrypted: base64ToBytes(e.encrypted),
+                tags: e.tags
             }
         });
 
@@ -507,7 +507,7 @@ function TideCloak (config) {
 
         // Now lets actually decrypt
         // Construct Tide serialized data payloads
-        return (await kc.requestEnclave.decrypt(dataToSend)).map((d, i) => dataToSend[i].isRaw ? d : StringFromUint8Array(d));
+        return (await kc.requestEnclave.decrypt(dataToSend)).map(d => StringFromUint8Array(d));
     }
 
     function generateRandomData(len) {
@@ -975,6 +975,43 @@ function TideCloak (config) {
         );
 
         const result = (await txSigningFlow.start(cardanoSignRequest));
+        return bytesToBase64(result[0])
+    }
+
+        kc.signHederaTx = async function (txBody, authorizers, ruleSettings, expiry) {
+        await kc.ensureTokenReady();
+        const sessKey = GenSessKey();
+        const gSessKey = GetPublic(sessKey);
+    
+        const vvkInfo = await new NetworkClient(config.homeOrkUrl).GetKeyInfo(config.vendorId);;
+  
+        // Check user authenticated
+        if (!kc.tokenParsed) {
+            throw 'Not authenticated';
+        }
+
+        // Check config
+        if (!Array.isArray(authorizers)) {
+            throw 'Pass authorizers in an array!';
+        }
+
+        const signRequest = new HederaTxBodySignRequest("BlindSig:1")
+        signRequest.setTxBody(txBody);
+        signRequest.serializeDraft();
+
+        new AuthorizationBuilder(signRequest, authorizers, ruleSettings).addAuthorization();
+        signRequest.setCustomExpiry(expiry);
+
+        const txSigningFlow = new dVVKSigningFlow_DEPRECATED(
+            config.vendorId,
+            vvkInfo.UserPublic,
+            vvkInfo.OrkInfo,
+            sessKey,
+            gSessKey,
+            getVoucherUrl(),
+        );
+
+        const result = (await txSigningFlow.start(signRequest));
         return bytesToBase64(result[0])
     }
 
@@ -2201,4 +2238,4 @@ function isObject(input) {
 export function getHumanReadableObject(modelId, data, expiry) {
     return ModelRegistry.getHumanReadableModelBuilder(modelId, data, expiry).getHumanReadableObject();
 }
-export { bytesToBase64, base64ToBytes } from "../modules/tide-js/Cryptide/Serialization.js";
+export { bytesToBase64, base64ToBytes, base64ToBase64Url, StringToUint8Array } from "../modules/tide-js/Cryptide/Serialization.js";
