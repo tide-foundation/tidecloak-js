@@ -179,7 +179,7 @@ INVITE_LINK=$(curl -s -X POST \
   -d '["link-tide-account-action"]')
 
 echo "🔗 Invite link: ${INVITE_LINK}"
-echo "→ Send this link to the user so they can link their account."
+echo "→ Use (or send) this URL to link the first admin to their account."
 
 MAX_TRIES=3
 attempt=1
