@@ -2,7 +2,7 @@
   "name": "@tidecloak/create-nextjs",
   "version": "0.0.4",
   "type": "module",
-  "description": "Scaffold a TideCloak-ready Next.js app with optional IAM setup and working auth — start building instantly with a live example",
+  "description": "Scaffold a TideCloak-ready Next.js app with optional IAM setup and working auth - start building instantly with a live example",
   "bin": {
     "create-nextjs": "./dist/cjs/create.cjs"
   },

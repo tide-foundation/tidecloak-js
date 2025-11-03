@@ -30,9 +30,9 @@ import { verifyTideCloakToken } from '@tidecloak/verify';
 
 | Parameter      | Type                  | Description                                                                                                          |
 | -------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `config`       | `object`              | Your TideCloak adapter JSON (the Keycloak client configuration you download from your realm settings).               |
+| `config`       | `object`              | Your TideCloak adapter JSON (the Tidecloak client configuration you download from your realm settings).               |
 | `token`        | `string`              | The raw JWT (access token) to verify.                                                                                |
-| `allowedRoles` | `string[]` (optional) | Array of Keycloak realm or client roles. If provided, the user must have at least one of these roles in their token. |
+| `allowedRoles` | `string[]` (optional) | Array of Tidecloak realm or client roles. If provided, the user must have at least one of these roles in their token. |
 
 **Returns:**
 `Promise<object | null>`
@@ -46,7 +46,7 @@ Internally, `verifyTideCloakToken` uses the [jose](https://github.com/panva/jose
 
 1. Ensure a token is present.
 2. Construct the correct issuer URL from `config['auth-server-url']` and `config.realm`.
-3. Choose between a local JWK Set (`config.jwk.keys`) or fetch the JWK Set remotely from Keycloak.
+3. Choose between a local JWK Set (`config.jwk.keys`) or fetch the JWK Set remotely from Tidecloak.
 4. Verify the token's signature, issuer, and `azp` (authorized party) against `config.resource`.
 5. Extract realm (`payload.realm_access.roles`) and client (`payload.resource_access[resource].roles`) roles.
 6. Check for at least one matching role if `allowedRoles` is specified.

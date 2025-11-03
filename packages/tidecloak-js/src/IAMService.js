@@ -6,9 +6,9 @@ import TideCloak from "../lib/tidecloak";
  * Usage A: pass an onReady callback directly
  * ```js
  * import { IAMService } from 'tidecloak-js';
- * import config from './tidecloak.config.json';
+ * import tidecloakConfig from './tidecloakAdapter.json';
  *
- * IAMService.initIAM(config, authenticated => {
+ * IAMService.initIAM(tidecloakConfig, authenticated => {
  *   if (!authenticated) IAMService.doLogin();
  * }).catch(console.error);
  * ```
@@ -19,7 +19,7 @@ import TideCloak from "../lib/tidecloak";
  *   .on('ready', auth => console.log('ready', auth))
  *   .on('authError', err => console.error('Auth failed', err));
  *
- * await IAMService.initIAM(config);
+ * await IAMService.initIAM(tidecloakConfig);
  * ```
  */
 class IAMService {
@@ -90,7 +90,7 @@ class IAMService {
       return null;
     }
 
-    // wire Keycloak callbacks → our emitter
+    // wire Tidecloak callbacks → our emitter
     this._tc.onReady = auth => this._emit("ready", auth);
     this._tc.onAuthSuccess = () => this._emit("authSuccess");
     this._tc.onAuthError = err => this._emit("authError", err);
@@ -163,7 +163,7 @@ class IAMService {
   /** @private */
   getTideCloakClient() {
     if (!this._tc) {
-      throw new Error("TideCloak client not initialized — call initIAM() first");
+      throw new Error("TideCloak client not initialized - call initIAM() first");
     }
     return this._tc;
   }
@@ -171,7 +171,7 @@ class IAMService {
   /** @returns {Object} Loaded config */
   getConfig() {
     if (!this._config) {
-      throw new Error("Config not loaded — call initIAM() first");
+      throw new Error("Config not loaded - call initIAM() first");
     }
     return this._config;
   }
@@ -288,7 +288,7 @@ class IAMService {
     });
   }
 
-  /** Base URL for Keycloak realm (no trailing slash) */
+  /** Base URL for Tidecloak realm (no trailing slash) */
   getBaseUrl() {
     return this._config?.["auth-server-url"]?.replace(/\/$/, "") || "";
   }

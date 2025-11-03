@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyTideCloakToken } from '@tidecloak/verify'
 import {
-  normalizePattern,
   normalizeProtectedRoutes,
-  RoutePattern,
   ProtectedRoutesMap
 } from './routerMatcher'
 
@@ -33,16 +31,13 @@ export interface TidecloakConfig {
 /**
  * Configuration options for TideCloak middleware.
  *
- * - `config`: Your Keycloak client adapter JSON.
- * - `publicRoutes`: Optional array of paths to exclude from auth, using globs, regex, or functions.
+ * - `config`: Your Tidecloak client adapter JSON.
  * - `protectedRoutes`: Map of path patterns to arrays of required roles.
  * - `onRequest`, `onSuccess`, `onFailure`, `onError`: Lifecycle hooks for custom logic.
  */
 export interface TideMiddlewareOptions {
-  /** Keycloak client adapter JSON (downloaded from your Keycloak realm settings) */
+  /** Tidecloak client adapter JSON (downloaded from your Tidecloak realm settings) */
   config: TidecloakConfig
-  /** Routes that always bypass authentication */
-  publicRoutes?: RoutePattern[]
   /** Routes requiring a verified token and specific roles */
   protectedRoutes?: ProtectedRoutesMap
   /** Called before any auth logic; return a Response to short‑circuit */
@@ -67,12 +62,11 @@ const DEFAULTS: Omit<TideMiddlewareOptions, 'config'> & { protectedRoutes: Prote
  * Example usage in your `middleware.ts`:
  *
  * ```ts
- * import keycloakConfig from './tidecloak.config.json'
+ * import tidecloakConfig from './tidecloakAdapter.json'
  * import { createTideMiddleware } from 'tidecloak-nextjs/server/tidecloakMiddleware'
  *
  * export default createTideMiddleware({
- *   config: keycloakConfig,
- *   publicRoutes: ['/', '/about'],
+ *   config: tidecloakConfig,
  *   protectedRoutes: {
  *     '/admin/*': ['admin'],
  *     '/api/private/*': ['user']
@@ -91,19 +85,13 @@ const DEFAULTS: Omit<TideMiddlewareOptions, 'config'> & { protectedRoutes: Prote
 export function createTideCloakMiddleware(opts: TideMiddlewareOptions) {
   const settings = { ...DEFAULTS, ...opts }
 
-  // Prepare arrays of test functions for public and protected routes
-  const publicTests = (settings.publicRoutes ?? []).map(normalizePattern)
+  // Prepare arrays of test functions for  protected routes
   const protectedTests = normalizeProtectedRoutes(settings.protectedRoutes)
 
   return async function middleware(req: NextRequest) {
     const path = req.nextUrl.pathname
 
     try {
-      // Bypass auth entirely for configured public routes
-      if (publicTests.some(test => test(path, req))) {
-        return NextResponse.next()
-      }
-
       // Extract the raw JWT from the specified cookie
       const token = req.cookies.get("kcToken")?.value || null
 

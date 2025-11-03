@@ -10,6 +10,8 @@ Jump to:
 
 Secure your Next.js app with TideCloak: authentication, session management, data encryption, and edge-middleware integration all in minutes.
 
+[![Developer Walkthrough](http://img.youtube.com/vi/dVpDUF_XJdw/0.jpg)](https://www.youtube.com/watch?v=dVpDUF_XJdw "Provably secure your Next.js apps in 5 mins, with TideCloak")
+
 ### 1. Prerequisites
 
 Before you begin, ensure you have:
@@ -208,8 +210,7 @@ No additional install-middleware is included in `@tidecloak/nextjs`.
 
 #### Options
 
-* **`config`** (`TidecloakConfig`): Your Keycloak adapter JSON (downloaded from your TideCloak client settings).
-* **`publicRoutes`** (`RoutePattern[]`): Paths to bypass authentication (strings/globs/regex/functions).
+* **`config`** (`TidecloakConfig`): Your Tidecloak adapter JSON (downloaded from your TideCloak client settings).
 * **`protectedRoutes`** (`ProtectedRoutesMap`): Map of path patterns to arrays of required roles.
 * **`onRequest`**<br>`(ctx: { token: string | null }, req: NextRequest) => NextResponse | void`<br>Hook before auth logic; can short-circuit by returning a `NextResponse`.
 * **`onSuccess`**<br>`(ctx: { payload: Record<string, any> }, req: NextRequest) => NextResponse | void`<br>Hook after successful auth & role checks; override the response by returning one.
@@ -222,12 +223,11 @@ Place the following `middleware.ts` at your project root (works for both Pages a
 
 ```ts
 import { NextResponse } from 'next/server';
-import keycloakConfig from './tidecloak.config.json';
+import tidecloakConfig from './tidecloakAdapter.json';
 import { createTideCloakMiddleware } from '@tidecloak/nextjs/server/tidecloakMiddleware';
 
 export default createTideCloakMiddleware({
-  config: keycloakConfig,
-  publicRoutes: ['/', '/about'],
+  config: tidecloakConfig,
   protectedRoutes: {
     '/admin/*': ['admin'],
     '/api/private/*': ['user'],
@@ -289,7 +289,7 @@ export async function verifyTideCloakToken(config, token, allowedRoles = []) {
 
 **Parameters:**
 
-* `config` (`object`): Your TideCloak adapter JSON (parsed Keycloak config).
+* `config` (`object`): Your TideCloak adapter JSON (parsed Tidecloak client adapter config).
 * `token` (`string`): Access token string to verify.
 * `allowedRoles` (`string[]`, optional): Array of realm or client roles; user must have at least one.
 
