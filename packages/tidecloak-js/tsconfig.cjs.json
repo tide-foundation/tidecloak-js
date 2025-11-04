@@ -6,8 +6,10 @@
     "outDir": "dist/cjs",
     "declarationDir": "dist/types",
     "rootDir": "."
-
   },
-  "files": ["src/index.js", "lib/tidecloak.js"],
-  "include": ["modules/tide-js/**/*.js"]
+  "include": [
+    "src/**/*",                 // ⬅️ include the whole src (picks up policy-react.ts)
+    "lib/tidecloak.js",
+    "modules/tide-js/**/*.js"
+  ]
 }

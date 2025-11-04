@@ -1,48 +1,39 @@
 {
   "name": "@tidecloak/js",
-  "version": "0.12.15",
-  "description": "TideCloak client side JS SDK",
+  "version": "0.0.1",
+  "type": "module",
   "main": "dist/cjs/src/index.js",
   "module": "dist/esm/src/index.js",
   "types": "dist/types/src/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/esm/src/index.js",
       "types": "./dist/types/src/index.d.ts",
+      "import": "./dist/esm/src/index.js",
       "require": "./dist/cjs/src/index.js"
-    }
+    },
+    "./policy-react": {
+      "import": "./dist/esm/src/policy-react.js",
+      "require": "./dist/cjs/src/policy-react.js"
+    },
+    "./policy.css": "./dist/esm/src/policy.css"
+  },
+  "scripts": {
+    "postinstall": "node ./scripts/postinstall.cjs",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:types": "tsc -p tsconfig.types.json",
+    "build:copy-css": "node scripts/copy-css.cjs",
+    "build": "npm run build:cjs && npm run build:esm && npm run build:types && npm run build:copy-css && cp ./silent-check-sso.html dist/",
+    "prepare": "npm run build"
   },
   "files": [
     "dist",
-    "scripts/postinstall.js"
-  ],
-  "scripts": {
-    "postinstall": "node ./scripts/postinstall.js",
-    "build:cjs": "tsc -p tsconfig.cjs.json",
-    "build:esm": "tsc -p tsconfig.esm.json",
-    "build": "npm run build:cjs && npm run build:esm && cp ./silent-check-sso.html dist/",
-    "prepare": "npm run build"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/tide-foundation/tidecloak-js.git"
-  },
-  "author": "Tide",
-  "homepage": "https://tide.org",
-  "license": "https://tide.org/licenses_tcoc2-0-0-en",
-  "keywords": [
-    "security",
-    "tidecloak",
-    "tide",
-    "authentication",
-    "oidc",
-    "oauth2",
-    "authorization"
+    "scripts/postinstall.cjs",
+    "silent-check-sso.html"
   ],
   "dependencies": {
-    "heimdall-tide": "^0.12.15"
+    "heimdall-tide": "^0.12.15",
+    "@tidecloak/policy": "file:../../../ImportLovable/packages/policy/tidecloak-policy-0.1.0.tgz",
+
   }
 }

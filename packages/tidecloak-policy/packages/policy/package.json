@@ -1,0 +1,52 @@
+{
+  "name": "@tidecloak/policy",
+  "version": "0.1.0",
+  "description": "Visual policy builder component library for access control",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/packages/policy/src/index.d.ts"
+    },
+    "./react": {
+      "import": "./dist/react.js",
+      "types": "./dist/packages/policy/src/react.d.ts"
+    },
+    "./style.css": "./dist/style.css",
+    "./schema": {
+      "types": "./dist/packages/policy/src/schema.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "dev": "vite build --watch"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.7.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.20"
+  },
+  "keywords": [
+    "policy",
+    "authorization",
+    "access-control",
+    "react",
+    "component-library"
+  ],
+  "author": "TideCloak",
+  "license": "MIT"
+}

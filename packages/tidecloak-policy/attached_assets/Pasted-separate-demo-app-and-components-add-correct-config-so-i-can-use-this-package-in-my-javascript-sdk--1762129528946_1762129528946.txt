@@ -1,0 +1,73 @@
+separate demo app and components, add correct config so i can use this package in my javascript sdk and reexport it so its resusable.
+
+✅ What You Want To Do
+
+You have a reusable policy builder — basically a set of:
+
+Core logic for representing & compiling policies
+
+React UI components that let developers visually construct those policies
+
+This policy builder is not an app — it is something that other applications should be able to import and use.
+
+You want to publish this as a standalone npm package called:
+
+@tidecloak/policy
+
+so that your TideCloak SDK (and other apps) can simply do:
+
+import { compilePolicy } from "@tidecloak/policy";
+import { PolicyBuilder } from "@tidecloak/policy/react";
+import "@tidecloak/policy/style.css";
+
+You also want to develop and visually test the UI without bundling or shipping the UI sandbox inside the library.
+
+So instead of building everything inside one project, you want:
+
+The Library (@tidecloak/policy)
+
+clean
+
+no dev server
+
+compiled to ESM + CJS + Types
+
+published to npm
+
+A Demo App (local only, never published)
+
+Runs Vite dev server
+
+Lets you visually test/edit PolicyBuilder UI
+
+Hot reloads whenever library source changes
+
+This ensures:
+
+The library stays pure and reusable
+
+The UI development experience stays fast and comfortable
+
+The final published package is clean and vendor-ready
+
+✅ Why This Matters
+Without Separation With Separation
+Your library ends up tangled with the dev UI Your library is clean and publishable
+You accidentally include demo code in NPM releases Demo app stays local and separate
+Hard to use in other codebases Easy import in SDK + other apps
+
+This is the same pattern used by:
+
+Material UI
+
+Radix UI
+
+Shadcn UI
+
+Chakra UI
+
+They all maintain a component library + a demo/playground app.
+
+✅ Summary in One Sentence
+
+You are turning your policy-building code into a reusable UI+logic component library that can be imported into your SDK or any other application, and keeping a separate demo app only for local development and testing.
