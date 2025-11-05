@@ -1,6 +1,6 @@
 {
   "name": "@tidecloak/verify",
-  "version": "0.0.1",
+  "version": "0.12.16",
   "description": "A lightweight utility for server-side verification of TideCloak-issued JSON Web Tokens (JWTs).",
   "exports": {
     ".": {

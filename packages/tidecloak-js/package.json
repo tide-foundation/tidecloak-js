@@ -1,6 +1,6 @@
 {
   "name": "@tidecloak/js",
-  "version": "0.0.1",
+  "version": "0.12.16",
   "description": "TideCloak client side JS SDK",
   "main": "dist/cjs/src/index.js",
   "module": "dist/esm/src/index.js",
@@ -43,6 +43,6 @@
     "authorization"
   ],
   "dependencies": {
-    "heimdall-tide": "^0.1.0"
+    "heimdall-tide": "^0.12.16"
   }
 }
