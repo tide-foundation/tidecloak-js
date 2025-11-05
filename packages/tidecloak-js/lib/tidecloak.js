@@ -889,9 +889,9 @@ function TideCloak (config) {
 
     // Add the checkThresholdRule function to the Heimdall instance.
     // This function calls the generic threshold rule processor from the thresholdRules module.
-    kc.checkThresholdRule = function (key, idSubstring, outputKey, ruleSettings, draftJson) {
+    kc.checkThresholdRule = function (key, idSubstring, ruleSettings, draftJson) {
         // Process the threshold rules using the provided parameters and return the result.
-        return processThresholdRules(key, idSubstring, outputKey, ruleSettings, draftJson);
+        return processThresholdRules(key, idSubstring, ruleSettings, draftJson);
     };
     kc.createCardanoTxDraft = function (txBody) {
         const txBodyBytes = base64ToBytes(txBody);
