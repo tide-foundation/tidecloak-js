@@ -422,6 +422,35 @@ function TideCloak (config) {
         return (await kc.requestEnclave.encrypt(dataToSend)).map((e, i) => dataToSend[i].isRaw ? e : bytesToBase64(e)); // return a byte array cipher if encrypted as byte array, or a string cipher if encrypted as a string
     }
 
+    /**
+     * Initialize a tide request which requires tide operator approvals.
+     * @param {(create: TideRequestCreator) => Uint8Array} createFunction 
+     * @returns {Uint8Array} Serialized request for you to store. Pass this request into requestTideOperatorApproval to get it approved.
+     */
+    kc.createTideRequest = async function(createFunction){
+        await kc.ensureTokenReady();
+        // Create request
+        const request = createFunction(TideRequestCreator)
+
+        // Pass request to heimdall to initialize
+        const initializedRequest = await kc.approvalEnclave.initializeRequest(request);
+
+        return initializedRequest;
+    }
+    /**
+     * 
+     * @param {{id: string, request: Uint8Array}[]} requests 
+     * @returns {{approved: {id: string, request: Uint8Array}[], denied: {id: string}[], pending: {id: string}[]}} 
+     */
+    kc.requestTideOperatorApproval = async function(requests){
+        await kc.ensureTokenReady();
+
+        // invoke approval enclave for operator
+        const operatorResponse = await kc.approvalEnclave.approve(requests);
+
+        return operatorResponse;
+    }
+
     function StringToUint8Array(string) {
         const enc = new TextEncoder();
         return enc.encode(string);
@@ -2198,7 +2227,14 @@ function isObject(input) {
     return typeof input === 'object' && input !== null;
 }
 
-export function getHumanReadableObject(modelId, data, expiry) {
-    return ModelRegistry.getHumanReadableModelBuilder(modelId, data, expiry).getHumanReadableObject();
+class TideRequestCreator{
+    static userContextRequest(json){}
+    static offboardRequest(gvrk){}
+    static signNewLicense(authorizerPack){}
+    /**
+     * Create a custom Tide Request (make sure you've uploaded your custom Tide contract)
+     * @param {Uint8Array} authorizedPayload 
+     * @param {Uint8Array} informationalPayload 
+     */
+    static customRequest(authorizedPayload, informationalPayload){}
 }
-export { bytesToBase64, base64ToBytes } from "../modules/tide-js/Cryptide/Serialization.js";
