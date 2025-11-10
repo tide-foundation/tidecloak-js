@@ -12,7 +12,6 @@ export default function App() {
       </header>
       
       <main className="demo-main">
-        <PolicyBuilder />
       </main>
       
       <footer className="demo-footer">

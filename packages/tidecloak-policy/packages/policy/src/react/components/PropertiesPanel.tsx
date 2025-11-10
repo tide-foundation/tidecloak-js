@@ -81,24 +81,25 @@ export function PropertiesPanel({
   const [newCustomFieldName, setNewCustomFieldName] = useState('');
   const [newCustomFieldType, setNewCustomFieldType] = useState<'string' | 'array' | 'object'>('string');
 
-  // Generate live code preview
+  // Generate live code preview (only when there's something to compile)
   useEffect(() => {
     const generateLiveCode = async () => {
-      // Skip if no model selected
+      // No model → nothing to preview
       if (!selectedModel) {
         setLiveCode(undefined);
         setPlainEnglish(undefined);
         return;
       }
+      const hasBlocks = Array.isArray(allBlocks) && allBlocks.length > 0;
 
-      // Skip if in simple mode with no blocks
-      if (mode === 'simple' && (!allBlocks || allBlocks.length === 0)) {
+      // If simple mode + no blocks + non-custom model → built-in path, no code
+      if (mode === 'simple' && !hasBlocks && selectedModel.id !== 'CustomModel:1') {
         setLiveCode(undefined);
-        setPlainEnglish(undefined);
+        setPlainEnglish('Built-in policy: no code upload required.');
         return;
       }
 
-      // Skip if in advanced mode with no code
+      // If advanced mode & no code → nothing to preview
       if (mode === 'advanced' && !advancedCode.trim()) {
         setLiveCode(undefined);
         setPlainEnglish(undefined);
@@ -107,9 +108,7 @@ export function PropertiesPanel({
 
       setIsGenerating(true);
       try {
-        // Import the client-side compiler
         const { compilePolicy } = await import('../../compilePolicy');
-        
         const result: CompileResult = await compilePolicy(
           mode,
           allBlocks,
@@ -117,7 +116,6 @@ export function PropertiesPanel({
           claims,
           'csharp'
         );
-
         if (result.success) {
           setLiveCode(result.generatedCode);
           setPlainEnglish(result.plainEnglish);
@@ -125,7 +123,7 @@ export function PropertiesPanel({
           setLiveCode(undefined);
           setPlainEnglish(undefined);
         }
-      } catch (error) {
+      } catch {
         setLiveCode(undefined);
         setPlainEnglish(undefined);
       } finally {
@@ -133,9 +131,9 @@ export function PropertiesPanel({
       }
     };
 
-    const debounce = setTimeout(generateLiveCode, 300);
+    const debounce = setTimeout(generateLiveCode, 250);
     return () => clearTimeout(debounce);
-  }, [allBlocks, selectedModel, claims, mode, advancedCode]);
+  }, [allBlocks, selectedModel?.id, claims, mode, advancedCode]);
 
   const handleAddClaim = () => {
     onClaimsChange([
@@ -156,7 +154,6 @@ export function PropertiesPanel({
 
   const handleBlockConfigUpdate = (field: string, value: any) => {
     if (!selectedBlock) return;
-
     const updatedBlock = {
       ...selectedBlock,
       config: {
@@ -164,7 +161,6 @@ export function PropertiesPanel({
         [field]: value,
       },
     };
-
     onBlockUpdate(updatedBlock);
   };
 
@@ -189,7 +185,7 @@ export function PropertiesPanel({
 
   return (
     <div className="pb-properties-panel-container">
-      {/* Plain English Summary - "What You Created" */}
+      {/* Plain English Summary */}
       {plainEnglish && (
         <div className="pb-properties-section">
           <div className="pb-properties-header">
@@ -450,7 +446,7 @@ export function PropertiesPanel({
             <h3>Test Claims</h3>
             <p className="pb-helper-text">
               {!isCustomModel 
-                ? 'Configure access rules by setting field values (e.g., stage=validate, role=admin)'
+                ? 'Required model fields are prefilled below. You can add more.'
                 : 'Define claims for testing your policy logic'}
             </p>
           </div>
@@ -467,11 +463,7 @@ export function PropertiesPanel({
         <div className="pb-claims-list">
           {claims.length === 0 ? (
             <div className="pb-claims-empty">
-              <p>
-                {!isCustomModel 
-                  ? '👆 Click "Add" to define your first access rule. Each claim represents a field-value pair that controls access.'
-                  : 'No claims defined. Add claims to test your policy.'}
-              </p>
+              <p>No claims defined. Add claims to test your policy.</p>
             </div>
           ) : (
             claims.map((claim, index) => (
@@ -486,6 +478,7 @@ export function PropertiesPanel({
                     <Icons.X />
                   </button>
                 </div>
+
                 {selectedModel && selectedModel.fields.length > 0 ? (
                   <Select
                     value={getFieldOptions().find(f => f.value === claim.key) || null}
@@ -504,10 +497,11 @@ export function PropertiesPanel({
                     onChange={(e) => handleUpdateClaim(index, 'key', e.target.value)}
                   />
                 )}
+
                 <input
                   type="text"
                   className="pb-input minimal-input-small"
-                  placeholder="Value (e.g., validate)"
+                  placeholder="Value"
                   value={claim.value}
                   onChange={(e) => handleUpdateClaim(index, 'value', e.target.value)}
                 />
@@ -530,7 +524,7 @@ export function PropertiesPanel({
             </div>
           ) : liveCode ? (
             <pre className="pb-code-preview">
-              <code>{liveCode}</code>
+              <code data-testid="pb-generated-code">{liveCode}</code>
             </pre>
           ) : (
             <div className="pb-code-empty">

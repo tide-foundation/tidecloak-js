@@ -29,12 +29,14 @@ export interface ModelField {
   label: string;
   options?: string[]; // For dropdown fields
   required?: boolean;
+  /** NEW: default placeholder value that seeds claims UI */
+  placeholder?: string | number | boolean;
 }
 
 // Model
 export interface Model {
   id: string;
-  contractId: string,
+  contractId: string;
   name: string;
   description?: string;
   fields: ModelField[];
@@ -128,40 +130,39 @@ export interface GeneratorRegistry {
 // Predefined models available in the system
 export const PREDEFINED_MODELS: Model[] = [
   {
-    id: 'Policy',
-    contractId: 'SecuredPolicyCreation',
-    name: 'Cardano policy creation request model.',
-    description: 'Access control model for creating cardano transactions policies',
+    id: "Policy",
+    contractId: "SecuredPolicyCreation",
+    name: "Cardano policy creation request model.",
+    description: "Access control model for creating cardano transactions policies",
     fields: [
-      { key: 'restrict_equals_model', type: 'string', label: 'Restricted Model', options: ["CardanoTransaction:1"], required: true  },
-      { key: 'restrict_equals_contract', type: 'string', label: 'Restricted Contract', options: ["CardanoContract"], required: true },
-      { key: 'threshold', type: 'string', label: 'Minimum amount of signatures required', required: true},
-      { key: 'role', type: 'string', label: 'Role required to sign request', required: true },
-      { key: 'Max_Amount', type: 'number', label: 'Optional: limits user to max amount', required: false },
+      { key: "restrict_equals_model", type: "string", label: "Restricted Model", options: ["CardanoTransaction:1"], required: true, placeholder: "CardanoTransaction:1" },
+      { key: "restrict_equals_contract", type: "string", label: "Restricted Contract", options: ["CardanoContract"], required: true, placeholder: "CardanoContract" },
+      { key: "threshold", type: "string", label: "Minimum amount of signatures required", required: true, placeholder: "1" },
+      { key: "role", type: "string", label: "Role required to sign request", required: true, placeholder: "admin" },
+      { key: "Max_Amount", type: "number", label: "Optional: limits user to max amount", required: false, placeholder: 1000 },
     ],
   },
   {
-    id: 'CardanoTransaction:1',
-    contractId: 'CardanoContract',
-    name: 'Cardano Transactions',
-    description: 'Access control model for signing c ardano transactions',
+    id: "CardanoTX",
+    contractId: "CardanoTx:1",
+    name: "Cardano Transactions",
+    description: "Access control model for signing cardano transactions",
     fields: [
-      { key: 'threshold', type: 'string', label: 'Minimum amount of signatures required', required: true },
-      { key: 'clientId', type: 'string', label: 'mechapurse' },
-      { key: 'role', type: 'string', label: 'Role required to sign request', required: true },
-      { key: 'Max_Amount', type: 'number', label: 'Max amount allowed to transact with', required: true },
-
+      { key: "threshold", type: "string", label: "Minimum amount of signatures required", required: true, placeholder: "1" },
+      { key: "clientId", type: "string", label: "mechapurse", placeholder: "cardano_vault" },
+      { key: "role", type: "string", label: "Role required to sign request", required: true, placeholder: "admin" },
+      { key: "Max_Amount", type: "number", label: "Max amount allowed to transact with", required: true, placeholder: 1000 },
     ],
   },
   {
-    id: 'CustomModel:1',
-    name: 'Custom Model',
+    id: "CustomModel:1",
+    name: "Custom Model",
     contractId: "",
-    description: 'Define your own custom fields for flexible access control',
+    description: "Define your own custom fields for flexible access control",
     fields: [
-      { key: 'contractId', type: 'string', label: 'Custom Contract Id', required: true  },
-      { key: 'entryType', type: 'string', label: 'Contract Entry Type (CODE FQDN)', required: true  },
+      { key: "contractId", type: "string", label: "Custom Contract Id", required: true, placeholder: "sha256:..." },
+      { key: "entryType", type: "string", label: "Contract Entry Type (CODE FQDN)", required: true, placeholder: "MyCompany.Security.GeneratedPolicy" },
     ],
-    category: 'custom' as const,
+    category: "custom" as const,
   },
 ];

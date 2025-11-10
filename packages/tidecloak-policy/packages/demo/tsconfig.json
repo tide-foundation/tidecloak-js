@@ -28,5 +28,5 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
-  "references": [{ "path": "../policy/tsconfig.json" }]
+  "references": [{ "path": "../policy/tsconfig.build.json" }]
 }
