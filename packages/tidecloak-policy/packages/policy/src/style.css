@@ -1639,3 +1639,83 @@
   white-space: nowrap;
   border-width: 0;
 }
+
+.pb-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-4);
+  background: var(--pb-bg-primary);
+  border: 1px solid var(--pb-border-default);
+  border-radius: var(--pb-radius-lg);
+  box-shadow: var(--pb-shadow-sm);
+  padding: var(--pb-space-5);
+  margin-bottom: var(--pb-space-6);
+}
+
+.pb-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pb-space-3);
+  padding-bottom: var(--pb-space-3);
+  border-bottom: 1px solid var(--pb-border-default);
+}
+
+.pb-section-header.centered {
+  justify-content: center;
+  text-align: center;
+}
+
+.pb-section-header h3 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--pb-text-primary);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.pb-section-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pb-space-3);
+  padding-bottom: var(--pb-space-3);
+  border-bottom: 1px dashed var(--pb-border-default);
+  margin-bottom: var(--pb-space-3);
+}
+
+.pb-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-4);
+}
+
+/* Scroll area that stays within its section with a pleasant height */
+.pb-scroll-area {
+  max-height: 42vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+/* Center helpers */
+.centered,
+.centered * {
+  text-align: center;
+}
+
+/* Tweak sidebars to look consistent with sections */
+.pb-builder-sidebar {
+  overflow-y: auto;
+  background: var(--pb-bg-primary);
+  border-right: 1px solid var(--pb-border-default);
+  padding: var(--pb-space-6);
+  padding-bottom: calc(var(--pb-space-8) * 3);
+}
+
+/* Keep main’s own scroll but let inner sections scroll independently too */
+.pb-builder-main {
+  overflow-y: auto;
+  padding: var(--pb-space-6);
+  padding-bottom: calc(var(--pb-space-8) * 2);
+  background: var(--pb-bg-app);
+}

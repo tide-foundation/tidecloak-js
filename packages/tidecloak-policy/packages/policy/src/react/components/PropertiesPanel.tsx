@@ -47,6 +47,17 @@ const Icons = {
   ),
 };
 
+/** Crisp empty-state icon: cursor inside a dashed selection box */
+const EmptySelectIcon = () => (
+  <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+    {/* dashed selection box */}
+    <rect x="3.5" y="3.5" width="17" height="17" rx="3" ry="3" stroke="currentColor" fill="none" strokeDasharray="4 3" />
+    {/* cursor pointer */}
+    <path d="M7 6.5 L14.5 12.2 L11 13.2 L12.7 17.5 L11.2 18.1 L9.5 13.8 L6 14.8 Z"
+          fill="currentColor" stroke="none" />
+  </svg>
+);
+
 interface PropertiesPanelProps {
   selectedBlock: PolicyBlock | null;
   selectedModel: Model | null;
@@ -84,7 +95,6 @@ export function PropertiesPanel({
   // Generate live code preview (only when there's something to compile)
   useEffect(() => {
     const generateLiveCode = async () => {
-      // No model → nothing to preview
       if (!selectedModel) {
         setLiveCode(undefined);
         setPlainEnglish(undefined);
@@ -92,14 +102,12 @@ export function PropertiesPanel({
       }
       const hasBlocks = Array.isArray(allBlocks) && allBlocks.length > 0;
 
-      // If simple mode + no blocks + non-custom model → built-in path, no code
       if (mode === 'simple' && !hasBlocks && selectedModel.id !== 'CustomModel:1') {
         setLiveCode(undefined);
         setPlainEnglish('Built-in policy: no code upload required.');
         return;
       }
 
-      // If advanced mode & no code → nothing to preview
       if (mode === 'advanced' && !advancedCode.trim()) {
         setLiveCode(undefined);
         setPlainEnglish(undefined);
@@ -342,9 +350,13 @@ export function PropertiesPanel({
           )}
         </div>
       ) : (
-        <div className="pb-properties-empty-state">
-          <Icons.Settings />
-          <p>Select a block to edit its properties</p>
+        // ==== Improved Empty State (centered, clear, accessible) ====
+        <div className="pb-properties-empty-state" role="note" aria-live="polite">
+          <span className="pb-empty-icon" aria-hidden="true">
+            <EmptySelectIcon />
+          </span>
+          <h4 className="pb-empty-title">Select a block</h4>
+          <p className="pb-empty-subtitle">Click a block on the canvas to edit its properties here.</p>
         </div>
       )}
 
@@ -396,8 +408,8 @@ export function PropertiesPanel({
                     type: newCustomFieldType,
                     label: newCustomFieldName.trim(),
                   };
-                  onCustomFieldsChange([...customFields, newField]);
-                  setNewCustomFieldName('');
+                    onCustomFieldsChange([...customFields, newField]);
+                    setNewCustomFieldName('');
                 }
               }}
               disabled={!newCustomFieldName.trim()}

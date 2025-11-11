@@ -161,7 +161,6 @@ export const PREDEFINED_MODELS: Model[] = [
     description: "Define your own custom fields for flexible access control",
     fields: [
       { key: "contractId", type: "string", label: "Custom Contract Id", required: true, placeholder: "sha256:..." },
-      { key: "entryType", type: "string", label: "Contract Entry Type (CODE FQDN)", required: true, placeholder: "MyCompany.Security.GeneratedPolicy" },
     ],
     category: "custom" as const,
   },

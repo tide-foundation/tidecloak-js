@@ -15,102 +15,22 @@ html, body {
   color: #e7ecff;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
 }
-
-#pb-dev-fullpage {
-  display: grid;
-  grid-template-columns: 1.2fr .8fr;
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
-}
-
-#pb-left {
-  overflow: auto;
-  background: #0f1736;
-  border-right: 1px solid #1e2a5a;
-}
-
-#pb-left-inner {
-  padding: 16px;
-  min-width: 740px;
-}
-
-#pb-right {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow: auto;
-  background: #0b1533;
-}
-
-#pb-right .topbar {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding-bottom: 8px;
-  border-bottom:1px solid #1e2a5a;
-  position: sticky;
-  top: 0;
-  background: #0b1533;
-  z-index: 2;
-}
-
-.badge {
-  display:inline-flex;align-items:center;gap:6px;
-  padding:2px 8px;border-radius:999px;font-size:11px;border:1px solid #2a3a7a;
-}
-
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  color: #b8c3ff;
-  font-weight: 600;
-}
-
-input, textarea, select {
-  background: #0f1736;
-  color: #e7ecff;
-  border: 1px solid #1e2a5a;
-  border-radius: 8px;
-  padding: 8px 10px;
-  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-input.input-required {
-  outline: 1px solid #8b2635;
-  border-color: #8b2635;
-}
-
-.row {
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:10px;
-}
-
+#pb-dev-fullpage { display: grid; grid-template-columns: 1.2fr .8fr; height: 100vh; width: 100vw; overflow: hidden; }
+#pb-left { overflow: auto; background: #0f1736; border-right: 1px solid #1e2a5a; }
+#pb-left-inner { padding: 16px; min-width: 740px; }
+#pb-right { padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow: auto; background: #0b1533; }
+#pb-right .topbar { display:flex; align-items:center; justify-content:space-between; padding-bottom: 8px; border-bottom:1px solid #1e2a5a; position: sticky; top: 0; background: #0b1533; z-index: 2; }
+.badge { display:inline-flex;align-items:center;gap:6px; padding:2px 8px;border-radius:999px;font-size:11px;border:1px solid #2a3a7a; }
+label { display: flex; flex-direction: column; gap: 6px; color: #b8c3ff; font-weight: 600; }
+input, textarea, select { background: #0f1736; color: #e7ecff; border: 1px solid #1e2a5a; border-radius: 8px; padding: 8px 10px; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+input.input-required { outline: 1px solid #8b2635; border-color: #8b2635; }
+.row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .btns { display: flex; flex-wrap: wrap; gap: 8px; }
-
-button.btn {
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  font-weight: 600;
-}
+button.btn { padding: 8px 12px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; font-weight: 600; }
 .btn-primary { background: #1c7b46; color:#fff; }
 .btn-danger  { background: #8b2635; color:#fff; }
 .btn-ghost   { background: transparent; color:#c9d4ff; border: 1px solid #2a3a7a; }
-
-#pb-log {
-  background:#0f1736;
-  border:1px dashed #2a3a7a;
-  border-radius:8px;
-  white-space:pre-wrap;
-  min-height:120px;
-  padding:8px;
-}
-
+#pb-log { background:#0f1736; border:1px dashed #2a3a7a; border-radius:8px; white-space:pre-wrap; min-height:120px; padding:8px; }
 .small { font-size:11px; opacity:.85; }
 `;
 
@@ -133,8 +53,9 @@ type BuilderState = {
   code: string;
 };
 
-function BuilderHost({ onCompiled, onState }: {
-  onCompiled: (r: CompileResult | null) => void;
+// Accept the Policy object from PolicyBuilder (not CompileResult)
+function BuilderHost({ onCompiledPolicy, onState }: {
+  onCompiledPolicy: (policy: any | null) => void;
   onState: (s: BuilderState) => void;
 }) {
   return (
@@ -146,14 +67,13 @@ function BuilderHost({ onCompiled, onState }: {
         initialBlocks={[]}
         models={PREDEFINED_MODELS}
         onStateChange={onState}
-        onCompiled={onCompiled}
+        onCompiled={onCompiledPolicy}
       />
     </div>
   );
 }
 
 export function mountForsetiPolicyBuilderTester(){
-  // Replace the page content with a full-page tester layout
   document.body.innerHTML = `
     <div id="pb-dev-fullpage">
       <div id="pb-left"><div id="pb-react-root"></div></div>
@@ -182,19 +102,12 @@ export function mountForsetiPolicyBuilderTester(){
         </div>
 
         <div class="row">
-          <label>Entry Type (for uploads)
-            <input id="pb-entry" type="text" value="GeneratedPolicy">
-          </label>
           <label>Resource <span class="small">(required)</span>
             <input id="pb-resource" type="text" value="/demo">
           </label>
-        </div>
-
-        <div class="row">
           <label>Action <span class="small">(required)</span>
             <input id="pb-action" type="text" value="read">
           </label>
-          <div></div>
         </div>
 
         <div class="btns">
@@ -213,7 +126,6 @@ export function mountForsetiPolicyBuilderTester(){
   `;
   const style=document.createElement('style'); style.textContent=css; document.head.appendChild(style);
 
-  // Helpers to query inside the full-page container
   const wrap = document.getElementById('pb-dev-fullpage')!;
   const $ = <T extends HTMLElement = HTMLElement>(sel:string)=>wrap.querySelector(sel) as T;
 
@@ -222,15 +134,14 @@ export function mountForsetiPolicyBuilderTester(){
     vvkid: $('#pb-vvkid') as HTMLInputElement,
     model: $('#pb-model') as HTMLInputElement,
     contract: $('#pb-contract') as HTMLInputElement,
-    entry: $('#pb-entry') as HTMLInputElement,
     res: $('#pb-resource') as HTMLInputElement,
     act: $('#pb-action') as HTMLInputElement,
     log: $('#pb-log') as HTMLDivElement,
     stateBadge: $('#pb-state-badge') as HTMLSpanElement,
   };
 
-  // Persist inputs in localStorage
-  const KEYS = ['pb-base','pb-vvkid','pb-contract','pb-entry','pb-resource','pb-action'] as const;
+  // Persist inputs in localStorage (entry removed)
+  const KEYS = ['pb-base','pb-vvkid','pb-contract','pb-resource','pb-action'] as const;
   const load = () => KEYS.forEach(k => {
     const n = $(`#${k}`) as any;
     const v = localStorage.getItem(k);
@@ -247,22 +158,25 @@ export function mountForsetiPolicyBuilderTester(){
   const clearLog=()=>resetLog(el.log);
 
   // Latest builder state
-  let latestCompile: CompileResult | null = null;
+  let latestPolicy: any | null = null;           // built Policy from PolicyBuilder
+  let latestCompile: CompileResult | null = null; // optional, derived if needed
   let latestModelId: string | null = null;
   let latestClaims: Claim[] = [];
   let latestMode: 'simple' | 'advanced' = 'simple';
   let latestCode = '';
   let latestBlocksCount = 0;
+  let latestEntryType: string | null = null;     // <- comes from Policy.entryType when available
 
-  // Mount the Builder in the left pane
   const reactRoot = createRoot($('#pb-react-root')!);
   reactRoot.render(
     <React.StrictMode>
       <BuilderHost
-        onCompiled={(r)=>{
-          latestCompile = r; // null when no compile was run
-          if(!r) doLog('Builder: no compile (built-in path).');
-          else doLog(r.success ? 'Builder compile: success' : 'Builder compile: failed');
+        onCompiledPolicy={(p)=>{
+          latestPolicy = p;
+          // capture entry type and any compile metadata if provided
+          latestEntryType = (p && (p as any).entryType) ? String((p as any).entryType) : null;
+          // If your PolicyBuilder also surfaces its last compile result somewhere, you can set latestCompile here
+          doLog(p ? 'Builder policy: ready' : 'Builder policy: null');
         }}
         onState={(s)=>{
           latestModelId = s.modelId;
@@ -284,7 +198,7 @@ export function mountForsetiPolicyBuilderTester(){
     if (latestCompile?.success && latestCompile.generatedCode) return latestCompile.generatedCode;
     if (latestMode === 'advanced' && latestCode?.trim()) return latestCode.trim();
     const code = (document.querySelector('[data-testid="pb-generated-code"]')?.textContent || '').trim();
-    return code; // may be empty
+    return code;
   };
 
   function getSelectedModelMeta(){
@@ -313,16 +227,20 @@ export function mountForsetiPolicyBuilderTester(){
       let payload: any = { vvkid, modelId, resource, action, claims };
 
       if (source && source.trim()) {
-        // upload + validate path
+        // Upload & Validate
         doLog('Using source → Upload & Validate');
         const sdkVersion = await client.GetForsetiSdkVersion();
+        const entryType = latestEntryType && latestEntryType.trim()
+          ? latestEntryType.trim()
+          : 'GeneratedPolicy';
+
         payload.source = source;
         payload.vendorId = vvkid;
         payload.uploadedBy = 'dev@local';
-        payload.entryType = (el.entry.value || 'GeneratedPolicy').trim();
+        payload.entryType = entryType;     // from PolicyBuilder, fallback to default
         payload.sdkVersion = sdkVersion;
       } else {
-        // built-in validate path
+        // Built-in validate
         const modelMeta = getSelectedModelMeta();
         const defaultContractId = modelMeta?.contractId || '';
         const userContract = el.contract.value.trim();
@@ -349,11 +267,7 @@ export function mountForsetiPolicyBuilderTester(){
   ($('#pb-run-deny')  as HTMLButtonElement).onclick = ()=>doRun(false);
   ($('#pb-clear')     as HTMLButtonElement).onclick = ()=>resetLog(el.log);
   ($('#pb-copy-log')  as HTMLButtonElement).onclick = async ()=>{
-    try {
-      await navigator.clipboard.writeText(el.log.textContent || '');
-      log(el.log,'📋 Log copied.');
-    } catch {
-      log(el.log,'❌ Clipboard failed.');
-    }
+    try { await navigator.clipboard.writeText(el.log.textContent || ''); log(el.log,'📋 Log copied.'); }
+    catch { log(el.log,'❌ Clipboard failed.'); }
   };
 }
