@@ -34,20 +34,7 @@
 
 // MODIFIED: Added dependency to external Tide helper libraries.
 
-import { RequestEnclave, ApprovalEnclave } from "heimdall-tide"
-import { StringFromUint8Array, StringToUint8Array, CreateTideMemory } from "../modules/tide-js/Cryptide/Serialization.js";
-import { AuthorizedEncryptionFlow } from "../modules/tide-js/Flow/EncryptionFlows/AuthorizedEncryptionFlow.js";
-import dVVKSigningFlow_DEPRECATED from "../modules/tide-js/Flow/SigningFlows/dVVKSigningFlow_DEPRECATED.js";
-import CardanoTxBodySignRequest from "../modules/tide-js/Models/Transactions/CardanoTxBodySignRequest.js"
-import RuleSettingsSignRequest from "../modules/tide-js/Models/Rules/RuleSettingSignRequest.js"
-import AuthorizationBuilder from "../modules/tide-js/Models/AuthorizationBuilder.js"
-import { GenSessKey, GetPublic } from "../modules/tide-js/Cryptide/Math.js";
-import NetworkClient from "../modules/tide-js/Clients/NetworkClient.js";
-import { ModelRegistry } from "../modules/tide-js/Models/ModelRegistry.js";
-import processThresholdRules from "../modules/tide-js/RulesEngine/thresholdRules.js";
-import dVVKDecryptionFlow from "../modules/tide-js/Flow/DecryptionFlows/dVVKDecryptionFlow.js";
-import dVVKSigningFlow from "../modules/tide-js/Flow/SigningFlows/dVVKSigningFlow.js";
-
+import { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew } from "heimdall-tide"
 
 // MODIFIED: Refactored `Keycloak` class into `TideCloak`.
 function TideCloak (config) {    
@@ -415,11 +402,42 @@ function TideCloak (config) {
             }
         });
 
-        kc.initEnclave();
+        kc.initRequestEnclave();
 
         // Now lets actually encrypt
         // Construct Tide serialized data payloads
         return (await kc.requestEnclave.encrypt(dataToSend)).map((e, i) => dataToSend[i].isRaw ? e : bytesToBase64(e)); // return a byte array cipher if encrypted as byte array, or a string cipher if encrypted as a string
+    }
+
+    /**
+     * Initialize a tide request which requires tide operator approvals.
+     * @param {Uint8Array} encodedRequest 
+     * @returns {Prmise<Uint8Array>} Serialized request for you to store. Pass this request into requestTideOperatorApproval to get it approved.
+     */
+    kc.createTideRequest = async function(encodedRequest){
+        await kc.ensureTokenReady();
+        
+        kc.initRequestEnclave();
+
+        // Pass request to heimdall to initialize
+        const initializedRequest = await kc.requestEnclave.initializeRequest(encodedRequest);
+
+        return initializedRequest;
+    }
+    /**
+     * 
+     * @param {{id: string, request: Uint8Array}[]} requests 
+     * @returns {Promise<{approved: {id: string, request: Uint8Array}[], denied: {id: string}[], pending: {id: string}[]}>} 
+     */
+    kc.requestTideOperatorApproval = async function(requests){
+        await kc.ensureTokenReady();
+
+        kc.initApprovalEnclave();
+
+        // invoke approval enclave for operator
+        const operatorResponse = await kc.approvalEnclave.approve(requests);
+
+        return operatorResponse;
     }
 
     function StringToUint8Array(string) {
@@ -432,12 +450,39 @@ function TideCloak (config) {
         return decoder.decode(bytes);
     }
 
-    kc.initEnclave = function(){        
+    kc.initRequestEnclave = function(){        
         if(!kc.doken) throw '[TIDECLOAK] No doken found';
-        if(!kc.tokenParsed) throw '[TIDECLOAK] Token not parsed';
+        if(!kc.dokenParsed) throw '[TIDECLOAK] Token not parsed';
         // Now lets actually encrypt
         if(!kc.requestEnclave){
             kc.requestEnclave = new RequestEnclave({
+                homeOrkOrigin: kc.dokenParsed["t.uho"],
+                signed_client_origin: config['clientOriginAuth'],
+                vendorId: config.vendorId,
+                voucherURL: getVoucherUrl()
+            }).init({
+                doken: kc.doken,
+                dokenRefreshCallback: async () => {
+                    await kc.ensureTokenReady();
+                    if(!kc.doken) throw '[TIDECLOAK] No doken found';
+                    return kc.doken;
+                },
+                requireReloginCallback: async () => {
+                    kc.login({
+                        idpHint:   'tide',              // the “alias” of the IdP you’ve configured in the realm
+                        prompt:    'login',                     // forces them to actually re-enter credentials
+                        redirectUri: window.location.href       // send them back to the exact same URL
+                    });
+                }
+            });
+        }
+    }
+    kc.initApprovalEnclave = function(){        
+        if(!kc.doken) throw '[TIDECLOAK] No doken found';
+        if(!kc.dokenParsed) throw '[TIDECLOAK] Token not parsed';
+        // Now lets actually encrypt
+        if(!kc.approvalEnclave){
+            kc.approvalEnclave = new ApprovalEnclaveNew({
                 homeOrkOrigin: kc.dokenParsed["t.uho"],
                 signed_client_origin: config['clientOriginAuth'],
                 vendorId: config.vendorId,
@@ -503,7 +548,7 @@ function TideCloak (config) {
             }
         });
 
-        kc.initEnclave();
+        kc.initRequestEnclave();
 
         // Now lets actually decrypt
         // Construct Tide serialized data payloads
@@ -885,108 +930,6 @@ function TideCloak (config) {
                 kc.login();
             }
         }
-    }
-
-    // Add the checkThresholdRule function to the Heimdall instance.
-    // This function calls the generic threshold rule processor from the thresholdRules module.
-    kc.checkThresholdRule = function (key, idSubstring, outputKey, ruleSettings, draftJson) {
-        // Process the threshold rules using the provided parameters and return the result.
-        return processThresholdRules(key, idSubstring, outputKey, ruleSettings, draftJson);
-    };
-    kc.createCardanoTxDraft = function (txBody) {
-        const txBodyBytes = base64ToBytes(txBody);
-        return bytesToBase64(CreateTideMemory(txBodyBytes, txBodyBytes.length + 4));
-    }
-
-    kc.sign = async function (signModel, authFlow, draft, authorizers, ruleSetting, expiry){
-        await kc.ensureTokenReady();
-        const signModelId = signModel.split(":")
-        if (signModelId.length !== 2 || !signModelId[0] || !signModelId[1]) {
-            throw "SignModel is not in the correct format. Expected format: 'ModelName:Version' (e.g. 'UserContext:1').";
-        }
-
-        const authFlowId = authFlow.split(":")
-        if (authFlowId.length !== 2 || !authFlowId[0] || !authFlowId[1]) {
-            throw "AuthFlow is not in the correct format. Expected format: 'ModelName:Version' (e.g. 'VRK:1').";
-        }
-        
-        const sessKey = GenSessKey();
-        const gSessKey = GetPublic(sessKey);
-        const vvkInfo = await new NetworkClient(config.homeOrkUrl).GetKeyInfo(config.vendorId);;
-  
-        // Check user authenticated
-        if (!kc.tokenParsed) {
-            throw 'Not authenticated';
-        }
-
-        // Check config
-        if (!Array.isArray(authorizers)) {
-            throw 'Pass authorizers in an array!';
-        }
-
-        const signRequest = new BaseTideRequest(signModelId[0], signModel[1], authFlow, draft);
-        if(expiry) signRequest.setCustomExpiry(expiry);
-        new AuthorizationBuilder(signRequest, authorizers, ruleSetting).addAuthorization();
-
-        const signingFlow = new dVVKSigningFlow_DEPRECATED(
-            config.vendorId,
-            vvkInfo.UserPublic,
-            vvkInfo.OrkInfo,
-            sessKey,
-            gSessKey,
-            getVoucherUrl(),
-        );
-
-        const result = (await signingFlow.start(signRequest));
-        return result;
-    }
-
-    kc.signCardanoTx = async function (txBody, authorizers, ruleSettings, expiry) {
-        await kc.ensureTokenReady();
-        const sessKey = GenSessKey();
-        const gSessKey = GetPublic(sessKey);
-    
-        const vvkInfo = await new NetworkClient(config.homeOrkUrl).GetKeyInfo(config.vendorId);;
-  
-        // Check user authenticated
-        if (!kc.tokenParsed) {
-            throw 'Not authenticated';
-        }
-
-        // Check config
-        if (!Array.isArray(authorizers)) {
-            throw 'Pass authorizers in an array!';
-        }
-
-        const cardanoSignRequest = new CardanoTxBodySignRequest("BlindSig:1");
-        cardanoSignRequest.setTxBody(txBody);
-        cardanoSignRequest.serializeDraft();
-
-        new AuthorizationBuilder(cardanoSignRequest, authorizers, ruleSettings).addAuthorization();
-        cardanoSignRequest.setCustomExpiry(expiry);
-
-        const txSigningFlow = new dVVKSigningFlow_DEPRECATED(
-            config.vendorId,
-            vvkInfo.UserPublic,
-            vvkInfo.OrkInfo,
-            sessKey,
-            gSessKey,
-            getVoucherUrl(),
-        );
-
-        const result = (await txSigningFlow.start(cardanoSignRequest));
-        return bytesToBase64(result[0])
-    }
-
-    kc.createRuleSettingsDraft = function (ruleSettings, previousRuleSetting, previousRuleSettingCert) {
-        const ruleReqDraft = new RuleSettingsSignRequest("Admin:1")
-        ruleReqDraft.setNewRuleSetting(StringToUint8Array(ruleSettings));
-        if(previousRuleSetting !== undefined && previousRuleSettingCert !== undefined) {
-            ruleReqDraft.setPreviousRuleSetting(StringToUint8Array(previousRuleSetting))
-            ruleReqDraft.setPreviousRuleSettingCert(base64ToBytes(previousRuleSettingCert))
-        }
-
-        return bytesToBase64(ruleReqDraft.getDraft());
     }
 
 
@@ -2197,8 +2140,3 @@ function b64DecodeUnicode(input) {
 function isObject(input) {
     return typeof input === 'object' && input !== null;
 }
-
-export function getHumanReadableObject(modelId, data, expiry) {
-    return ModelRegistry.getHumanReadableModelBuilder(modelId, data, expiry).getHumanReadableObject();
-}
-export { bytesToBase64, base64ToBytes } from "../modules/tide-js/Cryptide/Serialization.js";

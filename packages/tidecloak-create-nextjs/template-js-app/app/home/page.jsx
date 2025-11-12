@@ -95,7 +95,7 @@ const cardStyle = {
   borderRadius: '8px',
   boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
   textAlign: 'center',
-  maxWidth: '360px',
+  maxWidth: '660px',
   width: '100%',
 }
 
@@ -109,3 +109,4 @@ const buttonStyle = {
   color: '#fff',
   cursor: 'pointer',
 }
+
