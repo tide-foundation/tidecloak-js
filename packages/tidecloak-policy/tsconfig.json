@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["shared/*"]
+    },
+
+    "types": ["node", "vite/client"],
+    "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo"
+  },
+  "include": ["shared/**/*", "server/**/*", "packages/**/*", "apps/**/*"],
+  "exclude": ["node_modules", "build", "dist", "**/*.test.ts"]
+}

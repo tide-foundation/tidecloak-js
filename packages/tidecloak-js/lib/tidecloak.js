@@ -2140,4 +2140,3 @@ function b64DecodeUnicode(input) {
 function isObject(input) {
     return typeof input === 'object' && input !== null;
 }
-
