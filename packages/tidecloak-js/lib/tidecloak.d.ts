@@ -33,5 +33,4 @@ declare class TideCloak {
     signCardanoTx: (txBody: any, authorizers: any, ruleSettings: any, expiry: any) => Promise<string>;
     createRuleSettingsDraft: (ruleSettings: any, previousRuleSetting: any, previousRuleSettingCert: any) => string;
 }
-export { RequestEnclave, ApprovalEnclave } from "heimdall-tide";
-export { bytesToBase64, base64ToBytes } from "../modules/tide-js/Cryptide/Serialization.js";
+export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, TideMemory } from "heimdall-tide";

@@ -5,6 +5,8 @@ import { ForsetiClient } from './ForsetiClient';
 import { PolicyBuilder } from '../../policy/src/react/components/PolicyBuilder';
 import { PREDEFINED_MODELS } from '../../policy/src/types';
 import type { CompileResult, Claim } from '../../policy/src/types';
+import { BaseTideRequest } from 'heimdall-tide';
+import { bytesToBase64 } from '../../policy/src/serialization/Utils';
 
 const css = `
 html, body {
@@ -55,7 +57,7 @@ type BuilderState = {
 
 // Accept the Policy object from PolicyBuilder (not CompileResult)
 function BuilderHost({ onCompiledPolicy, onState }: {
-  onCompiledPolicy: (policy: any | null) => void;
+  onCompiledPolicy: (policy: BaseTideRequest) => void;
   onState: (s: BuilderState) => void;
 }) {
   return (
@@ -172,11 +174,9 @@ export function mountForsetiPolicyBuilderTester(){
     <React.StrictMode>
       <BuilderHost
         onCompiledPolicy={(p)=>{
-          latestPolicy = p;
           // capture entry type and any compile metadata if provided
-          latestEntryType = (p && (p as any).entryType) ? String((p as any).entryType) : null;
           // If your PolicyBuilder also surfaces its last compile result somewhere, you can set latestCompile here
-          doLog(p ? 'Builder policy: ready' : 'Builder policy: null');
+          doLog(bytesToBase64(p.encode()));
         }}
         onState={(s)=>{
           latestModelId = s.modelId;

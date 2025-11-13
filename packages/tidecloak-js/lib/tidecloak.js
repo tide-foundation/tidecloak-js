@@ -2022,7 +2022,7 @@ function TideCloak (config) {
 
 export default TideCloak;
 
-export { RequestEnclave, ApprovalEnclave } from "heimdall-tide";
+export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, TideMemory, BaseTideRequest } from "heimdall-tide";
 
 /**
  * @param {ArrayBuffer} bytes

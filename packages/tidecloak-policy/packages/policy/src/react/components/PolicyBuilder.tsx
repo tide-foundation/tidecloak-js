@@ -12,15 +12,11 @@ import { Select } from './Select';
 import type { PolicyBlock, Model, CompileResult, Claim, ModelField } from '../../types';
 import { PREDEFINED_MODELS } from '../../types';
 import '../../style.css';
-import {
-  CreateTideMemory,
-  CreateTideMemoryFromArray,
-  StringToUint8Array,
-  WriteValue,
-  bytesToBase64
-} from '../../modules/tide-js/Cryptide/Serialization';
 
-import Policy, { PolicyParameters } from '../../modules/tide-js/Models/Policy';
+import { bytesToBase64, StringToUint8Array } from '../../serialization/Utils';
+import { TideMemory } from '../../serialization/TideMemory';
+import { Policy, PolicyParameters } from '../../serialization/Policy';
+import { BaseTideRequest } from "heimdall-tide";
 
 // Only Forseti is supported right now
 type CompilableCodeType = 'Forseti';
@@ -49,9 +45,9 @@ function ensureClassName(code: string, desired: string): string {
 }
 
 export type PolicyBuilderHandle = {
-  getResult: () => Policy;
-  compile: (opts?: { contractId?: string; keyId?: string }) => Promise<Policy>;
-  reset: () => Policy;
+  getResult: () => BaseTideRequest;
+  compile: (opts?: { contractId?: string; keyId?: string }) => Promise<BaseTideRequest>;
+  reset: () => BaseTideRequest;
 };
 
 interface PolicyBuilderProps {
@@ -61,8 +57,8 @@ interface PolicyBuilderProps {
   initialBlocks?: PolicyBlock[];
   models?: Model[];
 
-  onFinalResult?: (p: Policy) => void;
-  onCompiled?: (p: Policy) => void;
+  onFinalResult?: (p: BaseTideRequest) => void;
+  onCompiled?: (p: BaseTideRequest) => void;
 
   onStateChange?: (s: {
     modelId: string | null;
@@ -216,7 +212,7 @@ const PolicyBuilderImpl: React.ForwardRefRenderFunction<
   };
 
   // Build a Policy (stable ordering)
-  const buildPolicy = (result: CompileResult | null, overrides?: { contractId?: string; keyId?: string }): Policy => {
+  const buildPolicy = (result: CompileResult | null, overrides?: { contractId?: string; keyId?: string }): BaseTideRequest => {
     const version = '1';
     const modelId = selectedModel?.id;
     if (!modelId) throw new Error("PolicyBuilder: 'modelId' is required to build Policy");
@@ -230,14 +226,9 @@ const PolicyBuilderImpl: React.ForwardRefRenderFunction<
 
     // claims → PolicyParameters
     let params: PolicyParameters;
-    if (Array.isArray(claims)) {
-      const obj: Record<string, unknown> = {};
-      for (const c of claims) obj[c.key] = c.value;
-      params = new PolicyParameters(obj);
-    } else {
-      // @ts-expect-error allow object-like
-      params = new PolicyParameters(claims);
-    }
+    const obj: Map<string, any> = new Map();
+    for (const c of claims) obj.set(c.key, c.value);
+    params = new PolicyParameters(obj);
 
     const policy_bytes = new Policy({
       version,
@@ -250,51 +241,42 @@ const PolicyBuilderImpl: React.ForwardRefRenderFunction<
     const src = getFinalSource(result);
 
     if (!codeType) throw new Error('Missing required data: codeType');
-    const compilableT = new CreateTideMemoryFromArray([StringToUint8Array(codeType)]);
+    const compilableT = [StringToUint8Array(codeType)];
 
     if (src) {
-      let langPayload: any;
+      let langPayload: TideMemory;
 
       // Build payload array memory from payloadItems (if any)
-      const hasAnyPayload = payloadItems.length > 0;
-      const payloadArrayMem = hasAnyPayload ? new CreateTideMemory() : null;
-      if (payloadArrayMem) {
-        payloadItems.forEach((item, idx) => {
-          const parsed = parseOneValue(item.value);
-          WriteValue(payloadArrayMem, idx, valueToBytes(parsed));
-        });
-      }
+      const payloadArray: Uint8Array[] = [];
+      payloadItems.forEach((item, idx) => {
+        const parsed = parseOneValue(item.value);
+        payloadArray.push(valueToBytes(parsed));
+      });
+      
 
       if (codeType === 'Forseti') {
         if (!entryType || !entryType.trim()) throw new Error('Entry Type is required for Forseti');
 
         // [0]=source, [1]=entryType, [2]=payloadArray]
-        langPayload = new CreateTideMemoryFromArray([
+        langPayload = TideMemory.CreateFromArray([
           StringToUint8Array(src),
           StringToUint8Array(entryType.trim()),
+          TideMemory.CreateFromArray(payloadArray)
         ]);
-
-        if (payloadArrayMem) {
-          WriteValue(langPayload, 2, payloadArrayMem);
-        }
       } else {
-        // Non-Forseti (future): keep user-entered order
-        // [0]=source, [1]=payloadArray]
-        langPayload = new CreateTideMemory();
-        WriteValue(langPayload, 0, StringToUint8Array(src));
-        if (payloadArrayMem) {
-          WriteValue(langPayload, 1, payloadArrayMem);
-        }
+        throw Error("Not implemented for code types not Forseti");
       }
 
-      WriteValue(compilableT, 1, langPayload);
+      compilableT.push(langPayload);
     }
 
-    const draft_bytes = new CreateTideMemoryFromArray([policy_bytes, compilableT]);
-    return draft_bytes;
+    const draft_bytes = TideMemory.CreateFromArray([policy_bytes, TideMemory.CreateFromArray(compilableT)]);
+
+    const policySignRequest = new BaseTideRequest("Policy", "1", "Policy:1", draft_bytes, new TideMemory());
+    return policySignRequest;
   };
 
-  const publish = (p: Policy) => {
+  const publish = (p: BaseTideRequest) => {
     onFinalResult?.(p);
     onCompiled?.(p);
   };
@@ -370,7 +352,7 @@ const PolicyBuilderImpl: React.ForwardRefRenderFunction<
       : (!isCustomModel || (isCustomModel && blocks.length > 0));
 
   // compile action
-  const doCompile = async (opts?: { contractId?: string; keyId?: string }): Promise<Policy> => {
+  const doCompile = async (opts?: { contractId?: string; keyId?: string }): Promise<BaseTideRequest> => {
     // No strict validation: payload items accept "anything"
     setPayloadError(null);
 
@@ -392,7 +374,7 @@ const PolicyBuilderImpl: React.ForwardRefRenderFunction<
 
     if (nothingToCompile) {
       const p = buildPolicy(null, opts);
-      try { console.log(bytesToBase64(p)); } catch {}
+      try { console.log(bytesToBase64(p.encode())); } catch {}
       setCompileResult(null);
       setShowResult(true);
       publish(p);
@@ -437,7 +419,7 @@ const PolicyBuilderImpl: React.ForwardRefRenderFunction<
   };
 
   // reset action
-  const doReset = (): Policy => {
+  const doReset = (): BaseTideRequest => {
     if (mode === 'simple') {
       setBlocks([]);
       setSelectedBlockId(null);
@@ -806,7 +788,7 @@ true
                   setBlocks(prev => prev.map(x => x.id === b.id ? b : x));
                 }}
                 allBlocks={blocks}
-                customFields={setCustomFields ? customFields : []}
+                customFields={customFields}
                 onCustomFieldsChange={setCustomFields}
                 isCustomModel={isCustomModel}
                 mode={mode}
@@ -852,3 +834,4 @@ true
 };
 
 export const PolicyBuilder = forwardRef(PolicyBuilderImpl);
+export { BaseTideRequest };
