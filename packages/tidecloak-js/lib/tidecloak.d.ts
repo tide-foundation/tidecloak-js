@@ -24,13 +24,5 @@ declare class TideCloak {
     isTokenExpired: (minValidity: any) => boolean;
     updateToken: (minValidity: any) => any;
     clearToken: () => void;
-    checkThresholdRule: (key: any, idSubstring: any, outputKey: any, ruleSettings: any, draftJson: any) => {
-        roles: string[];
-        threshold: number;
-    };
-    createCardanoTxDraft: (txBody: any) => string;
-    sign: (signModel: any, authFlow: any, draft: any, authorizers: any, ruleSetting: any, expiry: any) => Promise<Uint8Array<ArrayBuffer>[]>;
-    signCardanoTx: (txBody: any, authorizers: any, ruleSettings: any, expiry: any) => Promise<string>;
-    createRuleSettingsDraft: (ruleSettings: any, previousRuleSetting: any, previousRuleSettingCert: any) => string;
 }
 export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, TideMemory } from "heimdall-tide";

@@ -32,8 +32,6 @@
     "silent-check-sso.html"
   ],
   "dependencies": {
-    "heimdall-tide": "^0.12.15",
-    "@tidecloak/policy": "file:../../../ImportLovable/packages/policy/tidecloak-policy-0.1.0.tgz",
-
+    "heimdall-tide": "file:~/heimdall"
   }
 }
