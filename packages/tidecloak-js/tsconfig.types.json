@@ -6,8 +6,8 @@
     "emitDeclarationOnly": true,
     "stripInternal": true,
     "skipLibCheck": true,
-    "module": "ESNext",
-    "moduleResolution": "nodenext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "target": "ES2022",
     "jsx": "react-jsx",
     "allowJs": true,          // so .js files are ok in src
