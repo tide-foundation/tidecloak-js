@@ -24,7 +24,7 @@
  */
 
 // MODIFIED: Added dependency to external Tide helper libraries.
-import { RequestEnclave, ApprovalEnclave, BaseTideRequest } from "heimdall-tide"
+import { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew } from "heimdall-tide"
 
 const CONTENT_TYPE_JSON = 'application/json'
 
@@ -48,7 +48,7 @@ const CONTENT_TYPE_JSON = 'application/json'
  * @property {string=} iframeOrigin
  */
 
-export { RequestEnclave, ApprovalEnclave, TideMemory, BaseTideRequest } from "heimdall-tide";
+export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, TideMemory, BaseTideRequest } from "heimdall-tide";
 export default class TideCloak {
   /** @type {Pick<PromiseWithResolvers<boolean>, 'resolve' | 'reject'>[]} */
   #refreshQueue = []
@@ -1596,7 +1596,7 @@ export default class TideCloak {
     if (!this.dokenParsed) throw new Error('[TIDECLOAK] Token not parsed')
 
     if (!this.approvalEnclave) {
-      this.approvalEnclave = new ApprovalEnclave({
+      this.approvalEnclave = new ApprovalEnclaveNew({
         homeOrkOrigin: this.dokenParsed['t.uho'],
         signed_client_origin: this.#config['clientOriginAuth'],
         vendorId: this.#config.vendorId,
