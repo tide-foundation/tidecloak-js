@@ -48,7 +48,7 @@ const CONTENT_TYPE_JSON = 'application/json'
  * @property {string=} iframeOrigin
  */
 
-export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, TideMemory, BaseTideRequest } from "heimdall-tide";
+export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, TideMemory, BaseTideRequest, PolicySignRequest, Policy, PolicyParameters } from "heimdall-tide";
 export default class TideCloak {
   /** @type {Pick<PromiseWithResolvers<boolean>, 'resolve' | 'reject'>[]} */
   #refreshQueue = []
@@ -1695,6 +1695,17 @@ export default class TideCloak {
     await this.ensureTokenReady()
     this.initApprovalEnclave()
     return await this.approvalEnclave.approve(requests)
+  }
+
+  /**
+   * Execute a Tide Sign Request
+   * @param {Uint8Array} request
+   * @returns Array of signatures 
+   */
+  async executeSignRequest (request) {
+    await this.ensureTokenReady()
+    this.initRequestEnclave()
+    return await this.requestEnclave.execute(request);
   }
 
   /**
