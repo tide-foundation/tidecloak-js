@@ -136,7 +136,7 @@ class IAMService {
 
     if (this._tc.didInitialize) {
       console.debug("[IAMService] IAM Already initialized once.")
-      return this._tc.isLoggedIn();
+      return !!this._tc.tokenParsed;
     }
 
     let authenticated = false;
