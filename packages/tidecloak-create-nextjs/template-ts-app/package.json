@@ -9,11 +9,10 @@
     "init": "bash init/tcinit.sh"
   },
   "dependencies": {
-    "@tidecloak/nextjs": "^0.9.12",
-    "eslint-config-next": "^16.0.1",
-    "next": "^16.0.1",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "next": "14.x",
+    "react": "18.x",
+    "react-dom": "18.x",
+    "@tidecloak/nextjs": "^0.12.15"
   },
   "devDependencies": {
     "@types/node": "24.0.13",
