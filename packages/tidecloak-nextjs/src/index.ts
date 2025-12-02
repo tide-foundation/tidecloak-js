@@ -4,9 +4,7 @@ import {
   useTideCloak,
   Authenticated,
   Unauthenticated,
-  TideCloakContextProvider,
-  RequestEnclave,
-  ApprovalEnclave
+  TideCloakContextProvider
 } from '@tidecloak/react';
 
 export {
