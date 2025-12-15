@@ -2192,6 +2192,14 @@ function base64ToBytes (base64) {
 }
 
 /**
+ * @param {string} string 
+ */
+function StringToUint8Array(string) {
+	const enc = new TextEncoder();
+	return enc.encode(string);
+}
+
+/**
  * @param {string} message
  * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest#basic_example
  */
