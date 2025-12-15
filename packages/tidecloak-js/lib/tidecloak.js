@@ -2200,6 +2200,14 @@ function StringToUint8Array(string) {
 }
 
 /**
+ * @param {Uint8Array} bytes 
+ */
+function StringFromUint8Array(bytes){
+	const decoder = new TextDecoder('utf-8');
+    return decoder.decode(bytes);
+}
+
+/**
  * @param {string} message
  * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest#basic_example
  */
