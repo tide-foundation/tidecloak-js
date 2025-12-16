@@ -180,12 +180,12 @@ TideCloak lets you protect sensitive fields with **tag-based** encryption. You p
 ```ts
 // Encrypt one or more payloads:
 const encryptedArray = await doEncrypt([
-  { data: /* any JSON-serializable value */, tags: ['tag1', 'tag2'] },
+  { data: /* string or Uint8Array */, tags: ['tag1', 'tag2'] },
 ]);
 
 // Decrypt one or more encrypted blobs:
 const decryptedArray = await doDecrypt([
-  { encrypted: /* string from encrypt() */, tags: ['tag1', 'tag2'] },
+  { encrypted: /* string/Uint8Array from encrypt() */, tags: ['tag1', 'tag2'] },
 ]);
 ```
 
@@ -280,7 +280,125 @@ async function decryptExamples(encryptedFields) {
 
 ---
 
-## 7. Events & Lifecycle
+## 7. Executing Custom Tide Requests
+This package also allows for custom sign requests to be executed by the Tide Network. Follow this guide to setup up / create your custom request with your own policy: https://github.com/tide-foundation/asgard
+### Synatax Overview
+```js
+let yourCustomTideRequest; // inherits from BaseTideRequest
+let request = yourCustomTideRequest.encode();
+
+// Step 1. Initializing the Tide Request - must be executed once per request lifetime
+request = await IAMService.initializeRequest(request);
+
+// Step 2. Requesting operator approval of this request - policy you created before contains the logic to determine if a request is ready for commit
+let operatorDecision = await IAMService.requestOperatorApproval([{
+  id: "01", // can be whatever you want - basic id to help you identify the returned request decisions
+  request: request
+}]);
+
+// Step 3. Processing operator decisions
+// 3.1. Approved operator decisions
+operatorDecision.approved.foreach(decision => {
+  // Logic to process the approved operator decisions
+  let approvedId = decision.id;
+  request = decision.request; // keep this approved request as it is the updated request with operator approval. You may discard/overwrite the old one
+});
+
+// 3.2. Denied operator decisions
+operatorDecision.denied.foreach(decision => {
+  // Logic to process the denied operator decisions
+  let deniedId = decision.id;
+});
+
+// 3.3. Pending operator decisions
+operatorDecision.pending.foreach(decision => {
+  // Logic to process the pending operator decisions
+  let pendingId = decision.id;
+});
+
+// Step 4. Execute the request once sufficient operators have approved it. For help determining if the request is ready for commit - see this guide: https://github.com/tide-foundation/asgard
+const signatures = await IAMService.executeSignRequest(request); // note a request may return multiple signatures - so the return obj is an array of Uint8Arrays
+
+// Step 5. Use the signature(s) for your application
+// It may be a cryptocurrency, SSH, code signing or custom signature. Depends on the Tide Request you created/used.
+```
+
+### Signing a new policy using master policy example
+Every Tidecloak realm with IGA enabled holds a master policy that is operated by the Tide Realm Admins. 
+
+To retrieve the base64 encoded master policy, query `/tide-policy-resources/admin-policy`. You can then build the policy object with:
+```js
+const base64decodedBytes = base64decode(queryResponse);
+const masterPolicy = new Policy(base64decodedBytes);
+```
+
+The following example shows how to sign a new policy for the Test Tide Request, validated against the GenericRealmAccessThresholdRole Contract.
+```js
+const policyParameters = new Map();
+policyParameters.set("threshold", 2); // parameter required by GenericRealmAccessThresholdRole Contract
+policyParameters.set("role", "myrole"); // parameter required by GenericRealmAccessThresholdRole Contract
+
+const policy = new Policy({
+    version: "1", // default
+    modelId: "Test:1", // Test Tide Request Id
+    contractId: "GenericRealmAccessThresholdRole:1", // GenericRealmAccessThresholdRole Contract Id
+    keyId: "<your vendor id>", // available in tidecloak.json
+    params: policyParameters
+});
+
+const signRequest = await IAMService.initializeRequest(PolicySignRequest.New(policy).setCustomExpiry(604800).encode()); // create and initialize sign request with 1 week expiry
+
+const operatorDecision = await IAMService.requestOperatorApproval([{
+  id: "01",
+  request: signRequest
+}]);
+
+// Assuming operator approved request
+signRequest = operatorDecision.approved[0].request;
+
+// Assuming your Tidecloak realm only has 1 tide realm admin, we can now commit the request
+// -- If you have more than 1 tide realm admin, refer to https://github.com/tide-foundation/asgard on how to use the contract validation tests to determine if this request is ready to commit
+policy.signature = (await IAMService.executeSignRequest(signRequest))[0]; 
+
+// Store this data
+const toStore = policy.encode(); // typeof Uint8Array
+```
+
+Now to use that policy we just created for the Test Tide Request:
+```js
+const testRequestPolicy = new Policy(toStore);
+
+// note: name : version = id
+const testRequest = new BaseTideRequest(
+  "Test", // name
+  "1",  // version
+  "Policy:1", // auth flow to use - set to Policy:1 if using policies
+  new TextEncoder().encode(JSON.stringify({ SomeStaticData: "draftdata" })), // draft data required by Test Tide Request model
+  new TextEncoder().encode(JSON.stringify({ SomeDynamicData: "dynamicdata" })) // dynamic data required by Test Tide Request model
+);
+
+testRequest.setCustomExpiry(604800); // 1 week expiry for this request to be approved + committed
+testRequest.addPolicy(testRequestPolicy); // set the policy to be used to authorize this request
+const request = testRequest.encode();
+request = await IAMService.initializeRequest(request);
+
+// Assuming 2 users with realm role "myrole" approves the request
+// NOTE: This should only be executed in the context of a user with the realm role "myrole", since the contract/policy authorization states a threshold of 2 users with the myrole realm role must approve this request for it to pass.
+request = await IAMService.requestOperatorApproval([{
+  id: "01",
+  request: request
+}]).approved[0].request; // x2
+
+// Validate this signature against your vendor public key
+const testSig = (await IAMService.executeSignRequest(request))[0]; 
+```
+
+### More Examples
+For examples see this list: https://github.com/tide-foundation/asgard
+
+---
+
+## 8. Events & Lifecycle
 
 Register handlers via `.on(event, handler)` or remove with `.off(event, handler)`:
 
@@ -303,7 +421,7 @@ IAMService
 
 ---
 
-## 8. Core Methods
+## 9. Core Methods
 
 After initialization, you can call these methods anywhere:
 
@@ -342,7 +460,7 @@ await IAMService.doDecrypt([{ encrypted: "...", tags: ["tag1"] }]);
 
 ---
 
-## 9. Tips & Best Practices
+## 10. Tips & Best Practices
 
 * **Single Init**: Call `initIAM` only once on page load or app bootstrap.
 * **Token Cookie**: `kcToken` is set automatically; ensure server-side middleware reads this cookie.

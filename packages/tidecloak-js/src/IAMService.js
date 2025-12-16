@@ -279,6 +279,14 @@ class IAMService {
   async doDecrypt(data) {
     return this.getTideCloakClient().decrypt(data);
   }
+  /** Initialize a request via adapter */
+  async initializeRequest(encodedRequest){
+    return this.getTideCloakClient().createTideRequest(encodedRequest);
+  }
+  /** Request the operator to approve a request via adatper */
+  async requestOperatorApproval(approvalRequests){
+    return this.getTideCloakClient().requestTideOperatorApproval(approvalRequests);
+  }
 
   /** Logout, clear cookie, then redirect */
   doLogout() {
