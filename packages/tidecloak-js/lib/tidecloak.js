@@ -2197,16 +2197,16 @@ function base64ToBytes(base64) {
  * @param {string} string 
  */
 function StringToUint8Array(string) {
-  const enc = new TextEncoder();
-  return enc.encode(string);
+	const enc = new TextEncoder();
+	return enc.encode(string);
 }
 
 /**
  * @param {Uint8Array} bytes 
  */
-function StringFromUint8Array(bytes) {
-  const decoder = new TextDecoder('utf-8');
-  return decoder.decode(bytes);
+function StringFromUint8Array(bytes){
+	const decoder = new TextDecoder('utf-8');
+    return decoder.decode(bytes);
 }
 
 /**
