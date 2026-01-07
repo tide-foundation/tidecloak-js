@@ -1569,7 +1569,8 @@ export default class TideCloak {
         homeOrkOrigin: this.dokenParsed['t.uho'],
         signed_client_origin: this.#config['clientOriginAuth'],
         vendorId: this.#config.vendorId,
-        voucherURL: this.#getVoucherUrl()
+        voucherURL: this.#getVoucherUrl(),
+        isRunningLocal: new URL(this.#getVoucherUrl()).hostname === "localhost"
       }).init({
         doken: this.doken,
         dokenRefreshCallback: async () => {
