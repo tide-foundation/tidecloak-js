@@ -2,6 +2,15 @@
 
 Lightweight browser SDK for integrating TideCloak SSO into any JavaScript application-vanilla, SPA, or framework-agnostic.
 
+## Authentication Modes
+
+The SDK supports two authentication modes:
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **Front-channel** | Browser handles all token operations (standard OIDC) | SPAs, simple apps |
+| **Hybrid/BFF** | Browser handles PKCE, backend exchanges code for tokens | Secure apps, server-side sessions |
+
 ---
 
 ## 1. Prerequisites
@@ -171,7 +180,163 @@ If you override the `redirectUri` in `initIAM`, make sure to **update the corres
 
 ---
 
-## 6. Encrypting & Decrypting Data
+## 6. Hybrid/BFF Mode (Backend-For-Frontend)
+
+In hybrid mode, the browser generates PKCE and redirects to the IdP, but the **backend exchanges the authorization code for tokens**. This keeps tokens server-side for improved security—ideal for applications with server-rendered pages or strict security requirements.
+
+### How It Works
+
+1. **Login Page**: User clicks login → `doLogin()` generates PKCE, stores verifier in sessionStorage, redirects to IdP
+2. **IdP**: User authenticates
+3. **Callback Page**: IdP redirects back with `?code=...` → `initIAM()` sends code + verifier to your backend
+4. **Backend**: Exchanges code for tokens, creates session cookie
+5. **Success**: User is redirected to their original destination
+
+### Configuration
+
+```js
+const hybridConfig = {
+  authMode: "hybrid",
+  oidc: {
+    authorizationEndpoint: "https://auth.example.com/realms/myrealm/protocol/openid-connect/auth",
+    clientId: "my-client",
+    redirectUri: "https://app.example.com/auth/callback",
+    scope: "openid profile email",  // optional, defaults to "openid profile email"
+    prompt: "login"                 // optional
+  },
+  tokenExchange: {
+    endpoint: "/api/authenticate",  // Your backend endpoint
+    provider: "tidecloak-auth",     // optional, sent to backend
+    headers: () => ({               // optional, custom headers (e.g., CSRF token)
+      "anti-csrf-token": document.querySelector('meta[name="csrf-token"]')?.content
+    })
+  }
+};
+```
+
+### Login Page Example
+
+```js
+import { IAMService } from "@tidecloak/js";
+
+// Define config (or import from shared file)
+const hybridConfig = { /* ... */ };
+
+// Load config on page load
+await IAMService.loadConfig(hybridConfig);
+
+// Trigger login when user clicks button
+document.getElementById("login-btn").onclick = () => {
+  const returnUrl = new URLSearchParams(window.location.search).get("return") || "/";
+  IAMService.doLogin(returnUrl);  // returnUrl is where user goes after successful auth
+};
+```
+
+### Callback Page Example
+
+```js
+import { IAMService } from "@tidecloak/js";
+
+const hybridConfig = { /* same config as login page */ };
+
+// initIAM automatically detects the callback (code in URL) and handles token exchange
+const authenticated = await IAMService.initIAM(hybridConfig);
+
+if (authenticated) {
+  // Success - redirect to original destination
+  const returnUrl = IAMService.getReturnUrl() || "/";
+  window.location.assign(returnUrl);
+} else {
+  // Failed - show error or redirect to login
+  document.getElementById("error").textContent = "Login failed. Please try again.";
+}
+```
+
+### Backend Token Exchange
+
+Your backend receives a POST request to the configured `tokenExchange.endpoint`:
+
+```json
+{
+  "accessToken": "{\"code\":\"AUTH_CODE\",\"code_verifier\":\"PKCE_VERIFIER\",\"redirect_uri\":\"https://app.example.com/auth/callback\"}",
+  "provider": "tidecloak-auth"
+}
+```
+
+Your backend should:
+1. Parse the `accessToken` JSON string
+2. Exchange the code with the IdP's token endpoint
+3. Create a session (e.g., set HTTP-only cookies)
+4. Return a success response
+
+### React Example
+
+**LoginPage.tsx**
+```tsx
+import { useEffect, useState } from "react";
+import { IAMService } from "@tidecloak/js";
+import { useLocation } from "react-router-dom";
+
+const hybridConfig = { /* ... */ };
+
+export function LoginPage() {
+  const [ready, setReady] = useState(false);
+  const location = useLocation();
+  const returnUrl = new URLSearchParams(location.search).get("return") || "/";
+
+  useEffect(() => {
+    IAMService.loadConfig(hybridConfig).then(() => setReady(true));
+  }, []);
+
+  return (
+    <button disabled={!ready} onClick={() => IAMService.doLogin(returnUrl)}>
+      Login with TideCloak
+    </button>
+  );
+}
+```
+
+**CallbackPage.tsx**
+```tsx
+import { useEffect, useState } from "react";
+import { IAMService } from "@tidecloak/js";
+
+const hybridConfig = { /* same config */ };
+
+export function CallbackPage() {
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    IAMService.initIAM(hybridConfig)
+      .then(authenticated => {
+        if (authenticated) {
+          window.location.assign(IAMService.getReturnUrl() || "/");
+        } else {
+          setError("Login failed");
+        }
+      })
+      .catch(err => setError(err.message));
+  }, []);
+
+  if (error) return <div>Error: {error}</div>;
+  return <div>Logging in...</div>;
+}
+```
+
+### Hybrid Mode Limitations
+
+In hybrid mode, tokens are server-side, so these methods will throw:
+- `getToken()`, `getIDToken()`, `getTokenExp()`
+- `getName()`, `hasRealmRole()`, `hasClientRole()`
+- `getValueFromToken()`, `getValueFromIDToken()`
+- `updateIAMToken()`, `forceUpdateToken()`
+- `doEncrypt()`, `doDecrypt()`
+
+Use `isLoggedIn()` and `getReturnUrl()` instead.
+
+---
+
+## 7. Encrypting & Decrypting Data (Front-channel Only)
 
 TideCloak lets you protect sensitive fields with **tag-based** encryption. You pass in an array of `{ data, tags }` objects and receive an array of encrypted strings (or vice versa for decryption).
 
@@ -280,7 +445,7 @@ async function decryptExamples(encryptedFields) {
 
 ---
 
-## 7. Events & Lifecycle
+## 8. Events & Lifecycle
 
 Register handlers via `.on(event, handler)` or remove with `.off(event, handler)`:
 
@@ -303,9 +468,9 @@ IAMService
 
 ---
 
-## 8. Core Methods
+## 9. Core Methods (Front-channel Only)
 
-After initialization, you can call these methods anywhere:
+After initialization, you can call these methods anywhere (note: most are only available in front-channel mode):
 
 ```js
 // Check login state
@@ -342,7 +507,7 @@ await IAMService.doDecrypt([{ encrypted: "...", tags: ["tag1"] }]);
 
 ---
 
-## 9. Tips & Best Practices
+## 10. Tips & Best Practices
 
 * **Single Init**: Call `initIAM` only once on page load or app bootstrap.
 * **Token Cookie**: `kcToken` is set automatically; ensure server-side middleware reads this cookie.
