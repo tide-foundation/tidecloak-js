@@ -7,6 +7,8 @@
     "declarationMap": false,
     "rootDir": "."
   },
-  "files": ["src/index.js", "lib/tidecloak.js"],
-  "include": ["modules/tide-js/**/*.js"]
+  "include": [
+    "src/**/*",                 // ⬅️ picks up policy-react.ts
+    "lib/tidecloak.js"
+  ]
 }
