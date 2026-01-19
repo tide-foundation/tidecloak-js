@@ -1,9 +1,26 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-# Load overrides from .env in the project root
-if [ -f "./.env.example" ]; then
-  # shellcheck disable=SC1090
-  source "./.env.example"
+# ─────────────────────────────────────────────────────────────────────────────
+# Resolve script directory (run from anywhere)
+# ─────────────────────────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Load overrides from .env.example (CRLF-safe)
+# ─────────────────────────────────────────────────────────────────────────────
+ENV_FILE="${SCRIPT_DIR}/.env.example"
+if [[ -f "$ENV_FILE" ]]; then
+  if grep -q $'\r' "$ENV_FILE"; then
+    TMP_ENV="$(mktemp)"
+    tr -d '\r' < "$ENV_FILE" > "$TMP_ENV"
+    # shellcheck disable=SC1090
+    source "$TMP_ENV"
+    rm -f "$TMP_ENV"
+  else
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+  fi
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -11,23 +28,49 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 TIDECLOAK_LOCAL_URL="${TIDECLOAK_LOCAL_URL:-http://localhost:8080}"
 CLIENT_APP_URL="${CLIENT_APP_URL:-http://localhost:3000}"
-REALM_JSON_PATH="${REALM_JSON_PATH:-./realm.json}"
-ADAPTER_OUTPUT_PATH="${ADAPTER_OUTPUT_PATH:-./tidecloak.json}"
+ADAPTER_OUTPUT_PATH="${ADAPTER_OUTPUT_PATH:-${SCRIPT_DIR}/tidecloak.json}"
 NEW_REALM_NAME="${NEW_REALM_NAME:-nextjs-test}"
-REALM_MGMT_CLIENT_ID="realm-management"
-ADMIN_ROLE_NAME="tide-realm-admin"
+REALM_MGMT_CLIENT_ID="${REALM_MGMT_CLIENT_ID:-realm-management}"
+ADMIN_ROLE_NAME="${ADMIN_ROLE_NAME:-tide-realm-admin}"
 KC_USER="${KC_USER:-admin}"
 KC_PASSWORD="${KC_PASSWORD:-password}"
 CLIENT_NAME="${CLIENT_NAME:-myclient}"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# sed -i portability
+# Find realm.json robustly
+# Priority: env → same dir → parent → current working dir
 # ─────────────────────────────────────────────────────────────────────────────
-if sed --version >/dev/null 2>&1; then
-  SED_INPLACE=(-i)
-else
-  SED_INPLACE=(-i '')
+CANDIDATES=()
+[[ "${REALM_JSON_PATH:-}" != "" ]] && CANDIDATES+=("${REALM_JSON_PATH}")
+CANDIDATES+=("${SCRIPT_DIR}/realm.json" "${SCRIPT_DIR}/../realm.json" "$(pwd)/realm.json")
+
+REALM_JSON_PATH=""
+for p in "${CANDIDATES[@]}"; do
+  if [[ -f "$p" ]]; then REALM_JSON_PATH="$p"; break; fi
+done
+
+echo "🔍 realm.json search candidates:"
+for p in "${CANDIDATES[@]}"; do echo "   - $p"; done
+
+if [[ -z "${REALM_JSON_PATH}" ]]; then
+  echo "❌ Could not find realm.json in the checked locations above." >&2
+  echo "   Put realm.json next to the script: ${SCRIPT_DIR}/realm.json" >&2
+  echo "   OR run with: REALM_JSON_PATH=/absolute/path/realm.json bash init/tcinit.sh" >&2
+  exit 1
 fi
+echo "✅ Using realm.json: ${REALM_JSON_PATH}"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dependency checks
+# ─────────────────────────────────────────────────────────────────────────────
+need_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "❌ Missing dependency: $1" >&2; exit 1; }; }
+need_cmd curl
+need_cmd jq
+need_cmd sed
+need_cmd mktemp
+
+# sed -i portability
+if sed --version >/dev/null 2>&1; then SED_INPLACE=(-i); else SED_INPLACE=(-i ''); fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper: grab an admin token
@@ -43,18 +86,27 @@ get_admin_token() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Cleanup handler
+# ─────────────────────────────────────────────────────────────────────────────
+TMP_REALM_JSON=""
+cleanup() {
+  [[ -n "${TMP_REALM_JSON}" && -f "${TMP_REALM_JSON}" ]] && rm -f "${TMP_REALM_JSON}" || true
+  [[ -f "${SCRIPT_DIR}/.realm_name" ]] && rm -f "${SCRIPT_DIR}/.realm_name" || true
+}
+trap cleanup EXIT
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Step 1: prepare realm JSON
 # ─────────────────────────────────────────────────────────────────────────────
 REALM_NAME="${NEW_REALM_NAME}"
-echo "${REALM_NAME}" > "./.realm_name"
+echo "${REALM_NAME}" > "${SCRIPT_DIR}/.realm_name"
 
 TMP_REALM_JSON="$(mktemp)"
 cp "${REALM_JSON_PATH}" "${TMP_REALM_JSON}"
 
-# replace placeholders
 sed "${SED_INPLACE[@]}" "s|http://localhost:3000|${CLIENT_APP_URL}|g" "${TMP_REALM_JSON}"
-sed "${SED_INPLACE[@]}" "s|nextjs-test|${REALM_NAME}|g"      "${TMP_REALM_JSON}"
-sed "${SED_INPLACE[@]}" "s|myclient|${CLIENT_NAME}|g"        "${TMP_REALM_JSON}"
+sed "${SED_INPLACE[@]}" "s|nextjs-test|${REALM_NAME}|g"               "${TMP_REALM_JSON}"
+sed "${SED_INPLACE[@]}" "s|myclient|${CLIENT_NAME}|g"                 "${TMP_REALM_JSON}"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 2: create realm (allow 409 if already exists)
@@ -80,17 +132,15 @@ fi
 TOKEN="$(get_admin_token)"
 echo "🔐 Initializing Tide realm + IGA..."
 
-response=$(curl -i -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/vendorResources/setUpTideRealm" \
+curl -s -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/vendorResources/setUpTideRealm" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  --data-urlencode "email=email@tide.org" 2>&1)
+  --data-urlencode "email=email@tide.org" >/dev/null
 
-# toggle IGA
 curl -s -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/tide-admin/toggle-iga" \
      -H "Authorization: Bearer ${TOKEN}" \
      -H "Content-Type: application/x-www-form-urlencoded" \
-     --data-urlencode "isIGAEnabled=true" \
-  > /dev/null
+     --data-urlencode "isIGAEnabled=true" >/dev/null
 
 echo "✅ Tide realm + IGA done."
 
@@ -103,7 +153,7 @@ approve_and_commit() {
   TOKEN="$(get_admin_token)"
   curl -s -X GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/tide-admin/change-set/${TYPE}/requests" \
        -H "Authorization: Bearer ${TOKEN}" \
-    | jq -c '.[]' | while read -r req; do
+    | jq -c '.[]' | while IFS= read -r req; do
         payload=$(jq -n \
           --arg id  "$(jq -r .draftRecordId   <<< "${req}")" \
           --arg cst "$(jq -r .changeSetType   <<< "${req}")" \
@@ -113,14 +163,12 @@ approve_and_commit() {
         curl -s -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/tide-admin/change-set/sign" \
              -H "Authorization: Bearer ${TOKEN}" \
              -H "Content-Type: application/json" \
-             -d "${payload}" \
-          > /dev/null
+             -d "${payload}" >/dev/null
 
         curl -s -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/tide-admin/change-set/commit" \
              -H "Authorization: Bearer ${TOKEN}" \
              -H "Content-Type: application/json" \
-             -d "${payload}" \
-          > /dev/null
+             -d "${payload}" >/dev/null
       done
   echo "✅ ${TYPE^} change-sets done."
 }
@@ -134,18 +182,15 @@ echo "👤 Creating new admin user..."
 curl -s -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/users" \
      -H "Authorization: Bearer ${TOKEN}" \
      -H "Content-Type: application/json" \
-     -d '{"username":"admin","email":"admin@tidecloak.com","firstName":"admin","lastName":"user","enabled":true}' \
-  > /dev/null
+     -d '{"username":"admin","email":"admin@tidecloak.com","firstName":"admin","lastName":"user","enabled":true}' >/dev/null || true
 
 USER_ID=$(curl -s -X GET \
   "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/users?username=admin" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  | jq -r '.[0].id')
+  -H "Authorization: Bearer ${TOKEN}" | jq -r '.[0].id')
 
 CLIENT_UUID=$(curl -s -X GET \
   "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/clients?clientId=${REALM_MGMT_CLIENT_ID}" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  | jq -r '.[0].id')
+  -H "Authorization: Bearer ${TOKEN}" | jq -r '.[0].id')
 
 ROLE_JSON=$(curl -s -X GET \
   "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/clients/${CLIENT_UUID}/roles/${ADMIN_ROLE_NAME}" \
@@ -154,8 +199,7 @@ ROLE_JSON=$(curl -s -X GET \
 curl -s -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/users/${USER_ID}/role-mappings/clients/${CLIENT_UUID}" \
      -H "Authorization: Bearer ${TOKEN}" \
      -H "Content-Type: application/json" \
-     -d "[${ROLE_JSON}]" \
-  > /dev/null
+     -d "[${ROLE_JSON}]" >/dev/null
 
 echo "✅ Admin user & role done."
 
@@ -216,32 +260,25 @@ UPDATED_JSON=$(jq --arg d "${CLIENT_APP_URL}" '.config.CustomAdminUIDomain = $d'
 curl -s -X PUT "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/identity-provider/instances/tide" \
      -H "Authorization: Bearer ${TOKEN}" \
      -H "Content-Type: application/json" \
-     -d "${UPDATED_JSON}" \
-  > /dev/null
+     -d "${UPDATED_JSON}" >/dev/null
 
 curl -s -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/vendorResources/sign-idp-settings" \
-     -H "Authorization: Bearer ${TOKEN}" \
-  > /dev/null
+     -H "Authorization: Bearer ${TOKEN}" >/dev/null
 
 echo "✅ CustomAdminUIDomain updated + signed."
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 7: fetch adapter config + cleanup
+# Step 7: fetch adapter config
 # ─────────────────────────────────────────────────────────────────────────────
 TOKEN="$(get_admin_token)"
 echo "📥 Fetching adapter config…"
 CLIENT_UUID=$(curl -s -X GET \
   "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/clients?clientId=${CLIENT_NAME}" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  | jq -r '.[0].id')
+  -H "Authorization: Bearer ${TOKEN}" | jq -r '.[0].id')
 
 curl -s -X GET \
   "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/vendorResources/get-installations-provider?clientId=${CLIENT_UUID}&providerId=keycloak-oidc-keycloak-json" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  > "${ADAPTER_OUTPUT_PATH}"
+  -H "Authorization: Bearer ${TOKEN}" > "${ADAPTER_OUTPUT_PATH}"
 
 echo "✅ Adapter config saved to ${ADAPTER_OUTPUT_PATH}"
-rm -f "${PROJECT_ROOT}/.realm_name" "${TMP_REALM_JSON}"
-
 echo "🎉 All done!"

@@ -12,9 +12,9 @@
     "next": "14.x",
     "react": "18.x",
     "react-dom": "18.x",
-    "@tidecloak/nextjs": "^0.9.12"
+    "@tidecloak/nextjs": "^0.12.15"
   },
-    "devDependencies": {
+  "devDependencies": {
     "@types/node": "24.0.13",
     "@types/react": "19.1.8",
     "typescript": "5.8.3"

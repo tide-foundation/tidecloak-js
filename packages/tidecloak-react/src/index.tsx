@@ -4,7 +4,7 @@ import {
 } from './contexts/TideCloakContextProvider';
 
 export  { TideCloakContextProvider } from './contexts/TideCloakContextProvider';
-export { RequestEnclave, ApprovalEnclave } from "@tidecloak/js";
+export { RequestEnclave } from "@tidecloak/js";
 
 /**
  * Hook to access authentication state and helpers.
