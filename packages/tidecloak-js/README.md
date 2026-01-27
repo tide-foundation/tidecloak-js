@@ -501,7 +501,7 @@ IAMService.doLogin();                // redirects to SSO
 IAMService.doLogout();               // clears cookie & redirects
 
 // Data encryption / decryption (TideCloak service)
-await IAMService.doEncrypt([{ data: { secret: 123 }, tags: ["tag1"] }]);
+await IAMService.doEncrypt([{ data: "secret", tags: ["tag1"] }]);
 await IAMService.doDecrypt([{ encrypted: "...", tags: ["tag1"] }]);
 ```
 
@@ -517,3 +517,4 @@ await IAMService.doDecrypt([{ encrypted: "...", tags: ["tag1"] }]);
 * **Redirect URI**: If using a custom `redirectUri`, ensure the route or file exists.
 
 ---
+

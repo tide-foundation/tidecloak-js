@@ -1690,7 +1690,7 @@ export default class TideCloak {
   /**
    * Request Tide operator approval.
    * @param {{id: string, request: Uint8Array}[]} requests
-   * @returns {Promise<{approved: {id: string, request: Uint8Array}[], denied: {id: string}[], pending: {id: string}[]}>}
+   * @returns {Promise<{ id: string; request: Uint8Array; status: "approved" | "denied" | "pending" }[]>}
    */
   async requestTideOperatorApproval(requests) {
     await this.ensureTokenReady()
