@@ -202,7 +202,7 @@ export function setSessionCookie(
     name = 'session',
     maxAge = 86400, // 1 day
     path = '/',
-    secure = process.env.NODE_ENV === 'production',
+    secure = true,
     sameSite = 'lax',
     httpOnly = true,
   } = options

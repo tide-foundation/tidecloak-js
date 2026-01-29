@@ -371,7 +371,8 @@ Import from `@tidecloak/nextjs/server`:
 | `getSessionFromRequest(req, cookieName?)` | Get session ID from request cookies |
 | `clearSessionCookie(response, cookieName?)` | Clear session cookie |
 | `verifyTideCloakToken(config, token, roles?)` | Verify JWT and check roles |
-| `createTideCloakMiddleware(options)` | Create Edge middleware for route protection |
+| `createTideCloakProxy(options)` | Create proxy for route protection |
+| `createTideCloakMiddleware(options)` | Create Edge middleware (Next.js 13-15) |
 
 ---
 

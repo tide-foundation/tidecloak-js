@@ -147,11 +147,35 @@ export default function Dashboard() {
 
 ---
 
-## Edge Middleware
+## Route Protection
 
-Protect routes at the edge:
+Protect routes with server-side auth checks.
 
-**`middleware.ts`**
+### Next.js 16+ (proxy.ts)
+
+Create `proxy.ts` at your project root:
+
+```ts
+import { NextResponse } from 'next/server';
+import tidecloakConfig from './tidecloakAdapter.json';
+import { createTideCloakProxy } from '@tidecloak/nextjs/server';
+
+export const proxy = createTideCloakProxy({
+  config: tidecloakConfig,
+  protectedRoutes: {
+    '/admin/*': ['admin'],
+    '/api/private/*': ['user'],
+  },
+  onFailure: ({ token }, req) => NextResponse.redirect(new URL('/login', req.url)),
+  onError: (err, req) => NextResponse.rewrite(new URL('/error', req.url)),
+});
+```
+
+> **Important:** Do NOT add `export const config` to proxy.ts - it's not supported and will cause errors. Proxy files always run on Node.js runtime and don't need a matcher config.
+
+### Next.js 13-15 (middleware.ts)
+
+Create `middleware.ts` at your project root:
 
 ```ts
 import { NextResponse } from 'next/server';
@@ -165,11 +189,14 @@ export default createTideCloakMiddleware({
     '/api/private/*': ['user'],
   },
   onFailure: ({ token }, req) => NextResponse.redirect(new URL('/login', req.url)),
+  onError: (err, req) => NextResponse.rewrite(new URL('/error', req.url)),
 });
 
 export const config = {
-  matcher: ['/((?!_next|.*\\..*).*)'],
-  runtime: 'edge',
+  matcher: [
+    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico)).*)',
+    '/api/(.*)',
+  ],
 };
 ```
 
