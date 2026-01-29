@@ -32,6 +32,6 @@
     "silent-check-sso.html"
   ],
   "dependencies": {
-    "heimdall-tide": "file:~/heimdall"
+    "heimdall-tide": "^0.13.11"
   }
 }

@@ -51,8 +51,8 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@tidecloak/react": "file:../tidecloak-react",
-    "@tidecloak/verify": "file:../tidecloak-verify"
+    "@tidecloak/react": "^0.13.11",
+    "@tidecloak/verify": "^0.13.11"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
