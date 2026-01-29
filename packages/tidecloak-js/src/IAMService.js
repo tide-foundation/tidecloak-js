@@ -1096,6 +1096,11 @@ class IAMService {
   async _startNativeLogin(returnUrl = "") {
     console.debug("[IAMService._startNativeLogin] Starting native login flow");
 
+    // Reset auth state to allow new callback to be processed
+    // This is needed for re-login after session expiry
+    this._nativeAuthenticated = false;
+    this._nativeCallbackProcessing = false;
+
     const adapter = this._nativeAdapter;
     if (!adapter) {
       throw new Error("Native adapter not configured");
