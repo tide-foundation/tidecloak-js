@@ -1,10 +1,16 @@
-# Front-Channel Mode (React)
+# Front-Channel Mode
 
-The default mode for React web apps. Your browser handles login and tokens directly.
+The simplest way to add TideCloak to your React web app. Everything happens in the browser.
 
 ---
 
-## Setup
+## What You'll Build
+
+Click login, your users go to TideCloak, they log in, they come back authenticated. That's it.
+
+---
+
+## Quick Start
 
 ### 1. Install
 
@@ -12,51 +18,68 @@ The default mode for React web apps. Your browser handles login and tokens direc
 npm install @tidecloak/react
 ```
 
-### 2. Add Provider
+### 2. Get Your Config File
 
-Wrap your app with `TideCloakContextProvider`:
+Download `adapter.json` from your TideCloak admin console and put it in your `public/` folder:
+
+```
+public/
+  adapter.json
+  silent-check-sso.html
+```
+
+### 3. Add Silent SSO Check File
+
+This file is required for silent session checks. It should be auto-copied when you install `@tidecloak/react`, but if it's missing, create `public/silent-check-sso.html`:
+
+```html
+<html><body><script>parent.postMessage(location.href, location.origin)</script></body></html>
+```
+
+### 4. Add the Provider
 
 ```tsx
+// App.tsx
 import { TideCloakContextProvider } from '@tidecloak/react';
-import adapter from './tidecloakAdapter.json';
 
 function App() {
   return (
-    <TideCloakContextProvider config={adapter}>
+    <TideCloakContextProvider>
       <YourApp />
     </TideCloakContextProvider>
   );
 }
 ```
 
-### 3. Create Redirect Route
+That's it. The SDK fetches your config from `/adapter.json` automatically.
 
-Add a route for `/auth/redirect`:
+### 5. Add a Redirect Route
+
+TideCloak sends users back to `/auth/redirect` after login. Handle it:
 
 ```tsx
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+// Using React Router
+import { Routes, Route } from 'react-router-dom';
 
 function App() {
   return (
-    <TideCloakContextProvider config={adapter}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/auth/redirect" element={<RedirectPage />} />
-        </Routes>
-      </BrowserRouter>
+    <TideCloakContextProvider>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/auth/redirect" element={<AuthRedirect />} />
+      </Routes>
     </TideCloakContextProvider>
   );
 }
 ```
 
-**RedirectPage.tsx:**
 ```tsx
+// AuthRedirect.tsx
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTideCloak } from '@tidecloak/react';
 
-export default function RedirectPage() {
+export function AuthRedirect() {
   const { authenticated, isInitializing } = useTideCloak();
   const navigate = useNavigate();
 
@@ -70,23 +93,18 @@ export default function RedirectPage() {
 }
 ```
 
----
-
-## Using the Hook
+### 6. Use It
 
 ```tsx
 import { useTideCloak } from '@tidecloak/react';
 
 function Header() {
-  const { authenticated, login, logout, token } = useTideCloak();
+  const { authenticated, login, logout } = useTideCloak();
 
   return (
     <header>
       {authenticated ? (
-        <>
-          <span>Logged in</span>
-          <button onClick={logout}>Log Out</button>
-        </>
+        <button onClick={logout}>Log Out</button>
       ) : (
         <button onClick={login}>Log In</button>
       )}
@@ -97,31 +115,65 @@ function Header() {
 
 ---
 
-## Available Values
+## Options
+
+### Custom Config Location
+
+```tsx
+<TideCloakContextProvider configUrl="/config/tidecloak.json">
+```
+
+### Provide Config Directly
+
+```tsx
+import adapterConfig from './adapter.json';
+
+<TideCloakContextProvider config={adapterConfig}>
+```
+
+### Handle Events
+
+```tsx
+<TideCloakContextProvider
+  onAuthSuccess={() => console.log('Logged in!')}
+  onAuthError={(err) => console.error('Login failed:', err)}
+  onLogout={() => console.log('Logged out')}
+>
+```
+
+---
+
+## Everything You Can Do
 
 ```tsx
 const {
-  authenticated,        // true if logged in
-  isInitializing,       // true while SDK is starting
-  token,                // access token string
-  tokenExp,             // token expiry timestamp
-  login,                // function to log in
-  logout,               // function to log out
-  refreshToken,         // function to refresh token
-  getValueFromToken,    // get value from access token
-  getValueFromIdToken,  // get value from ID token
-  hasRealmRole,         // check realm role
-  hasClientRole,        // check client role
-  doEncrypt,            // encrypt data
-  doDecrypt,            // decrypt data
+  // State
+  authenticated,        // Is the user logged in?
+  isInitializing,       // Still starting up?
+  isLoading,            // Login/logout in progress?
+  token,                // The access token
+  tokenExp,             // When does it expire?
+
+  // Actions
+  login,                // Start login
+  logout,               // Log out
+  refreshToken,         // Refresh the token
+
+  // User info
+  getValueFromToken,    // Get claim from access token
+  getValueFromIdToken,  // Get claim from ID token
+  hasRealmRole,         // Check a realm role
+  hasClientRole,        // Check a client role
+
+  // Encryption (if configured)
+  doEncrypt,            // Encrypt data
+  doDecrypt,            // Decrypt data
 } = useTideCloak();
 ```
 
 ---
 
-## Guard Components
-
-Show content based on login state:
+## Show/Hide Based on Auth State
 
 ```tsx
 import { Authenticated, Unauthenticated } from '@tidecloak/react';
@@ -130,13 +182,32 @@ function Dashboard() {
   return (
     <>
       <Authenticated>
-        <h1>Welcome to your dashboard!</h1>
+        <h1>Welcome back!</h1>
+        <DashboardContent />
       </Authenticated>
 
       <Unauthenticated>
-        <p>Please log in to see your dashboard.</p>
+        <h1>Please log in</h1>
+        <LoginPrompt />
       </Unauthenticated>
     </>
+  );
+}
+```
+
+---
+
+## Get User Info
+
+```tsx
+function Profile() {
+  const { getValueFromToken, getValueFromIdToken } = useTideCloak();
+
+  return (
+    <div>
+      <p>Email: {getValueFromToken('email')}</p>
+      <p>Name: {getValueFromIdToken('name')}</p>
+    </div>
   );
 }
 ```
@@ -153,144 +224,108 @@ function AdminPanel() {
     return <p>Admin access required</p>;
   }
 
-  return <div>Admin controls here</div>;
+  return <AdminControls />;
 }
 ```
 
----
-
-## Get User Info
+Or use components:
 
 ```tsx
-function Profile() {
-  const { getValueFromToken, getValueFromIdToken } = useTideCloak();
+import { HasRealmRole, HasClientRole } from '@tidecloak/react';
 
-  const email = getValueFromToken('email');
-  const name = getValueFromIdToken('name');
-
-  return (
-    <div>
-      <p>Name: {name}</p>
-      <p>Email: {email}</p>
-    </div>
-  );
-}
+<HasRealmRole role="admin" fallback={<p>Access denied</p>}>
+  <AdminPanel />
+</HasRealmRole>
 ```
 
 ---
 
-## Encrypting & Decrypting Data
+## Encryption
 
-TideCloak lets you protect sensitive fields with tag-based encryption. You pass in an array of `{ data, tags }` objects and receive an array of encrypted strings.
-
-### Syntax
+Protect sensitive data with tag-based encryption:
 
 ```tsx
 const { doEncrypt, doDecrypt } = useTideCloak();
 
-// Encrypt one or more payloads:
-const encryptedArray = await doEncrypt([
-  { data: /* string or Uint8Array */, tags: ['tag1', 'tag2'] },
+// Encrypt one or more items
+const encrypted = await doEncrypt([
+  { data: '10 Smith Street', tags: ['address'] },
+  { data: 'john@example.com', tags: ['email'] },
 ]);
 
-// Decrypt one or more encrypted blobs:
-const decryptedArray = await doDecrypt([
-  { encrypted: /* string from encrypt() */, tags: ['tag1', 'tag2'] },
+// Decrypt
+const decrypted = await doDecrypt([
+  { encrypted: encrypted[0], tags: ['address'] },
+  { encrypted: encrypted[1], tags: ['email'] },
 ]);
 ```
 
-### Data Types
+**Important:**
+- `data` must be a string or `Uint8Array` (not an object - use `JSON.stringify()` first)
+- Users need `_tide_<tag>.selfencrypt` / `_tide_<tag>.selfdecrypt` roles
+- Output order matches input order
 
-The `data` property **must** be either a string or a `Uint8Array` (raw bytes).
-- When you encrypt a string, decryption returns a string.
-- When you encrypt a `Uint8Array`, decryption returns a `Uint8Array`.
-
-### Valid Example
+### Encrypt Multiple Fields
 
 ```tsx
 const encrypted = await doEncrypt([
-  {
-    data: "10 Smith Street",
-    tags: ["street"]
-  },
-  {
-    data: "Southport",
-    tags: ["suburb"]
-  },
-  {
-    data: "20 James Street - Burleigh Heads",
-    tags: ["street", "suburb"]
-  }
+  { data: '10 Smith Street', tags: ['street'] },
+  { data: 'Southport', tags: ['suburb'] },
+  { data: '20 James Street - Burleigh Heads', tags: ['street', 'suburb'] },
 ]);
 ```
 
-### Invalid Example (will fail)
+### Encrypt Objects
 
 ```tsx
-// Prepare data for encryption
-const dataToEncrypt = {
-  title: noteData.title,
-  content: noteData.content
-};
+// Wrong - objects not allowed
+await doEncrypt([{ data: { name: 'John' }, tags: ['user'] }]);
 
-// This will ERROR - objects not allowed
-const encryptedArray = await doEncrypt([
-  { data: dataToEncrypt, tags: ['note'] }
-]);
-
-// Instead, stringify objects first:
-const encryptedArray = await doEncrypt([
-  { data: JSON.stringify(dataToEncrypt), tags: ['note'] }
-]);
+// Right - stringify first
+await doEncrypt([{ data: JSON.stringify({ name: 'John' }), tags: ['user'] }]);
 ```
 
-### Encryption Example
+---
+
+## Add Token to API Calls
 
 ```tsx
-async function encryptExamples() {
-  const { doEncrypt } = useTideCloak();
+function useApi() {
+  const { token } = useTideCloak();
 
-  // Simple single-item encryption:
-  const [encryptedDob] = await doEncrypt([
-    { data: '2005-03-04', tags: ['dob'] }
-  ]);
+  const fetchWithAuth = (url, options = {}) => {
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  };
 
-  // Multi-field encryption:
-  const encryptedFields = await doEncrypt([
-    { data: '10 Smith Street', tags: ['street'] },
-    { data: 'Southport', tags: ['suburb'] },
-    { data: '20 James Street - Burleigh Heads', tags: ['street', 'suburb'] }
-  ]);
+  return { fetchWithAuth };
 }
 ```
 
-### Decryption Example
+---
 
-```tsx
-async function decryptExamples(encryptedFields) {
-  const { doDecrypt } = useTideCloak();
+## Troubleshooting
 
-  // Single-item decryption:
-  const [decryptedDob] = await doDecrypt([
-    { encrypted: encryptedFields[0], tags: ['dob'] }
-  ]);
+**Blank page after login**
 
-  // Multi-field decryption:
-  const decryptedFields = await doDecrypt([
-    { encrypted: encryptedFields[0], tags: ['street'] },
-    { encrypted: encryptedFields[1], tags: ['suburb'] },
-    { encrypted: encryptedFields[2], tags: ['street', 'suburb'] }
-  ]);
-}
+Make sure you have a route for `/auth/redirect` and your redirect URI is registered in TideCloak.
+
+**"adapter.json not found" error**
+
+Make sure the file is in your `public/` folder and accessible at `/adapter.json`.
+
+**"silent-check-sso.html not found" or silent SSO fails**
+
+Create `public/silent-check-sso.html` with this content:
+```html
+<html><body><script>parent.postMessage(location.href, location.origin)</script></body></html>
 ```
 
-### Permissions
+**Token not available**
 
-- Encryption requires `_tide_<tag>.selfencrypt` role
-- Decryption requires `_tide_<tag>.selfdecrypt` role
-- Users need roles matching **every** tag on a payload
-- A payload tagged `['street', 'suburb']` requires both `_tide_street.selfencrypt` and `_tide_suburb.selfencrypt` roles
-
-### Order Guarantee
-
-Output preserves input order - the first item in the input array corresponds to the first item in the output array.
+The `token` is null while `isInitializing` is true. Wait for initialization to complete before using it.
