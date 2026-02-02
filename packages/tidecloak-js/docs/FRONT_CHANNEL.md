@@ -62,6 +62,24 @@ IAMService
 await IAMService.initIAM(config);
 ```
 
+### Session Mode
+
+Control how the SDK handles tokens on startup:
+
+```js
+await IAMService.initIAM({
+  ...config,
+  sessionMode: "offline",  // or "online"
+});
+```
+
+| Mode | Behavior | Best For |
+|------|----------|----------|
+| `"online"` | Validates tokens with server, refreshes if needed, requires login if invalid | Always-connected apps |
+| `"offline"` | Accepts stored tokens without server validation, even if expired | Offline-first apps, PWAs |
+
+**Offline mode** lets users access your app even when their session has expired. You can then prompt for re-login only when an API call fails with 401.
+
 ### 5. Add Login/Logout Buttons
 
 ```js

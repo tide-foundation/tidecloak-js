@@ -50,6 +50,21 @@ function MyApp({ Component, pageProps }) {
 export default MyApp;
 ```
 
+### Session Mode
+
+Control how the SDK handles tokens on startup:
+
+```tsx
+<TideCloakProvider config={{ ...adapter, sessionMode: 'offline' }}>
+```
+
+| Mode | Behavior | Best For |
+|------|----------|----------|
+| `'online'` | Validates tokens with server, refreshes if needed, requires login if invalid | Always-connected apps |
+| `'offline'` | Accepts stored tokens without server validation, even if expired | Offline-first apps, PWAs |
+
+**Offline mode** lets users access your app even when their session has expired. You can then prompt for re-login only when an API call fails with 401.
+
 ### 3. Create Redirect Page
 
 **App Router:** `app/auth/redirect/page.tsx`

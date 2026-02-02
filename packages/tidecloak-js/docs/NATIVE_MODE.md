@@ -97,6 +97,26 @@ IAMService
 await IAMService.initIAM(config);
 ```
 
+### Session Mode
+
+Control how the SDK handles tokens on startup:
+
+```js
+const config = {
+  authMode: "native",
+  adapter: createElectronAdapter(),
+  sessionMode: "offline",  // or "online"
+  ...adapterConfig,
+};
+```
+
+| Mode | Behavior | Best For |
+|------|----------|----------|
+| `"online"` | Validates tokens with server, refreshes if needed, requires login if invalid | Always-connected apps |
+| `"offline"` | Accepts stored tokens without server validation, even if expired | Offline-first apps |
+
+**Offline mode** is great for apps that need to work without internet. Users can access the app with expired tokens, and you only prompt for re-login when an API call fails with 401.
+
 ### 4. Login and Logout
 
 ```js
