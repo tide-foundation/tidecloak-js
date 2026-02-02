@@ -1,35 +1,37 @@
-# Hybrid/BFF Mode (React)
+# Hybrid/BFF Mode
 
-For React apps that need extra security. Your backend handles tokens instead of the browser.
+For apps where security is critical. Your backend handles tokens - they never touch the browser.
 
 ---
 
-## How It Works
+## What You'll Build
 
-1. User clicks "Login"
-2. Browser redirects to TideCloak login page
-3. User logs in
-4. TideCloak redirects back with an authorization code
-5. Your **backend** exchanges the code for tokens
-6. Backend creates a session (e.g., cookie)
-7. Tokens stay on your server, not in the browser
+User clicks login, goes to TideCloak, logs in, comes back. But instead of tokens going to the browser, they go to your server. Your server creates a session, and the browser just gets a session cookie.
 
 ---
 
 ## When to Use This
 
-- Apps with sensitive data
-- When you don't want tokens in the browser
-- Apps that need server-side session control
+- You're handling sensitive data (financial, medical, etc.)
+- You don't want tokens in the browser at all
+- Your backend needs to make API calls on behalf of users
+- You need server-side session control
 
 ---
 
-## Setup
+## Quick Start
 
-### 1. Config
+### 1. Install
+
+```bash
+npm install @tidecloak/react
+```
+
+### 2. Set Up Your Config
 
 ```tsx
-const hybridConfig = {
+// tidecloakConfig.ts
+export const hybridConfig = {
   authMode: "hybrid",
   oidc: {
     authorizationEndpoint: "https://auth.example.com/realms/myrealm/protocol/openid-connect/auth",
@@ -38,19 +40,19 @@ const hybridConfig = {
     scope: "openid profile email"
   },
   tokenExchange: {
-    endpoint: "/api/authenticate"  // Your backend endpoint
+    endpoint: "/api/authenticate"  // Your backend will handle this
   }
 };
 ```
 
-### 2. Login Page
+### 3. Create a Login Page
 
 ```tsx
+// LoginPage.tsx
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { IAMService } from '@tidecloak/js';
-
-const hybridConfig = { /* ... */ };
+import { hybridConfig } from './tidecloakConfig';
 
 export function LoginPage() {
   const [ready, setReady] = useState(false);
@@ -62,18 +64,24 @@ export function LoginPage() {
   }, []);
 
   return (
-    <button disabled={!ready} onClick={() => IAMService.doLogin(returnUrl)}>
-      Login with TideCloak
-    </button>
+    <div>
+      <h1>Welcome</h1>
+      <button disabled={!ready} onClick={() => IAMService.doLogin(returnUrl)}>
+        Log in with TideCloak
+      </button>
+    </div>
   );
 }
 ```
 
-### 3. Callback Page (Using Hook)
+### 4. Handle the Callback
 
-The easiest way to handle the callback is with the `useAuthCallback` hook:
+After login, TideCloak redirects back with an authorization code. The SDK sends this to your backend.
+
+**Option A: Use the hook**
 
 ```tsx
+// CallbackPage.tsx
 import { useNavigate } from 'react-router-dom';
 import { useAuthCallback } from '@tidecloak/react';
 
@@ -82,22 +90,19 @@ export function CallbackPage() {
 
   const { isProcessing, error } = useAuthCallback({
     onSuccess: (returnUrl) => navigate(returnUrl || '/'),
-    onError: (err) => console.error('Auth failed:', err),
-    onMissingVerifierRedirectTo: '/login', // If page was refreshed
+    onError: (err) => console.error('Login failed:', err),
+    onMissingVerifierRedirectTo: '/login',  // If page was refreshed
   });
 
-  if (isProcessing) return <div>Logging in...</div>;
-  if (error) return <div>Error: {error.message}</div>;
+  if (isProcessing) return <p>Logging in...</p>;
+  if (error) return <p>Error: {error.message}</p>;
   return null;
 }
 ```
 
-### 3b. Callback Page (Using Component)
-
-Or use the `AuthCallback` component for even simpler setup:
+**Option B: Use the component**
 
 ```tsx
-import { useNavigate } from 'react-router-dom';
 import { AuthCallback } from '@tidecloak/react';
 
 export function CallbackPage() {
@@ -108,16 +113,14 @@ export function CallbackPage() {
       onSuccess={(returnUrl) => navigate(returnUrl || '/')}
       onError={(err) => console.error(err)}
       onMissingVerifierRedirectTo="/login"
-      loadingComponent={<div>Logging in...</div>}
-      errorComponent={({ error }) => <div>Error: {error.message}</div>}
+      loadingComponent={<p>Logging in...</p>}
+      errorComponent={({ error }) => <p>Error: {error.message}</p>}
     />
   );
 }
 ```
 
-### 3c. Simple Auto-Redirect Callback
-
-For the simplest case, use `SimpleAuthCallback`:
+**Option C: Simplest auto-redirect**
 
 ```tsx
 import { SimpleAuthCallback } from '@tidecloak/react';
@@ -127,12 +130,12 @@ import { SimpleAuthCallback } from '@tidecloak/react';
   <SimpleAuthCallback
     defaultRedirect="/"
     loginPage="/login"
-    loadingComponent={<div>Logging in...</div>}
+    loadingComponent={<p>Logging in...</p>}
   />
 } />
 ```
 
-### 4. Backend Endpoint
+### 5. Build Your Backend Endpoint
 
 Your `/api/authenticate` endpoint receives:
 
@@ -145,19 +148,17 @@ Your `/api/authenticate` endpoint receives:
 
 Your backend should:
 1. Parse the JSON in `accessToken`
-2. Exchange the code with TideCloak's token endpoint
-3. Create a session for the user
-4. Return success
+2. Exchange the code with TideCloak
+3. Store tokens server-side
+4. Create a session for the user
 
----
-
-## Backend Token Exchange Example
+**Express.js example:**
 
 ```ts
-// Express.js example
 app.post('/api/authenticate', async (req, res) => {
   const authData = JSON.parse(req.body.accessToken);
 
+  // Exchange code for tokens
   const tokenResponse = await fetch(
     'https://auth.example.com/realms/myrealm/protocol/openid-connect/token',
     {
@@ -179,7 +180,7 @@ app.post('/api/authenticate', async (req, res) => {
 
   const tokens = await tokenResponse.json();
 
-  // Store tokens server-side and create session
+  // Store tokens and create session
   req.session.tokens = tokens;
   req.session.userId = tokens.sub;
 
@@ -189,66 +190,109 @@ app.post('/api/authenticate', async (req, res) => {
 
 ---
 
-## Available Utilities
+## What's Available
 
-Import from `@tidecloak/react`:
-
-| Export | Description |
-|--------|-------------|
-| `useAuthCallback(options)` | Hook for handling OAuth callbacks |
-| `parseCallbackUrl()` | Parse callback data from URL |
-| `AuthCallback` | Component for callback pages with loading/error states |
-| `SimpleAuthCallback` | Auto-redirect callback component |
-
-### useAuthCallback Options
+### useAuthCallback Hook
 
 ```tsx
-const { isCallback, isProcessing, isSuccess, error, returnUrl, processCallback } = useAuthCallback({
-  autoProcess: true,                    // Auto-process on mount (default: true)
-  onSuccess: (returnUrl) => {},         // Called on success
-  onError: (error) => {},               // Called on error
-  onMissingVerifierRedirectTo: '/login' // Redirect if PKCE verifier missing
+const {
+  isCallback,       // Is this a callback page?
+  isProcessing,     // Currently processing?
+  isSuccess,        // Did auth succeed?
+  error,            // Error if failed
+  returnUrl,        // Where to redirect after
+  code,             // Auth code from TideCloak
+  processCallback,  // Manually trigger processing
+} = useAuthCallback({
+  autoProcess: true,                      // Process automatically (default)
+  onSuccess: (returnUrl) => {},           // Called on success
+  onError: (error) => {},                 // Called on error
+  onMissingVerifierRedirectTo: '/login',  // Redirect if PKCE verifier missing
 });
 ```
 
-### useAuthCallback Return Values
+### parseCallbackUrl
 
-| Value | Type | Description |
-|-------|------|-------------|
-| `isCallback` | `boolean` | True if this is a callback page |
-| `isProcessing` | `boolean` | True while processing |
-| `isSuccess` | `boolean` | True if auth succeeded |
-| `error` | `Error \| null` | Error if auth failed |
-| `returnUrl` | `string \| null` | URL to redirect to after auth |
-| `code` | `string \| null` | Authorization code from IdP |
-| `idpError` | `string \| null` | Error code from IdP |
-| `processCallback` | `() => Promise<void>` | Manually trigger processing |
+```tsx
+import { parseCallbackUrl } from '@tidecloak/react';
+
+const { code, error, errorDescription } = parseCallbackUrl();
+```
 
 ---
 
-## Limitations
+## What You Can't Do (Client-Side)
 
-In hybrid mode, tokens are on your server, so these client-side methods won't work:
+Since tokens are on your server, these won't work in the browser:
 
 - `getToken()`, `getIDToken()`
-- `getName()`, `hasRealmRole()`, `hasClientRole()`
-- `getValueFromToken()`, `getValueFromIDToken()`
+- `hasRealmRole()`, `hasClientRole()`
+- `getValueFromToken()`, `getValueFromIdToken()`
 - `doEncrypt()`, `doDecrypt()`
 
-Use these instead:
-- `isLoggedIn()` - Check if user completed login flow
-- `getReturnUrl()` - Get the page user wanted to visit
-
-Your backend should provide user info via your own API.
+Instead, your backend should:
+- Provide user info via your own API endpoints
+- Handle encryption server-side
+- Check roles when processing requests
 
 ---
 
-## When to Use Hybrid vs Front-channel
+## Checking Auth Status
 
-| Scenario | Mode |
-|----------|------|
-| Need tokens in browser for client-side API calls | Front-channel |
-| Tokens should never be in browser | Hybrid |
-| Server needs to make API calls on behalf of user | Hybrid |
-| Simple SPA with public API | Front-channel |
-| Sensitive data, high security requirements | Hybrid |
+On the client, you can check if the user completed the login flow:
+
+```tsx
+import { IAMService } from '@tidecloak/js';
+
+// Did user complete login?
+const loggedIn = IAMService.isLoggedIn();
+
+// Where did user want to go?
+const returnUrl = IAMService.getReturnUrl();
+```
+
+But for actual user info, call your backend:
+
+```tsx
+// Your backend returns user info from the session
+const response = await fetch('/api/me');
+const user = await response.json();
+```
+
+---
+
+## Front-Channel vs Hybrid
+
+| Question | Front-Channel | Hybrid |
+|----------|---------------|--------|
+| Where are tokens? | Browser | Server |
+| Can I use `doEncrypt()`? | Yes | No (do it server-side) |
+| Can I check roles client-side? | Yes | No (check on server) |
+| Is it simpler? | Yes | No |
+| Is it more secure? | Good | Better |
+
+**Use Front-Channel if:**
+- You're building a simple SPA
+- You need client-side encryption
+- You want the easiest setup
+
+**Use Hybrid if:**
+- Security is critical
+- You don't trust the browser with tokens
+- Your backend makes API calls on behalf of users
+
+---
+
+## Troubleshooting
+
+**Callback fails with "PKCE verifier missing"**
+
+The user probably refreshed the callback page. Use `onMissingVerifierRedirectTo` to send them back to login.
+
+**Backend token exchange fails**
+
+Check that your `redirect_uri` matches exactly what's registered in TideCloak.
+
+**Session not persisting**
+
+Make sure your backend is setting cookies correctly and they're not being blocked by CORS or same-site policies.

@@ -5,6 +5,7 @@ import type { TideCloakContextValue, TideCloakContextProviderProps } from './con
 export { TideCloakContextProvider } from './contexts/TideCloakContextProvider';
 export type { TideCloakContextValue, TideCloakContextProviderProps } from './contexts/TideCloakContextProvider';
 export { RequestEnclave } from "@tidecloak/js";
+export type { NativeAdapter, NativeTokenData, NativeAuthCallbackResult } from "@tidecloak/js";
 
 // Hybrid mode utilities
 export { useAuthCallback, parseCallbackUrl } from './hooks/useAuthCallback';

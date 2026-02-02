@@ -1,34 +1,30 @@
 # Front-Channel Mode
 
-The default mode for web apps. Your browser handles login and tokens directly.
+The simplest way to add TideCloak to your web app. Everything happens in the browser.
 
 ---
 
-## How It Works
+## What You'll Build
 
-1. User clicks "Login"
-2. Browser redirects to TideCloak login page
-3. User logs in
-4. TideCloak redirects back to your app with tokens
-5. SDK stores tokens in browser
+Click login, your users go to TideCloak, they log in, they come back authenticated. That's it.
 
 ---
 
-## Setup
+## Quick Start
 
-### 1. Create Config File
+### 1. Get Your Config File
 
-Download your adapter config from TideCloak admin console, or create `tidecloak.json`:
+Download `adapter.json` from your TideCloak admin console and put it in your app.
 
-```json
-{
-  "realm": "myrealm",
-  "auth-server-url": "https://auth.example.com",
-  "resource": "my-app"
-}
+### 2. Add Silent SSO Check File
+
+This file is required for silent session checks. It should be auto-copied when you install `@tidecloak/js`, but if it's missing, create `public/silent-check-sso.html`:
+
+```html
+<html><body><script>parent.postMessage(location.href, location.origin)</script></body></html>
 ```
 
-### 2. Create Redirect Page
+### 3. Create a Redirect Page
 
 Create `public/auth/redirect.html`:
 
@@ -38,89 +34,135 @@ Create `public/auth/redirect.html`:
   <head><title>Redirecting...</title></head>
   <body>
     <p>Redirecting...</p>
-    <script>
-      window.location.href = "/";
-    </script>
+    <script>window.location.href = "/";</script>
   </body>
 </html>
 ```
 
-### 3. Initialize SDK
+### 4. Initialize the SDK
 
 ```js
 import { IAMService } from "@tidecloak/js";
-import config from "./tidecloak.json";
-
-// Set up UI handlers
-document.getElementById("login-btn").onclick = () => IAMService.doLogin();
-document.getElementById("logout-btn").onclick = () => IAMService.doLogout();
+import config from "./adapter.json";
 
 // Listen for events
 IAMService
   .on("ready", (loggedIn) => {
-    console.log("Auth ready, logged in:", loggedIn);
+    console.log("Ready! Logged in:", loggedIn);
+    updateUI(loggedIn);
   })
   .on("authSuccess", () => {
     console.log("Login successful");
   })
   .on("logout", () => {
-    console.log("User logged out");
+    console.log("Logged out");
   });
 
 // Start the SDK
 await IAMService.initIAM(config);
 ```
 
----
-
-## Available Methods
+### 5. Add Login/Logout Buttons
 
 ```js
-// Check if user is logged in
-IAMService.isLoggedIn();  // true or false
+document.getElementById("login-btn").onclick = () => IAMService.doLogin();
+document.getElementById("logout-btn").onclick = () => IAMService.doLogout();
+```
 
-// Get the access token (for API calls)
-await IAMService.getToken();
+---
+
+## Everything You Can Do
+
+```js
+// Check auth state
+IAMService.isLoggedIn();           // Is user logged in?
+
+// Get tokens
+await IAMService.getToken();       // Access token (for API calls)
+IAMService.getIDToken();           // ID token
 
 // Get user info
-IAMService.getName();  // username
-IAMService.getValueFromToken("email");  // any token field
+IAMService.getName();              // Username
+IAMService.getValueFromToken("email");
+IAMService.getValueFromIdToken("name");
 
 // Check roles
 IAMService.hasRealmRole("admin");
 IAMService.hasClientRole("editor");
 
-// Login and logout
+// Auth actions
 IAMService.doLogin();
 IAMService.doLogout();
+await IAMService.updateIAMToken(); // Refresh token
 
-// Refresh token manually
-await IAMService.updateIAMToken();
+// Encryption (if configured)
+await IAMService.doEncrypt([{ data: "secret", tags: ["personal"] }]);
+await IAMService.doDecrypt([{ encrypted: "...", tags: ["personal"] }]);
 ```
 
 ---
 
 ## Events
 
-| Event | When it fires |
-|-------|---------------|
-| `ready` | SDK finished loading (receives true/false for login state) |
-| `authSuccess` | User successfully logged in |
-| `authError` | Login failed |
-| `logout` | User logged out |
-| `tokenExpired` | Token expired |
-
 ```js
-IAMService.on("tokenExpired", () => {
-  alert("Your session expired. Please log in again.");
-});
+IAMService
+  .on("ready", (loggedIn) => {
+    // SDK is ready - loggedIn is true/false
+  })
+  .on("authSuccess", () => {
+    // User logged in
+  })
+  .on("authError", (err) => {
+    // Login failed
+  })
+  .on("logout", () => {
+    // User logged out
+  })
+  .on("tokenExpired", () => {
+    // Token expired - SDK will try to refresh
+  });
 ```
 
 ---
 
-## Custom Redirect URI
+## Encryption
 
-By default, users are sent to `/auth/redirect` after login. To change this:
+Protect sensitive data with tag-based encryption:
+
+```js
+// Encrypt one or more items
+const encrypted = await IAMService.doEncrypt([
+  { data: "10 Smith Street", tags: ["address"] },
+  { data: "john@example.com", tags: ["email"] },
+]);
+
+// Decrypt
+const decrypted = await IAMService.doDecrypt([
+  { encrypted: encrypted[0], tags: ["address"] },
+  { encrypted: encrypted[1], tags: ["email"] },
+]);
+```
+
+**Important:**
+- `data` must be a string or `Uint8Array` (not an object - use `JSON.stringify()` first)
+- Users need `_tide_<tag>.selfencrypt` / `_tide_<tag>.selfdecrypt` roles
+- Output order matches input order
+
+### Encrypt Objects
+
+```js
+// Wrong - objects not allowed
+await IAMService.doEncrypt([{ data: { name: "John" }, tags: ["user"] }]);
+
+// Right - stringify first
+await IAMService.doEncrypt([{ data: JSON.stringify({ name: "John" }), tags: ["user"] }]);
+```
+
+---
+
+## Custom Redirect Path
+
+By default, users go to `/auth/redirect` after login. To change this:
 
 ```js
 await IAMService.initIAM({
@@ -129,116 +171,25 @@ await IAMService.initIAM({
 });
 ```
 
-Make sure the new path exists in your app.
-
 ---
 
-## Encrypting & Decrypting Data
+## Troubleshooting
 
-TideCloak lets you protect sensitive fields with tag-based encryption. You pass in an array of `{ data, tags }` objects and receive an array of encrypted strings.
+**Blank page after login**
 
-### Syntax
+Make sure you have a page at `/auth/redirect` and your redirect URI is registered in TideCloak.
 
-```js
-// Encrypt one or more payloads:
-const encryptedArray = await IAMService.doEncrypt([
-  { data: /* string or Uint8Array */, tags: ['tag1', 'tag2'] },
-]);
+**"silent-check-sso.html not found" or silent SSO fails**
 
-// Decrypt one or more encrypted blobs:
-const decryptedArray = await IAMService.doDecrypt([
-  { encrypted: /* string from encrypt() */, tags: ['tag1', 'tag2'] },
-]);
+Create `public/silent-check-sso.html` with this content:
+```html
+<html><body><script>parent.postMessage(location.href, location.origin)</script></body></html>
 ```
 
-### Data Types
+**Token not available**
 
-The `data` property **must** be either a string or a `Uint8Array` (raw bytes).
-- When you encrypt a string, decryption returns a string.
-- When you encrypt a `Uint8Array`, decryption returns a `Uint8Array`.
+Wait for the `ready` event before using tokens.
 
-### Valid Example
+**Encryption fails**
 
-```js
-const encrypted = await IAMService.doEncrypt([
-  {
-    data: "10 Smith Street",
-    tags: ["street"]
-  },
-  {
-    data: "Southport",
-    tags: ["suburb"]
-  },
-  {
-    data: "20 James Street - Burleigh Heads",
-    tags: ["street", "suburb"]
-  }
-]);
-```
-
-### Invalid Example (will fail)
-
-```js
-// Prepare data for encryption
-const dataToEncrypt = {
-  title: noteData.title,
-  content: noteData.content
-};
-
-// This will ERROR - objects not allowed
-const encryptedArray = await IAMService.doEncrypt([
-  { data: dataToEncrypt, tags: ['note'] }
-]);
-
-// Instead, stringify objects first:
-const encryptedArray = await IAMService.doEncrypt([
-  { data: JSON.stringify(dataToEncrypt), tags: ['note'] }
-]);
-```
-
-### Encryption Example
-
-```js
-async function encryptExamples() {
-  // Simple single-item encryption:
-  const [encryptedDob] = await IAMService.doEncrypt([
-    { data: '2005-03-04', tags: ['dob'] }
-  ]);
-
-  // Multi-field encryption:
-  const encryptedFields = await IAMService.doEncrypt([
-    { data: '10 Smith Street', tags: ['street'] },
-    { data: 'Southport', tags: ['suburb'] },
-    { data: '20 James Street - Burleigh Heads', tags: ['street', 'suburb'] }
-  ]);
-}
-```
-
-### Decryption Example
-
-```js
-async function decryptExamples(encryptedFields) {
-  // Single-item decryption:
-  const [decryptedDob] = await IAMService.doDecrypt([
-    { encrypted: encryptedFields[0], tags: ['dob'] }
-  ]);
-
-  // Multi-field decryption:
-  const decryptedFields = await IAMService.doDecrypt([
-    { encrypted: encryptedFields[0], tags: ['street'] },
-    { encrypted: encryptedFields[1], tags: ['suburb'] },
-    { encrypted: encryptedFields[2], tags: ['street', 'suburb'] }
-  ]);
-}
-```
-
-### Permissions
-
-- Encryption requires `_tide_<tag>.selfencrypt` role
-- Decryption requires `_tide_<tag>.selfdecrypt` role
-- Users need roles matching **every** tag on a payload
-- A payload tagged `['street', 'suburb']` requires both `_tide_street.selfencrypt` and `_tide_suburb.selfencrypt` roles
-
-### Order Guarantee
-
-Output preserves input order - the first item in the input array corresponds to the first item in the output array.
+Make sure your `adapter.json` includes `vendorId` and the `client-origin-auth-{origin}` for your app's origin.

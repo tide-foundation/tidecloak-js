@@ -7,4 +7,5 @@ export { TideMemory, BaseTideRequest } from "heimdall-tide";
 /** @typedef {import('./types.js').NativeAdapter} NativeAdapter */
 /** @typedef {import('./types.js').NativeTokenData} NativeTokenData */
 /** @typedef {import('./types.js').NativeAuthCallbackResult} NativeAuthCallbackResult */
+/** @typedef {import('./types.js').NativeEncryptionCallbackResult} NativeEncryptionCallbackResult */
 /** @typedef {import('./types.js').NativeConfig} NativeConfig */

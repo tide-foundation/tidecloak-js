@@ -1,98 +1,103 @@
 # Native Mode
 
-For desktop and mobile apps (Electron, Tauri, React Native). Login happens in the system browser, and your app receives tokens via a callback.
+Build desktop and mobile apps with TideCloak. Works with Electron, Tauri, and React Native.
 
 ---
 
-## How It Works
+## What You'll Build
 
-1. User clicks "Login" in your app
-2. App opens the system browser with TideCloak login page
-3. User logs in
-4. Browser redirects to a custom URL (e.g., `myapp://auth/callback`)
-5. Your app catches this redirect and gets the tokens
-6. Tokens are saved to secure storage
+Your users click "Login" in your app, their browser opens, they log in, and they're back in your app - authenticated and ready to go. Tokens are stored securely on their device.
 
 ---
 
-## When to Use This
+## Quick Start
 
-- Electron apps
-- Tauri apps
-- React Native apps
-- Any app that can't use browser redirects directly
+### 1. Get Your Config File
 
----
+Download `adapter.json` from your TideCloak admin console. This has all your TideCloak settings.
 
-## Setup
+### 2. Create Your Adapter
 
-### 1. Create an Adapter
-
-The adapter tells the SDK how to do platform-specific things:
+The adapter handles platform-specific stuff - opening login windows, storing tokens. Here's one for Electron:
 
 ```js
-const myAdapter = {
-  // TideCloak server info
-  authServerUrl: "https://auth.example.com",
-  realm: "myrealm",
-  clientId: "my-native-app",
+// electronAdapter.js
+export function createElectronAdapter() {
+  return {
+    // Where should TideCloak redirect after login?
+    getRedirectUri: () => 'myapp://auth/callback',
 
-  // Where TideCloak redirects after login
-  getRedirectUri: async () => {
-    return "myapp://auth/callback";
-  },
+    // Open login in a popup window (NOT external browser - see note below)
+    openExternalUrl: async (url) => {
+      await window.ipcRenderer.invoke('open-auth-popup', url);
+    },
 
-  // Open URL in system browser
-  openExternalUrl: async (url) => {
-    // Use your platform's method to open URLs
-    // Electron: shell.openExternal(url)
-    // React Native: Linking.openURL(url)
-  },
+    // Listen for the auth callback
+    onAuthCallback: (callback) => {
+      const handler = (_event, data) => callback(data);
+      window.ipcRenderer.on('auth-callback', handler);
+      return () => window.ipcRenderer.off('auth-callback', handler);
+    },
 
-  // Listen for auth callbacks
-  onAuthCallback: (callback) => {
-    // Set up listener for your custom URL scheme
-    // When URL is received, call: callback({ code: "..." })
-    // Return a cleanup function
-    return () => { /* cleanup */ };
-  },
+    // Store tokens securely
+    saveTokens: async (tokens) => {
+      await window.ipcRenderer.invoke('save-tokens', tokens);
+      return true;
+    },
 
-  // Save tokens securely
-  saveTokens: async (tokens) => {
-    // Save to secure storage
-    // tokens has: accessToken, refreshToken, idToken, expiresAt
-    return true;
-  },
+    // Get stored tokens
+    getTokens: async () => {
+      return await window.ipcRenderer.invoke('get-tokens');
+    },
 
-  // Get saved tokens
-  getTokens: async () => {
-    // Return saved tokens, or null if none
-    return { accessToken, refreshToken, idToken, expiresAt };
-  },
-
-  // Delete tokens (for logout)
-  deleteTokens: async () => {
-    // Clear secure storage
-    return true;
-  }
-};
+    // Clear tokens on logout
+    deleteTokens: async () => {
+      await window.ipcRenderer.invoke('delete-tokens');
+      return true;
+    },
+  };
+}
 ```
 
-### 2. Initialize SDK
+That's it for the adapter. Just 6 functions, all platform-specific. The SDK handles everything else.
+
+> **Popup Window vs External Browser**
+>
+> If you need **encryption/decryption**, you **must** use a popup window (Electron BrowserWindow) instead of the system's external browser. This keeps session cookies inside your Electron app, which is required for the encryption/decryption session key to work.
+>
+> | Approach | Session Cookies | Encryption/Decryption |
+> |----------|-----------------|------------|
+> | Popup window (BrowserWindow) | Stays in Electron | Works |
+> | External browser (shell.openExternal) | Separate from Electron | Fails with "session key mismatch" |
+>
+> Without the session cookies, `doEncrypt()` and `doDecrypt()` will fail.
+>
+> Your main process should create a BrowserWindow for login, not call `shell.openExternal()`.
+
+### 3. Initialize the SDK
 
 ```js
 import { IAMService } from "@tidecloak/js";
+import adapterConfig from "./adapter.json";
+import { createElectronAdapter } from "./electronAdapter";
 
 const config = {
   authMode: "native",
-  adapter: myAdapter,
-  sessionMode: "online"  // or "offline"
+  adapter: createElectronAdapter(),
+  ...adapterConfig,  // Spread your adapter.json config
 };
 
+// Listen for events
+IAMService
+  .on("authSuccess", () => console.log("Logged in!"))
+  .on("authError", (err) => console.error("Login failed:", err))
+  .on("logout", () => console.log("Logged out"));
+
+// Start the SDK
 await IAMService.initIAM(config);
 ```
 
-### 3. Login/Logout
+### 4. Login and Logout
 
 ```js
 // Login - opens system browser
@@ -103,119 +108,155 @@ IAMService.doLogout();
 
 // Check login state
 if (IAMService.isLoggedIn()) {
-  const username = IAMService.getValueFromToken("preferred_username");
-  console.log("Logged in as:", username);
+  console.log("User is logged in");
 }
 ```
 
 ---
 
-## Session Modes
-
-| Mode | What it does | Use case |
-|------|--------------|----------|
-| `online` (default) | Checks if tokens are valid on startup. Refreshes if expired. Requires login if invalid. | Apps that need fresh tokens |
-| `offline` | Accepts any saved tokens, even expired ones. | Offline-first apps |
-
-### Online Mode (default)
+## Everything You Can Do
 
 ```js
-const config = {
-  authMode: "native",
-  adapter: myAdapter,
-  sessionMode: "online"
-};
-```
+// Check auth state
+IAMService.isLoggedIn();          // Is user logged in?
 
-On startup:
-- Has valid tokens? User is logged in
-- Has expired tokens? SDK tries to refresh them
-- Can't refresh? User must log in again
+// Get tokens
+await IAMService.getToken();      // Access token
+IAMService.getIDToken();          // ID token
 
-### Offline Mode
+// Get user info
+IAMService.getName();             // Username
+IAMService.getValueFromToken("email");
+IAMService.getValueFromIdToken("name");
 
-```js
-const config = {
-  authMode: "native",
-  adapter: myAdapter,
-  sessionMode: "offline"
-};
-```
-
-On startup:
-- Has any tokens (even expired)? User is logged in
-- No tokens? User is not logged in
-
-Your server validates tokens when making API calls. If a call returns 401, prompt the user to log in again.
-
----
-
-## Electron Example
-
-```js
-// electronAdapter.js
-export const electronAdapter = {
-  authServerUrl: process.env.TIDECLOAK_URL,
-  realm: process.env.TIDECLOAK_REALM,
-  clientId: process.env.TIDECLOAK_CLIENT_ID,
-
-  getRedirectUri: async () => "myapp://auth/callback",
-
-  openExternalUrl: async (url) => {
-    await window.ipcRenderer.invoke("open-external-url", url);
-  },
-
-  onAuthCallback: (callback) => {
-    const handler = (_event, data) => callback(data);
-    window.ipcRenderer.on("auth-callback", handler);
-    return () => window.ipcRenderer.off("auth-callback", handler);
-  },
-
-  saveTokens: async (tokens) => {
-    const result = await window.ipcRenderer.invoke("save-tokens", tokens);
-    return result.success;
-  },
-
-  getTokens: async () => {
-    const result = await window.ipcRenderer.invoke("get-tokens");
-    return result.success ? result.tokens : null;
-  },
-
-  deleteTokens: async () => {
-    const result = await window.ipcRenderer.invoke("delete-tokens");
-    return result.success;
-  }
-};
-```
-
----
-
-## Available Methods
-
-All standard methods work in native mode:
-
-```js
-IAMService.isLoggedIn();
-IAMService.getToken();
-IAMService.getIDToken();
-IAMService.getName();
+// Check roles
 IAMService.hasRealmRole("admin");
 IAMService.hasClientRole("editor");
-IAMService.getValueFromToken("email");
-IAMService.getValueFromIDToken("name");
+
+// Auth actions
 IAMService.doLogin();
 IAMService.doLogout();
-```
+await IAMService.updateIAMToken();  // Refresh token
 
-**Note:** `doEncrypt()` and `doDecrypt()` are not yet supported in native mode.
+// Encryption (if configured)
+await IAMService.doEncrypt([{ data: "secret", tags: ["personal"] }]);
+await IAMService.doDecrypt([{ encrypted: "...", tags: ["personal"] }]);
+```
 
 ---
 
 ## Events
 
+Know when things happen:
+
 ```js
 IAMService
-  .on("authSuccess", () => console.log("Login successful"))
-  .on("authError", (err) => console.error("Login failed:", err))
-  .on("logout", () => console.log("Logged out"));
+  .on("authSuccess", () => {
+    // User logged in successfully
+  })
+  .on("authError", (err) => {
+    // Login failed
+  })
+  .on("logout", () => {
+    // User logged out
+  })
+  .on("tokenExpired", () => {
+    // Token expired - SDK will try to refresh
+  });
 ```
+
+---
+
+## Encryption
+
+If your TideCloak is set up for encryption, you can protect sensitive data:
+
+```js
+// Encrypt
+const [encrypted] = await IAMService.doEncrypt([
+  { data: "sensitive info", tags: ["personal"] }
+]);
+
+// Decrypt
+const [decrypted] = await IAMService.doDecrypt([
+  { encrypted, tags: ["personal"] }
+]);
+```
+
+Users need the right roles (`_tide_<tag>.selfencrypt` / `_tide_<tag>.selfdecrypt`) to encrypt/decrypt with specific tags.
+
+---
+
+## Platform Setup
+
+### Electron
+
+You'll need to set up your main process to:
+
+1. **Create a popup window for login** (required for encryption):
+```js
+// main.js
+ipcMain.handle('open-auth-popup', async (event, url) => {
+  const authWindow = new BrowserWindow({
+    width: 500,
+    height: 700,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  // Listen for redirect
+  authWindow.webContents.on('will-redirect', (event, redirectUrl) => {
+    if (redirectUrl.startsWith('myapp://')) {
+      const url = new URL(redirectUrl);
+      const code = url.searchParams.get('code');
+      const error = url.searchParams.get('error');
+
+      // Send back to renderer
+      mainWindow.webContents.send('auth-callback', { code, error });
+      authWindow.close();
+    }
+  });
+
+  authWindow.loadURL(url);
+});
+```
+
+2. **Register a custom protocol** (e.g., `myapp://`)
+
+3. **Store tokens securely** (use `safeStorage` or similar)
+
+4. **Handle token storage IPC calls**
+
+### Tauri
+
+Similar to Electron - use a WebView window for login, register a protocol and handle callbacks.
+
+### React Native
+
+Use deep links for the callback URL and secure storage for tokens.
+
+---
+
+## Troubleshooting
+
+**Login opens but nothing happens after**
+
+Make sure your redirect URI is registered in TideCloak and your app is handling the callback.
+
+**Tokens not persisting**
+
+Check that your `saveTokens` and `getTokens` functions are working correctly.
+
+**Encryption/decryption fails with "session key mismatch"**
+
+You're probably using an external browser instead of a popup window. The session cookies from login must stay in your Electron app for encryption/decryption to work.
+
+Fix: Use `new BrowserWindow()` to open the login page, not `shell.openExternal()`.
+
+**Encryption/decryption fails with missing config**
+
+Make sure your `adapter.json` includes:
+- `vendorId` - Your Tide vendor ID
+- `client-origin-auth-{origin}` - Auth signature for your app's origin (e.g., `client-origin-auth-http://localhost:5174`)

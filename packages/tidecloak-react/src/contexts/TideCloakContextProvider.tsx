@@ -1,5 +1,5 @@
 import React from "react";
-import { IAMService } from '@tidecloak/js';
+import { IAMService, NativeAdapter } from '@tidecloak/js';
 
 // Event callback types
 type AuthSuccessCallback = () => void | Promise<void>;
@@ -57,8 +57,41 @@ export interface TideCloakContextValue {
 }
 
 export interface TideCloakContextProviderProps {
-  config: Record<string, any>;
   children: React.ReactNode;
+
+  /**
+   * Full TideCloak configuration. If not provided, will be fetched from configUrl.
+   */
+  config?: Record<string, any>;
+
+  /**
+   * URL to fetch adapter.json from. Defaults to '/adapter.json'.
+   * Only used if config prop is not provided.
+   */
+  configUrl?: string;
+
+  /**
+   * Authentication mode. Must be explicitly specified.
+   * - 'native': For Electron/Tauri/React Native apps (requires adapter prop)
+   * - undefined: Standard frontchannel mode (browser-based)
+   */
+  authMode?: 'native';
+
+  /**
+   * Native adapter for Electron/Tauri/React Native apps.
+   * Required when authMode is 'native'.
+   *
+   * @example
+   * ```tsx
+   * <TideCloakContextProvider
+   *   authMode="native"
+   *   adapter={createElectronAdapter()}
+   * >
+   *   <App />
+   * </TideCloakContextProvider>
+   * ```
+   */
+  adapter?: NativeAdapter;
 
   // Event callbacks for custom handling
   onAuthSuccess?: AuthSuccessCallback;
@@ -70,7 +103,10 @@ export interface TideCloakContextProviderProps {
 const TideCloakContext = React.createContext<TideCloakContextValue | undefined>(undefined);
 
 export function TideCloakContextProvider({
-  config,
+  config: configProp,
+  configUrl = '/adapter.json',
+  authMode,
+  adapter,
   children,
   onAuthSuccess,
   onAuthError,
@@ -102,6 +138,7 @@ export function TideCloakContextProvider({
   // Config state
   const [baseURL, setBaseURL] = React.useState<string>("");
   const [reloadKey, setReloadKey] = React.useState(0);
+  const [resolvedConfig, setResolvedConfig] = React.useState<Record<string, any> | null>(null);
 
   // Store callbacks in refs to avoid re-subscriptions
   const onAuthSuccessRef = React.useRef(onAuthSuccess);
@@ -135,8 +172,79 @@ export function TideCloakContextProvider({
     };
   }, []);
 
+  // Resolve config - either use provided config or fetch from URL
+  React.useEffect(() => {
+    let mounted = true;
+
+    const resolveConfig = async () => {
+      // Validate native mode requirements
+      if (authMode === 'native' && !adapter) {
+        const err = new Error('[TideCloak] authMode="native" requires an adapter prop');
+        if (mounted) {
+          setInitError(err);
+          setIsInitializing(false);
+        }
+        return;
+      }
+
+      // If config is provided directly, use it
+      if (configProp) {
+        const finalConfig = {
+          ...configProp,
+          ...(authMode && { authMode }),
+          ...(adapter && { adapter }),
+        };
+
+        if (mounted) {
+          setResolvedConfig(finalConfig);
+        }
+        return;
+      }
+
+      // Otherwise, fetch from configUrl
+      try {
+        console.debug(`[TideCloak] Fetching config from ${configUrl}`);
+        const response = await fetch(configUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch config from ${configUrl}: ${response.status}`);
+        }
+        const fetchedConfig = await response.json();
+
+        const finalConfig = {
+          ...fetchedConfig,
+          ...(authMode && { authMode }),
+          ...(adapter && { adapter }),
+        };
+
+        if (mounted) {
+          console.debug('[TideCloak] Config loaded:', {
+            realm: finalConfig.realm,
+            authMode: finalConfig.authMode || 'frontchannel',
+            hasAdapter: !!finalConfig.adapter,
+          });
+          setResolvedConfig(finalConfig);
+        }
+      } catch (err) {
+        if (mounted) {
+          console.error('[TideCloak] Failed to load config:', err);
+          setInitError(err instanceof Error ? err : new Error(String(err)));
+          setIsInitializing(false);
+        }
+      }
+    };
+
+    resolveConfig();
+
+    return () => {
+      mounted = false;
+    };
+  }, [configProp, configUrl, authMode, adapter]);
+
   // Main IAMService initialization and event handling
   React.useEffect(() => {
+    // Wait for config to be resolved
+    if (!resolvedConfig) return;
+
     let mounted = true;
 
     const updateAuthState = async (eventName?: string) => {
@@ -237,10 +345,10 @@ export function TideCloakContextProvider({
     // Initialize
     (async () => {
       try {
-        const loaded = await IAMService.loadConfig(config) as Record<string, any>;
+        const loaded = await IAMService.loadConfig(resolvedConfig) as Record<string, any>;
         if (!loaded) throw new Error("Invalid config");
         setBaseURL((loaded['auth-server-url'] as string || '').replace(/\/+$/, ''));
-        await IAMService.initIAM(config, updateAuthState);
+        await IAMService.initIAM(resolvedConfig, updateAuthState);
         if (!mounted) return;
         setIsInitializing(false);
       } catch (err: any) {
@@ -259,7 +367,7 @@ export function TideCloakContextProvider({
         .off('tokenExpired', handleTokenExpired)
         .off('initError', handleInitError as any);
     };
-  }, [config, reloadKey]);
+  }, [resolvedConfig, reloadKey]);
 
   // Actions
   const login = React.useCallback(async () => {
