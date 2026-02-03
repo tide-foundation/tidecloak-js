@@ -141,6 +141,43 @@ import adapterConfig from './adapter.json';
 >
 ```
 
+### Action Notifications
+
+Hook into any notification system (toast, snackbar, etc.) for action feedback:
+
+```tsx
+import { toast } from 'your-toast-library'; // or any notification library
+
+<TideCloakContextProvider
+  onActionNotification={({ type, title, message }) => {
+    // type is 'success' | 'error' | 'warning' | 'info'
+    toast[type](message || title);
+  }}
+>
+```
+
+**Notification Shape:**
+```ts
+interface ActionNotification {
+  type: 'success' | 'error' | 'warning' | 'info';
+  title: string;
+  message?: string;
+  action?: string;
+}
+```
+
+**Actions that send notifications:**
+| Action | Events |
+|--------|--------|
+| `login` | Success, error |
+| `logout` | Logged out |
+| `token` | Session refresh success/error, expiring |
+| `reauth` | Re-authentication required |
+| `encrypt` | Success, error |
+| `decrypt` | Success, error |
+| `approval` | Approved, denied, error |
+| `init` | Initialization error |
+
 ### Session Mode
 
 Control how the SDK handles tokens on startup:
@@ -166,13 +203,33 @@ const {
   authenticated,        // Is the user logged in?
   isInitializing,       // Still starting up?
   isLoading,            // Login/logout in progress?
+  initError,            // Error during initialization (if any)
+  sessionExpired,       // Has the session expired?
   token,                // The access token
+  idToken,              // The ID token
   tokenExp,             // When does it expire?
+
+  // Network state
+  isOffline,            // Is the browser offline?
+  wasOffline,           // Was the browser offline at some point?
+  resetWasOffline,      // Clear the wasOffline flag
+
+  // Re-auth (for handling 401s)
+  needsReauth,          // Does the user need to re-authenticate?
+  triggerReauth,        // Set needsReauth to true
+  clearReauth,          // Clear the needsReauth flag
 
   // Actions
   login,                // Start login
   logout,               // Log out
+  getToken,             // Get token (async, refreshes if needed)
   refreshToken,         // Refresh the token
+  forceRefreshToken,    // Force refresh even if not expired
+
+  // Config
+  baseURL,              // The TideCloak server URL
+  getConfig,            // Get the full config object
+  reload,               // Re-initialize the SDK
 
   // User info
   getValueFromToken,    // Get claim from access token
@@ -183,6 +240,16 @@ const {
   // Encryption (if configured)
   doEncrypt,            // Encrypt data
   doDecrypt,            // Decrypt data
+
+  // Advanced: Direct service access
+  IAMService,           // Direct access to IAMService
+  AdminAPI,             // Direct access to AdminAPI
+
+  // Advanced: Tide request signing
+  initializeTideRequest,  // Sign a request for policy creation
+  getVendorId,            // Get vendor ID from config
+  getResource,            // Get client ID from config
+  approveTideRequests,    // Open Tide approval enclave
 } = useTideCloak();
 ```
 
@@ -306,9 +373,10 @@ await doEncrypt([{ data: JSON.stringify({ name: 'John' }), tags: ['user'] }]);
 
 ```tsx
 function useApi() {
-  const { token } = useTideCloak();
+  const { getToken } = useTideCloak();
 
-  const fetchWithAuth = (url, options = {}) => {
+  const fetchWithAuth = async (url, options = {}) => {
+    const token = await getToken(); // Refreshes if needed
     return fetch(url, {
       ...options,
       headers: {
@@ -320,6 +388,144 @@ function useApi() {
 
   return { fetchWithAuth };
 }
+```
+
+---
+
+## Handle Offline State
+
+Track when users go offline and come back online:
+
+```tsx
+function OfflineNotice() {
+  const { isOffline, wasOffline, resetWasOffline } = useTideCloak();
+
+  if (isOffline) {
+    return <div className="banner">You're offline</div>;
+  }
+
+  if (wasOffline) {
+    return (
+      <div className="banner">
+        Back online!
+        <button onClick={resetWasOffline}>Dismiss</button>
+      </div>
+    );
+  }
+
+  return null;
+}
+```
+
+---
+
+## Handle 401 Re-authentication
+
+When your API returns 401, prompt the user to re-authenticate:
+
+```tsx
+<TideCloakContextProvider
+  onReauthRequired={() => {
+    // Optionally show a modal or redirect to login
+  }}
+>
+```
+
+```tsx
+function useApi() {
+  const { getToken, triggerReauth, needsReauth, login } = useTideCloak();
+
+  const fetchWithAuth = async (url, options = {}) => {
+    const token = await getToken();
+    const response = await fetch(url, {
+      ...options,
+      headers: { ...options.headers, Authorization: `Bearer ${token}` },
+    });
+
+    if (response.status === 401) {
+      triggerReauth(); // Sets needsReauth to true
+    }
+
+    return response;
+  };
+
+  return { fetchWithAuth };
+}
+
+// In your UI
+function ReauthModal() {
+  const { needsReauth, login, clearReauth } = useTideCloak();
+
+  if (!needsReauth) return null;
+
+  return (
+    <div className="modal">
+      <p>Your session has expired</p>
+      <button onClick={login}>Log in again</button>
+      <button onClick={clearReauth}>Cancel</button>
+    </div>
+  );
+}
+```
+
+---
+
+## Advanced: Direct Service Access
+
+For advanced use cases, you can access the underlying services directly:
+
+```tsx
+const { IAMService, AdminAPI } = useTideCloak();
+
+// Use IAMService methods directly
+const tokenExp = IAMService.getTokenExp();
+
+// Use AdminAPI for admin operations
+const users = await AdminAPI.getUsers();
+```
+
+---
+
+## Advanced: Tide Request Signing
+
+For policy creation and change management, sign requests with user credentials:
+
+```tsx
+const { initializeTideRequest, getVendorId, getResource } = useTideCloak();
+
+// Sign a protobuf request for policy creation
+const signedRequest = await initializeTideRequest(myPolicyRequest);
+
+// Get config values for API calls
+const vendorId = getVendorId();
+const clientId = getResource();
+```
+
+---
+
+## Advanced: Tide Approval Enclave
+
+For operator approvals (reviewing change set requests):
+
+```tsx
+const { approveTideRequests } = useTideCloak();
+
+// Open the approval enclave with pending requests
+const results = await approveTideRequests([
+  { id: 'request-1', request: encodedRequest1 },
+  { id: 'request-2', request: encodedRequest2 },
+]);
+
+// Handle results
+results.forEach(result => {
+  if (result.approved) {
+    console.log(`${result.id} approved`);
+  } else if (result.denied) {
+    console.log(`${result.id} denied`);
+  } else if (result.pending) {
+    console.log(`${result.id} still pending`);
+  }
+});
 ```
 
 ---

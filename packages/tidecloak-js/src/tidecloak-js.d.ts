@@ -451,3 +451,19 @@ export const IAMService: IAMServiceInstance;
 export type RequestEnclave = HeimdallRequestEnclave;
 export type ApprovalEnclave = HeimdallApprovalEnclave;
 export { ApprovalEnclaveNew, TideMemory, BaseTideRequest };
+
+// Admin API re-exports
+export {
+  AdminAPI,
+  AdminAPI as AdminAPIClass,
+  type Role,
+  type User,
+  type PolicyTemplate,
+  type TemplateParameter,
+  type ChangeSet,
+  type Policy,
+  type AccessLog,
+  type PolicyLog,
+  type GetUsersParams,
+  type GetLogsParams,
+} from "./AdminAPI";

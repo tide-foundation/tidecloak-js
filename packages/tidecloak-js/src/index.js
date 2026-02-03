@@ -9,3 +9,5 @@ export { TideMemory, BaseTideRequest } from "heimdall-tide";
 /** @typedef {import('./types.js').NativeAuthCallbackResult} NativeAuthCallbackResult */
 /** @typedef {import('./types.js').NativeEncryptionCallbackResult} NativeEncryptionCallbackResult */
 /** @typedef {import('./types.js').NativeConfig} NativeConfig */
+// Admin API
+export { default as AdminAPI, AdminAPI as AdminAPIClass } from './AdminAPI.js';

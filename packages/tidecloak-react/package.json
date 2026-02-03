@@ -48,6 +48,6 @@
     "@types/react-dom": "^19.1.6"
   },
   "dependencies": {
-    "@tidecloak/js": "^0.13.11"
+    "@tidecloak/js": "file:../tidecloak-js"
   }
 }
