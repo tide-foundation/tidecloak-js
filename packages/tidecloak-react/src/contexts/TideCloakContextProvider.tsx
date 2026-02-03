@@ -1,11 +1,21 @@
 import React from "react";
-import { IAMService, NativeAdapter } from '@tidecloak/js';
+import { IAMService, NativeAdapter, AdminAPI } from '@tidecloak/js';
 
 // Event callback types
 type AuthSuccessCallback = () => void | Promise<void>;
 type AuthErrorCallback = (error: Error) => void;
 type LogoutCallback = () => void;
 type ReauthCallback = () => void;
+
+// Action notification types - generalized for any notification system
+export type ActionNotificationType = 'success' | 'error' | 'info' | 'warning';
+export interface ActionNotification {
+  type: ActionNotificationType;
+  title: string;
+  message?: string;
+  action?: string; // The action that triggered this (e.g., 'approval', 'encrypt', 'decrypt')
+}
+type ActionNotificationCallback = (notification: ActionNotification) => void;
 
 export interface TideCloakContextValue {
   // Bootstrap state
@@ -33,8 +43,12 @@ export interface TideCloakContextValue {
   // Config
   baseURL: string;
 
-  // Actions
-  getConfig: () => Record<string, any>;
+  // IAMService and AdminAPI instances (for passing to external components)
+  IAMService: typeof IAMService;
+  AdminAPI: typeof AdminAPI;
+
+  // actions
+  getConfig: () => Record<string, any>
   reload: () => void;
   login: () => Promise<void>;
   logout: () => Promise<void>;
@@ -52,8 +66,21 @@ export interface TideCloakContextValue {
   resetWasOffline: () => void;
 
   // Tide actions
-  doEncrypt: (data: any) => Promise<any>;
-  doDecrypt: (data: any) => Promise<any>;
+  doEncrypt: (data: any) => Promise<any>
+  doDecrypt: (data: any) => Promise<any>
+
+  // Tide request signing (for policy creation)
+  initializeTideRequest: <T extends { encode: () => Uint8Array }>(request: T) => Promise<T>
+  getVendorId: () => string
+  getResource: () => string
+
+  // Tide approval enclave (for change set approvals)
+  approveTideRequests: (requests: { id: string; request: Uint8Array }[]) => Promise<{
+    id: string;
+    approved?: { request: Uint8Array };
+    denied?: boolean;
+    pending?: boolean;
+  }[]>
 }
 
 export interface TideCloakContextProviderProps {
@@ -98,6 +125,21 @@ export interface TideCloakContextProviderProps {
   onAuthError?: AuthErrorCallback;
   onLogout?: LogoutCallback;
   onReauthRequired?: ReauthCallback;
+
+  /**
+   * Callback for action notifications (approvals, encryption, etc.)
+   * Use this to integrate with your own notification system (toast, snackbar, etc.)
+   *
+   * @example
+   * ```tsx
+   * <TideCloakContextProvider
+   *   onActionNotification={({ type, title, message }) => {
+   *     toast[type](message || title);
+   *   }}
+   * >
+   * ```
+   */
+  onActionNotification?: ActionNotificationCallback;
 }
 
 const TideCloakContext = React.createContext<TideCloakContextValue | undefined>(undefined);
@@ -111,7 +153,8 @@ export function TideCloakContextProvider({
   onAuthSuccess,
   onAuthError,
   onLogout,
-  onReauthRequired
+  onReauthRequired,
+  onActionNotification
 }: TideCloakContextProviderProps) {
   // Bootstrap state
   const [isInitializing, setIsInitializing] = React.useState(true);
@@ -145,13 +188,15 @@ export function TideCloakContextProvider({
   const onAuthErrorRef = React.useRef(onAuthError);
   const onLogoutRef = React.useRef(onLogout);
   const onReauthRequiredRef = React.useRef(onReauthRequired);
+  const onActionNotificationRef = React.useRef(onActionNotification);
 
   React.useEffect(() => {
     onAuthSuccessRef.current = onAuthSuccess;
     onAuthErrorRef.current = onAuthError;
     onLogoutRef.current = onLogout;
     onReauthRequiredRef.current = onReauthRequired;
-  }, [onAuthSuccess, onAuthError, onLogout, onReauthRequired]);
+    onActionNotificationRef.current = onActionNotification;
+  }, [onAuthSuccess, onAuthError, onLogout, onReauthRequired, onActionNotification]);
 
   // Network status tracking
   React.useEffect(() => {
@@ -278,6 +323,14 @@ export function TideCloakContextProvider({
       setIsLoading(false);
       await updateAuthState('authSuccess');
 
+      // Send notification
+      onActionNotificationRef.current?.({
+        type: 'success',
+        title: 'Logged In',
+        message: 'Successfully authenticated',
+        action: 'login'
+      });
+
       // Call user's callback
       if (onAuthSuccessRef.current) {
         try {
@@ -293,6 +346,14 @@ export function TideCloakContextProvider({
       setIsLoading(false);
       const err = error instanceof Error ? error : new Error(String(error));
 
+      // Send notification
+      onActionNotificationRef.current?.({
+        type: 'error',
+        title: 'Login Failed',
+        message: err.message,
+        action: 'login'
+      });
+
       // Call user's callback
       if (onAuthErrorRef.current) {
         onAuthErrorRef.current(err);
@@ -307,6 +368,14 @@ export function TideCloakContextProvider({
       setIdToken(null);
       setNeedsReauth(false);
 
+      // Send notification
+      onActionNotificationRef.current?.({
+        type: 'info',
+        title: 'Logged Out',
+        message: 'You have been logged out',
+        action: 'logout'
+      });
+
       // Call user's callback
       if (onLogoutRef.current) {
         onLogoutRef.current();
@@ -317,12 +386,29 @@ export function TideCloakContextProvider({
       if (!mounted) return;
       setInitError(err);
       setIsInitializing(false);
+
+      // Send notification
+      onActionNotificationRef.current?.({
+        type: 'error',
+        title: 'Initialization Failed',
+        message: err.message,
+        action: 'init'
+      });
     };
 
     const handleTokenExpired = async () => {
       if (!mounted) return;
       console.debug("[TideCloak] Token expired, attempting refresh...");
       setSessionExpired(true);
+
+      // Send notification
+      onActionNotificationRef.current?.({
+        type: 'warning',
+        title: 'Session Expiring',
+        message: 'Refreshing your session...',
+        action: 'token'
+      });
+
       try {
         await IAMService.updateIAMToken();
       } catch (refreshError) {
@@ -330,12 +416,38 @@ export function TideCloakContextProvider({
       }
     };
 
+    const handleAuthRefreshSuccess = async () => {
+      if (!mounted) return;
+      await updateAuthState('authRefreshSuccess');
+
+      // Send notification
+      onActionNotificationRef.current?.({
+        type: 'success',
+        title: 'Session Refreshed',
+        message: 'Your session has been refreshed',
+        action: 'token'
+      });
+    };
+
+    const handleAuthRefreshError = async () => {
+      if (!mounted) return;
+      await updateAuthState('authRefreshError');
+
+      // Send notification
+      onActionNotificationRef.current?.({
+        type: 'error',
+        title: 'Session Refresh Failed',
+        message: 'Please log in again',
+        action: 'token'
+      });
+    };
+
     // Subscribe to IAMService events
     IAMService
       .on('authSuccess', handleAuthSuccess)
       .on('authError', handleAuthError)
-      .on('authRefreshSuccess', updateAuthState)
-      .on('authRefreshError', updateAuthState)
+      .on('authRefreshSuccess', handleAuthRefreshSuccess)
+      .on('authRefreshError', handleAuthRefreshError)
       .on('logout', handleLogout)
       .on('tokenExpired', handleTokenExpired)
       .on('initError', handleInitError as any);
@@ -361,8 +473,8 @@ export function TideCloakContextProvider({
       IAMService
         .off('authSuccess', handleAuthSuccess)
         .off('authError', handleAuthError)
-        .off('authRefreshSuccess', updateAuthState)
-        .off('authRefreshError', updateAuthState)
+        .off('authRefreshSuccess', handleAuthRefreshSuccess)
+        .off('authRefreshError', handleAuthRefreshError)
         .off('logout', handleLogout)
         .off('tokenExpired', handleTokenExpired)
         .off('initError', handleInitError as any);
@@ -420,6 +532,15 @@ export function TideCloakContextProvider({
   // Re-auth actions
   const triggerReauth = React.useCallback(() => {
     setNeedsReauth(true);
+
+    // Send notification
+    onActionNotificationRef.current?.({
+      type: 'warning',
+      title: 'Re-authentication Required',
+      message: 'Please log in again to continue',
+      action: 'reauth'
+    });
+
     if (onReauthRequiredRef.current) {
       onReauthRequiredRef.current();
     }
@@ -459,6 +580,11 @@ export function TideCloakContextProvider({
 
     // Config
     baseURL,
+
+    // Direct access to service instances
+    IAMService,
+    AdminAPI,
+
     getConfig: () => isInitializing ? {} : IAMService.getConfig(),
     reload: () => setReloadKey((k: number) => k + 1),
 
@@ -483,8 +609,140 @@ export function TideCloakContextProvider({
     resetWasOffline,
 
     // Tide encryption - return null during initialization
-    doEncrypt: async (data: any) => isInitializing ? null : await IAMService.doEncrypt(data),
-    doDecrypt: async (data: any) => isInitializing ? null : await IAMService.doDecrypt(data)
+    doEncrypt: async (data: any) => {
+      if (isInitializing) return null;
+      try {
+        const result = await IAMService.doEncrypt(data);
+        onActionNotificationRef.current?.({
+          type: 'success',
+          title: 'Encrypted',
+          message: `${Array.isArray(data) ? data.length : 1} item(s) encrypted`,
+          action: 'encrypt'
+        });
+        return result;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        onActionNotificationRef.current?.({
+          type: 'error',
+          title: 'Encryption Failed',
+          message: err.message,
+          action: 'encrypt'
+        });
+        throw error;
+      }
+    },
+    doDecrypt: async (data: any) => {
+      if (isInitializing) return null;
+      try {
+        const result = await IAMService.doDecrypt(data);
+        onActionNotificationRef.current?.({
+          type: 'success',
+          title: 'Decrypted',
+          message: `${Array.isArray(data) ? data.length : 1} item(s) decrypted`,
+          action: 'decrypt'
+        });
+        return result;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        onActionNotificationRef.current?.({
+          type: 'error',
+          title: 'Decryption Failed',
+          message: err.message,
+          action: 'decrypt'
+        });
+        throw error;
+      }
+    },
+
+    // Tide request signing (for policy creation)
+    initializeTideRequest: async <T extends { encode: () => Uint8Array }>(request: T): Promise<T> => {
+      const tc = (IAMService as any)._tc;
+      if (!tc?.createTideRequest) {
+        throw new Error("TideCloak createTideRequest not available");
+      }
+      const encodedRequest = request.encode();
+      const initializedBytes = await tc.createTideRequest(encodedRequest);
+      const RequestClass = (request as any).constructor;
+      if (typeof RequestClass.decode === "function") {
+        return RequestClass.decode(initializedBytes) as T;
+      }
+      return request;
+    },
+
+    // Get vendor ID from config
+    getVendorId: () => {
+      const cfg = IAMService.getConfig() as any;
+      return cfg?.vendorId || cfg?.["vendor-id"] || "";
+    },
+
+    // Get resource (client ID) from config
+    getResource: () => {
+      const cfg = IAMService.getConfig() as any;
+      return cfg?.resource || cfg?.clientId || "";
+    },
+
+    // Tide approval enclave (for change set approvals)
+    approveTideRequests: async (requests: { id: string; request: Uint8Array }[]) => {
+      const tc = (IAMService as any)._tc;
+      if (!tc?.requestTideOperatorApproval) {
+        const error = new Error("TideCloak approval enclave not available");
+        onActionNotificationRef.current?.({
+          type: 'error',
+          title: 'Approval Failed',
+          message: error.message,
+          action: 'approval'
+        });
+        throw error;
+      }
+
+      try {
+        const response = await tc.requestTideOperatorApproval(requests);
+        const results = response.map((res: any) => {
+          if (res.status === "approved") {
+            return { id: res.id, approved: { request: res.request } };
+          } else if (res.status === "denied") {
+            return { id: res.id, denied: true };
+          } else {
+            return { id: res.id, pending: true };
+          }
+        });
+
+        // Send notifications for each result
+        const approved = results.filter((r: any) => r.approved).length;
+        const denied = results.filter((r: any) => r.denied).length;
+
+        if (approved > 0) {
+          onActionNotificationRef.current?.({
+            type: 'success',
+            title: 'Approved',
+            message: `${approved} request${approved > 1 ? 's' : ''} approved successfully`,
+            action: 'approval'
+          });
+        }
+        if (denied > 0) {
+          onActionNotificationRef.current?.({
+            type: 'warning',
+            title: 'Denied',
+            message: `${denied} request${denied > 1 ? 's' : ''} denied`,
+            action: 'approval'
+          });
+        }
+
+        // Trigger reload to refresh data after approvals
+        setReloadKey(k => k + 1);
+
+        return results;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        onActionNotificationRef.current?.({
+          type: 'error',
+          title: 'Approval Failed',
+          message: err.message,
+          action: 'approval'
+        });
+        throw error;
+      }
+    },
   };
 
   return (
@@ -510,6 +768,8 @@ const defaultContextValue: TideCloakContextValue = {
   idToken: null,
   tokenExp: null,
   baseURL: '',
+  IAMService,
+  AdminAPI,
   getConfig: () => ({}),
   reload: () => {},
   login: async () => {},
@@ -526,6 +786,10 @@ const defaultContextValue: TideCloakContextValue = {
   resetWasOffline: () => {},
   doEncrypt: async () => null,
   doDecrypt: async () => null,
+  initializeTideRequest: async () => { throw new Error("TideCloakContextProvider not available"); },
+  getVendorId: () => "",
+  getResource: () => "",
+  approveTideRequests: async () => { throw new Error("TideCloakContextProvider not available"); },
 };
 
 export function useTideCloakContext(): TideCloakContextValue {
