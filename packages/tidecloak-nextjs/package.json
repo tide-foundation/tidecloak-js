@@ -4,14 +4,17 @@
   "description": "TideCloak nextjs SDK",
   "exports": {
     ".": {
-      "import": "./dist/esm/index.js",
       "types": "./dist/types/index.d.ts",
-      "require": "./dist/cjs/index.js"
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
     },
     "./server": {
-      "import": "./dist/esm/server/index.js",
       "types": "./dist/types/server/index.d.ts",
-      "require": "./dist/cjs/server/index.js"
+      "edge-light": "./dist/esm/server/index.js",
+      "import": "./dist/esm/server/index.js",
+      "require": "./dist/cjs/server/index.js",
+      "default": "./dist/esm/server/index.js"
     }
   },
   "files": [
@@ -48,11 +51,13 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@tidecloak/react": "^0.12.15",
-    "@tidecloak/verify": "^0.12.15"
+    "@tidecloak/react": "^0.13.11",
+    "@tidecloak/verify": "^0.13.11"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6"
+    "@types/react-dom": "^19.1.6",
+    "next": "^15.0.0"
   }
 }

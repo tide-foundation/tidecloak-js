@@ -160,9 +160,69 @@ export interface FrontChannelConfig {
 }
 
 /**
- * IAMService configuration (either hybrid or front-channel mode).
+ * Token data for native mode storage.
  */
-export type IAMConfig = HybridConfig | FrontChannelConfig;
+export interface NativeTokenData {
+  accessToken: string;
+  refreshToken: string;
+  idToken?: string;
+  expiresAt: number;
+}
+
+/**
+ * Auth callback result from native app.
+ */
+export interface NativeAuthCallbackResult {
+  code?: string;
+  error?: string;
+  errorDescription?: string;
+}
+
+/**
+ * Native adapter interface for platform-specific operations.
+ * Developers implement these functions based on their framework (Electron, Tauri, React Native, etc.).
+ */
+export interface NativeAdapter {
+  // OIDC Configuration
+  /** Auth server URL (e.g., "https://auth.example.com") */
+  authServerUrl: string;
+  /** Realm name */
+  realm: string;
+  /** Client ID */
+  clientId: string;
+  /** OAuth scopes (defaults to "openid profile email") */
+  scope?: string;
+
+  // Platform-specific functions
+  /** Get the redirect URI for this platform (can be async for dynamic URIs) */
+  getRedirectUri: () => string | Promise<string>;
+  /** Open a URL in the system's external browser */
+  openExternalUrl: (url: string) => Promise<void>;
+  /** Subscribe to auth callbacks - returns cleanup function */
+  onAuthCallback: (callback: (result: NativeAuthCallbackResult) => void) => () => void;
+  /** Store tokens securely on the device */
+  saveTokens: (tokens: NativeTokenData) => Promise<boolean>;
+  /** Retrieve stored tokens */
+  getTokens: () => Promise<NativeTokenData | null>;
+  /** Delete stored tokens (logout) */
+  deleteTokens: () => Promise<boolean>;
+}
+
+/**
+ * Native mode configuration.
+ * For native apps (Electron, Tauri, React Native) that use external browser for login.
+ */
+export interface NativeConfig {
+  /** Must be "native" for native mode */
+  authMode: "native";
+  /** Native adapter with platform-specific implementations */
+  adapter: NativeAdapter;
+}
+
+/**
+ * IAMService configuration (hybrid, front-channel, or native mode).
+ */
+export type IAMConfig = HybridConfig | FrontChannelConfig | NativeConfig;
 
 /**
  * Hybrid callback data returned by getHybridCallbackData().
@@ -218,7 +278,8 @@ export type IAMEventHandler = (event: IAMEvent, ...args: any[]) => void;
 
 /**
  * IAMService interface for the singleton instance.
- * Supports both front-channel (browser-based tokens) and hybrid (browser PKCE, server token exchange) modes.
+ * Supports front-channel (browser-based tokens), hybrid (browser PKCE, server token exchange),
+ * and native (external browser login, app handles tokens) modes.
  */
 export interface IAMServiceInstance {
   /**
@@ -237,6 +298,11 @@ export interface IAMServiceInstance {
   isHybridMode(): boolean;
 
   /**
+   * Check if running in native mode.
+   */
+  isNativeMode(): boolean;
+
+  /**
    * Load TideCloak configuration.
    */
   loadConfig(config: IAMConfig): Promise<IAMConfig | null>;
@@ -245,6 +311,7 @@ export interface IAMServiceInstance {
    * Initialize the IAM client.
    * In front-channel mode: performs silent SSO check.
    * In hybrid mode: handles redirect callback if present.
+   * In native mode: checks stored tokens and subscribes to callbacks.
    */
   initIAM(config: IAMConfig, onReady?: IAMEventHandler): Promise<boolean>;
 
@@ -352,8 +419,9 @@ export interface IAMServiceInstance {
 
   /**
    * Logout and clear session.
+   * In native mode, deletes tokens via adapter.
    */
-  doLogout(): void;
+  doLogout(): void | Promise<void>;
 
   /**
    * Get base URL for TideCloak realm.
@@ -363,9 +431,15 @@ export interface IAMServiceInstance {
 
   /**
    * Get the underlying TideCloak client.
-   * Not available in hybrid mode.
+   * Not available in hybrid or native mode.
    */
   getTideCloakClient(): TideCloak;
+
+  /**
+   * Cleanup resources (unsubscribe from callbacks, etc.).
+   * Call this when unmounting/destroying the app.
+   */
+  destroy(): void;
 }
 
 /**
@@ -377,3 +451,19 @@ export const IAMService: IAMServiceInstance;
 export type RequestEnclave = HeimdallRequestEnclave;
 export type ApprovalEnclave = HeimdallApprovalEnclave;
 export { ApprovalEnclaveNew, TideMemory, BaseTideRequest };
+
+// Admin API re-exports
+export {
+  AdminAPI,
+  AdminAPI as AdminAPIClass,
+  type Role,
+  type User,
+  type PolicyTemplate,
+  type TemplateParameter,
+  type ChangeSet,
+  type Policy,
+  type AccessLog,
+  type PolicyLog,
+  type GetUsersParams,
+  type GetLogsParams,
+} from "./AdminAPI";

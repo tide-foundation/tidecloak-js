@@ -1,12 +1,13 @@
 import { makePkce, fetchJson } from "./utils/index.js";
-import TideCloak from "../lib/tidecloak.js";
+import TideCloak, { RequestEnclave } from "../lib/tidecloak.js";
 
 /**
  * Singleton IAMService wrapping the TideCloak client.
  *
- * Supports two modes:
+ * Supports three modes:
  * - **Front-channel mode**: Browser handles all token operations (standard OIDC)
  * - **Hybrid/BFF mode**: Browser handles PKCE, backend exchanges code for tokens (more secure)
+ * - **Native mode**: External browser for login, app handles tokens via adapter (Electron, Tauri, React Native)
  *
  * ---
  * ## Front-channel Mode
@@ -107,6 +108,23 @@ class IAMService {
     this._hybridCallbackHandled = false; // Guard against React StrictMode double-execution
     this._hybridCallbackPromise = null; // Promise for pending token exchange (for StrictMode)
     this._cachedCallbackData = null; // Cache for getHybridCallbackData to prevent data loss
+
+    // --- Native mode state ---
+    this._nativeAdapter = null;
+    this._nativeAuthenticated = false;
+    this._nativeTokens = null;
+    this._nativeCallbackUnsubscribe = null;
+    this._nativeCallbackHandled = false;
+    this._nativeCallbackPromise = null;
+    this._nativeCallbackProcessing = false; // Guard against concurrent callback processing
+
+    // --- Native mode encryption state ---
+    this._nativeDoken = null;
+    this._nativeDokenParsed = null;
+    this._nativeVoucher = null; // Voucher fetched during login for encryption
+    this._nativeRequestEnclave = null;
+    this._nativeEncryptionCallbackUnsubscribe = null;
+    this._pendingEncryptionRequests = new Map(); // requestId -> { resolve, reject }
   }
 
   /**
@@ -151,6 +169,14 @@ class IAMService {
   }
 
   /**
+   * Check if running in native mode.
+   * @returns {boolean}
+   */
+  isNativeMode() {
+    return (this._config?.authMode || "frontchannel").toLowerCase() === "native";
+  }
+
+  /**
    * Load TideCloak configuration and instantiate the client once.
    * @param {Object} config - TideCloak configuration object.
    * @returns {Promise<Object|null>} The loaded config, or null on failure.
@@ -166,6 +192,16 @@ class IAMService {
 
     // Hybrid mode: do not construct TideCloak client (tokens are server-side)
     if (this.isHybridMode()) {
+      return this._config;
+    }
+
+    // Native mode: store adapter, do not construct TideCloak client
+    if (this.isNativeMode()) {
+      if (!config.adapter) {
+        console.error("[loadConfig] Native mode requires config.adapter with platform-specific functions");
+        return null;
+      }
+      this._nativeAdapter = config.adapter;
       return this._config;
     }
 
@@ -264,6 +300,134 @@ class IAMService {
       return this._hybridCallbackPromise;
     }
 
+    // --- Native mode init: check stored tokens and subscribe to callbacks ---
+    if (this.isNativeMode()) {
+      // Guard against React StrictMode double-execution
+      if (this._nativeCallbackHandled) {
+        console.debug("[IAMService] Native callback already handled");
+        if (this._nativeCallbackPromise) {
+          console.debug("[IAMService] Waiting for pending native token exchange...");
+          return this._nativeCallbackPromise;
+        }
+        this._emit("ready", this._nativeAuthenticated);
+        return this._nativeAuthenticated;
+      }
+
+      this._nativeCallbackPromise = (async () => {
+        // Check for stored tokens
+        const storedTokens = await this._nativeAdapter.getTokens();
+        // sessionMode: 'online' (default) = validate tokens, refresh if needed, require login if invalid
+        // sessionMode: 'offline' = accept stored tokens without validation (for offline-first apps)
+        const sessionMode = this._config?.sessionMode || 'online';
+
+        if (storedTokens) {
+          console.debug("[IAMService] Found stored tokens in native mode, sessionMode:", sessionMode);
+
+          // Load doken if present
+          if (storedTokens.doken) {
+            this._nativeDoken = storedTokens.doken;
+            this._nativeDokenParsed = this._parseToken(storedTokens.doken);
+            console.debug("[IAMService] Loaded doken from stored tokens");
+          }
+
+          // Load voucher if present
+          if (storedTokens.voucher) {
+            this._nativeVoucher = storedTokens.voucher;
+            console.debug("[IAMService] Loaded voucher from stored tokens");
+          }
+
+          if (sessionMode === 'offline') {
+            // Offline mode: Accept stored tokens without validation
+            this._nativeTokens = storedTokens;
+            this._nativeAuthenticated = true;
+          } else {
+            // Online mode: Validate tokens before accepting
+            try {
+              const payload = JSON.parse(atob(storedTokens.accessToken.split('.')[1]));
+              const exp = payload.exp * 1000;
+              const now = Date.now();
+
+              if (exp > now) {
+                // Token still valid
+                console.debug("[IAMService] Online mode: token valid, authenticating");
+                this._nativeTokens = storedTokens;
+                this._nativeAuthenticated = true;
+              } else if (storedTokens.refreshToken) {
+                // Token expired, try refresh
+                console.debug("[IAMService] Online mode: token expired, attempting refresh");
+                try {
+                  const newTokens = await this._refreshNativeToken(storedTokens.refreshToken);
+                  this._nativeTokens = newTokens;
+                  this._nativeAuthenticated = true;
+                  await this._nativeAdapter.saveTokens(newTokens);
+                  console.debug("[IAMService] Online mode: token refreshed successfully");
+                } catch (refreshErr) {
+                  console.debug("[IAMService] Online mode: refresh failed, user must login", refreshErr);
+                  await this._nativeAdapter.deleteTokens();
+                  this._nativeAuthenticated = false;
+                }
+              } else {
+                // Token expired, no refresh token
+                console.debug("[IAMService] Online mode: token expired, no refresh token");
+                await this._nativeAdapter.deleteTokens();
+                this._nativeAuthenticated = false;
+              }
+            } catch (parseErr) {
+              console.error("[IAMService] Online mode: failed to parse token", parseErr);
+              await this._nativeAdapter.deleteTokens();
+              this._nativeAuthenticated = false;
+            }
+          }
+        }
+
+        // Subscribe to auth callbacks from native app
+        this._nativeCallbackUnsubscribe = this._nativeAdapter.onAuthCallback(
+          async ({ code, voucher, error, errorDescription }) => {
+            // Guard against duplicate callback processing
+            if (this._nativeCallbackProcessing || this._nativeAuthenticated) {
+              console.debug("[IAMService] Ignoring duplicate native callback");
+              return;
+            }
+            if (error) {
+              console.error("[IAMService] Native auth error:", error, errorDescription);
+              this._emit("authError", new Error(`${error}: ${errorDescription || "Unknown error"}`));
+              return;
+            }
+            if (code) {
+              await this._handleNativeCallback(code, voucher);
+            }
+          }
+        );
+
+        // Subscribe to encryption callbacks from native app (if adapter supports it)
+        if (this._nativeAdapter.onEncryptionCallback) {
+          this._nativeEncryptionCallbackUnsubscribe = this._nativeAdapter.onEncryptionCallback(
+            ({ operation, requestId, result, error }) => {
+              const pending = this._pendingEncryptionRequests.get(requestId);
+              if (pending) {
+                this._pendingEncryptionRequests.delete(requestId);
+                if (error) {
+                  pending.reject(new Error(error));
+                } else if (result) {
+                  pending.resolve(result);
+                } else {
+                  pending.reject(new Error("Empty result from encryption callback"));
+                }
+              } else {
+                console.warn("[IAMService] Received encryption callback for unknown requestId:", requestId);
+              }
+            }
+          );
+        }
+
+        this._emit("ready", this._nativeAuthenticated);
+        this._nativeCallbackPromise = null;
+        return this._nativeAuthenticated;
+      })();
+
+      return this._nativeCallbackPromise;
+    }
+
     // --- Front-channel mode ---
     if (!this._tc) {
       const err = new Error("TideCloak client not available");
@@ -313,9 +477,10 @@ class IAMService {
     return this._config;
   }
 
-  /** @returns {boolean} Whether there's a valid token (or session in hybrid mode) */
+  /** @returns {boolean} Whether there's a valid token (or session in hybrid/native mode) */
   isLoggedIn() {
     if (this.isHybridMode()) return this._hybridAuthenticated;
+    if (this.isNativeMode()) return this._nativeAuthenticated;
     return !!this.getTideCloakClient().token;
   }
 
@@ -327,6 +492,27 @@ class IAMService {
   async getToken() {
     if (this.isHybridMode()) {
       throw new Error("getToken() not available in hybrid mode - tokens are server-side");
+    }
+    if (this.isNativeMode()) {
+      const tokens = await this._nativeAdapter.getTokens();
+      if (!tokens) return null;
+
+      // Check if token is expired or about to expire (30 second buffer)
+      const now = Date.now();
+      const bufferMs = 30 * 1000;
+      if (now >= tokens.expiresAt - bufferMs) {
+        console.debug("[IAMService] Native token expired, refreshing...");
+        try {
+          const newTokens = await this._refreshNativeToken(tokens.refreshToken);
+          await this._nativeAdapter.saveTokens(newTokens);
+          this._nativeTokens = newTokens;
+          return newTokens.accessToken;
+        } catch (err) {
+          console.error("[IAMService] Native token refresh failed:", err);
+          return null;
+        }
+      }
+      return tokens.accessToken;
     }
     const exp = this.getTokenExp();
     if (exp < 3) await this.updateIAMToken();
@@ -342,6 +528,16 @@ class IAMService {
     if (this.isHybridMode()) {
       throw new Error("getTokenExp() not available in hybrid mode - tokens are server-side");
     }
+    if (this.isNativeMode()) {
+      if (!this._nativeTokens?.accessToken) return 0;
+      try {
+        const payload = JSON.parse(atob(this._nativeTokens.accessToken.split('.')[1]));
+        return Math.round(payload.exp - Date.now() / 1000);
+      } catch (e) {
+        console.error("[IAMService] Failed to parse token for expiry:", e);
+        return 0;
+      }
+    }
     const kc = this.getTideCloakClient();
     return Math.round(kc.tokenParsed.exp + kc.timeSkew - Date.now() / 1000);
   }
@@ -355,6 +551,9 @@ class IAMService {
     if (this.isHybridMode()) {
       throw new Error("getIDToken() not available in hybrid mode - tokens are server-side");
     }
+    if (this.isNativeMode()) {
+      return this._nativeTokens?.idToken || null;
+    }
     return this.getTideCloakClient().idToken;
   }
 
@@ -366,6 +565,9 @@ class IAMService {
   getName() {
     if (this.isHybridMode()) {
       throw new Error("getName() not available in hybrid mode - tokens are server-side");
+    }
+    if (this.isNativeMode()) {
+      return this.getValueFromToken('preferred_username');
     }
     return this.getTideCloakClient().tokenParsed.preferred_username;
   }
@@ -389,6 +591,17 @@ class IAMService {
     if (this.isHybridMode()) {
       throw new Error("hasRealmRole() not available in hybrid mode - tokens are server-side");
     }
+    if (this.isNativeMode()) {
+      if (!this._nativeTokens?.accessToken) return false;
+      try {
+        const payload = JSON.parse(atob(this._nativeTokens.accessToken.split('.')[1]));
+        const realmRoles = payload.realm_access?.roles || [];
+        return realmRoles.includes(role);
+      } catch (e) {
+        console.error("[IAMService] Failed to parse token for realm role check:", e);
+        return false;
+      }
+    }
     return this.getTideCloakClient().hasRealmRole(role);
   }
 
@@ -403,6 +616,18 @@ class IAMService {
     if (this.isHybridMode()) {
       throw new Error("hasClientRole() not available in hybrid mode - tokens are server-side");
     }
+    if (this.isNativeMode()) {
+      if (!this._nativeTokens?.accessToken) return false;
+      try {
+        const payload = JSON.parse(atob(this._nativeTokens.accessToken.split('.')[1]));
+        const clientId = client || this._config?.resource;
+        const clientRoles = payload.resource_access?.[clientId]?.roles || [];
+        return clientRoles.includes(role);
+      } catch (e) {
+        console.error("[IAMService] Failed to parse token for client role check:", e);
+        return false;
+      }
+    }
     return this.getTideCloakClient().hasResourceRole(role, client);
   }
 
@@ -415,6 +640,16 @@ class IAMService {
   getValueFromToken(key) {
     if (this.isHybridMode()) {
       throw new Error("getValueFromToken() not available in hybrid mode - tokens are server-side");
+    }
+    if (this.isNativeMode()) {
+      if (!this._nativeTokens?.accessToken) return null;
+      try {
+        const payload = JSON.parse(atob(this._nativeTokens.accessToken.split('.')[1]));
+        return payload[key] !== undefined ? payload[key] : null;
+      } catch (e) {
+        console.error("[IAMService] Failed to parse access token:", e);
+        return null;
+      }
     }
     return this.getTideCloakClient().tokenParsed[key] ?? null;
   }
@@ -429,6 +664,16 @@ class IAMService {
     if (this.isHybridMode()) {
       throw new Error("getValueFromIDToken() not available in hybrid mode - tokens are server-side");
     }
+    if (this.isNativeMode()) {
+      if (!this._nativeTokens?.idToken) return null;
+      try {
+        const payload = JSON.parse(atob(this._nativeTokens.idToken.split('.')[1]));
+        return payload[key] !== undefined ? payload[key] : null;
+      } catch (e) {
+        console.error("[IAMService] Failed to parse ID token:", e);
+        return null;
+      }
+    }
     return this.getTideCloakClient().idTokenParsed[key] ?? null;
   }
 
@@ -440,6 +685,16 @@ class IAMService {
   async updateIAMToken() {
     if (this.isHybridMode()) {
       throw new Error("updateIAMToken() not available in hybrid mode - tokens are server-side");
+    }
+    if (this.isNativeMode()) {
+      // Native mode token refresh is handled in getToken()
+      // Just check if tokens need refresh and return status
+      const exp = this.getTokenExp();
+      if (exp < 30) {
+        // Force refresh via getToken
+        await this.getToken();
+      }
+      return exp < 30;
     }
     const kc = this.getTideCloakClient();
     const refreshed = await kc.updateToken();
@@ -462,6 +717,21 @@ class IAMService {
     if (this.isHybridMode()) {
       throw new Error("forceUpdateToken() not available in hybrid mode - tokens are server-side");
     }
+    if (this.isNativeMode()) {
+      // Force refresh by clearing cached tokens and refreshing
+      if (this._nativeTokens?.refreshToken) {
+        try {
+          const newTokens = await this._refreshNativeToken(this._nativeTokens.refreshToken);
+          this._nativeTokens = newTokens;
+          await this._nativeAdapter.saveTokens(newTokens);
+          return true;
+        } catch (err) {
+          console.error("[IAMService] Native force refresh failed:", err);
+          return false;
+        }
+      }
+      return false;
+    }
     document.cookie = 'kcToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     const kc = this.getTideCloakClient();
     const refreshed = await kc.updateToken(-1);
@@ -478,16 +748,24 @@ class IAMService {
   /**
    * Start login redirect.
    * In hybrid mode, initiates PKCE flow and redirects to IdP.
-   * @param {string} [returnUrl] - URL to redirect to after successful auth (hybrid mode only)
+   * In native mode, opens external browser with auth URL.
+   * @param {string} [returnUrl] - URL to redirect to after successful auth (hybrid/native mode)
    */
   doLogin(returnUrl = "") {
     console.debug("[IAMService.doLogin] Called with returnUrl:", returnUrl);
     console.debug("[IAMService.doLogin] isHybridMode:", this.isHybridMode());
+    console.debug("[IAMService.doLogin] isNativeMode:", this.isNativeMode());
     console.debug("[IAMService.doLogin] authMode config:", this._config?.authMode);
     if (this.isHybridMode()) {
       // Catch and log any errors from the async function
       return this._startHybridLogin(returnUrl).catch(err => {
         console.error("[IAMService.doLogin] Error in hybrid login:", err);
+        throw err;
+      });
+    }
+    if (this.isNativeMode()) {
+      return this._startNativeLogin(returnUrl).catch(err => {
+        console.error("[IAMService.doLogin] Error in native login:", err);
         throw err;
       });
     }
@@ -499,10 +777,15 @@ class IAMService {
   /**
    * Encrypt data via adapter.
    * Not available in hybrid mode (encryption requires client-side doken).
+   * @param {{ data: string | Uint8Array, tags: string[] }[]} data - Array of objects to encrypt
+   * @returns {Promise<(string | Uint8Array)[]>} Array of encrypted values
    */
   async doEncrypt(data) {
     if (this.isHybridMode()) {
       throw new Error("Encrypt not supported in hybrid mode (tokens are server-side)");
+    }
+    if (this.isNativeMode()) {
+      return this._nativeEncrypt(data);
     }
     return this.getTideCloakClient().encrypt(data);
   }
@@ -510,10 +793,15 @@ class IAMService {
   /**
    * Decrypt data via adapter.
    * Not available in hybrid mode (decryption requires client-side doken).
+   * @param {{ encrypted: string | Uint8Array, tags: string[] }[]} data - Array of objects to decrypt
+   * @returns {Promise<(string | Uint8Array)[]>} Array of decrypted values
    */
   async doDecrypt(data) {
     if (this.isHybridMode()) {
       throw new Error("Decrypt not supported in hybrid mode (tokens are server-side)");
+    }
+    if (this.isNativeMode()) {
+      return this._nativeDecrypt(data);
     }
     return this.getTideCloakClient().decrypt(data);
   }
@@ -521,11 +809,44 @@ class IAMService {
   /**
    * Logout, clear cookie/session, then redirect.
    * In hybrid mode, clears local state and emits logout event.
+   * In native mode, deletes tokens via adapter and emits logout event.
    */
-  doLogout() {
+  async doLogout() {
     if (this.isHybridMode()) {
       this._hybridAuthenticated = false;
       this._hybridReturnUrl = null;
+      this._emit("logout");
+      return;
+    }
+    if (this.isNativeMode()) {
+      await this._nativeAdapter.deleteTokens();
+      this._nativeTokens = null;
+      this._nativeAuthenticated = false;
+      this._nativeDoken = null;
+      this._nativeDokenParsed = null;
+      this._nativeVoucher = null;
+      // Reset callback flags so next login reinitializes properly
+      this._nativeCallbackHandled = false;
+      this._nativeCallbackProcessing = false;
+      this._nativeCallbackPromise = null;
+      // Unsubscribe from callbacks (will be resubscribed on next init)
+      if (this._nativeCallbackUnsubscribe) {
+        this._nativeCallbackUnsubscribe();
+        this._nativeCallbackUnsubscribe = null;
+      }
+      if (this._nativeEncryptionCallbackUnsubscribe) {
+        this._nativeEncryptionCallbackUnsubscribe();
+        this._nativeEncryptionCallbackUnsubscribe = null;
+      }
+      // Close and cleanup the request enclave
+      if (this._nativeRequestEnclave) {
+        try {
+          this._nativeRequestEnclave.close();
+        } catch (e) {
+          console.debug("[IAMService] Error closing request enclave:", e);
+        }
+        this._nativeRequestEnclave = null;
+      }
       this._emit("logout");
       return;
     }
@@ -837,6 +1158,670 @@ class IAMService {
       this._emit("authError", err);
       this._emit("ready", false);
       return { handled: true, authenticated: false, returnUrl };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // NATIVE MODE SUPPORT (private helpers)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get OIDC configuration from the native config.
+   * @private
+   * @returns {{ authServerUrl: string, realm: string, clientId: string, scope: string }}
+   */
+  _getNativeOIDCConfig() {
+    const config = this._config;
+    return {
+      authServerUrl: config["auth-server-url"],
+      realm: config.realm,
+      clientId: config.resource,
+      scope: config.scope || "openid profile email",
+    };
+  }
+
+  /**
+   * Get encryption configuration from the native config.
+   * Automatically selects clientOriginAuth based on window.location.origin.
+   * @private
+   * @returns {{ vendorId: string, homeOrkUrl: string, clientOriginAuth: string } | null}
+   */
+  _getNativeEncryptionConfig() {
+    const config = this._config;
+    if (!config.vendorId) {
+      return null;
+    }
+
+    // Auto-select clientOriginAuth based on current origin
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const clientOriginAuthKey = `client-origin-auth-${origin}`;
+    const clientOriginAuth = config[clientOriginAuthKey];
+
+    return {
+      vendorId: config.vendorId,
+      homeOrkUrl: config.homeOrkUrl,
+      clientOriginAuth,
+    };
+  }
+
+  /**
+   * Start native login flow: generate PKCE, open external browser with auth URL.
+   * @private
+   * @param {string} returnUrl - URL to redirect to after successful auth
+   */
+  async _startNativeLogin(returnUrl = "") {
+    console.debug("[IAMService._startNativeLogin] Starting native login flow");
+
+    // Reset auth state to allow new callback to be processed
+    // This is needed for re-login after session expiry
+    this._nativeAuthenticated = false;
+    this._nativeCallbackProcessing = false;
+
+    const adapter = this._nativeAdapter;
+    if (!adapter) {
+      throw new Error("Native adapter not configured");
+    }
+
+    // Get OIDC config from the main config
+    const { authServerUrl, realm, clientId, scope } = this._getNativeOIDCConfig();
+
+    // Generate PKCE
+    const { verifier, challenge, method } = await makePkce();
+    console.debug("[IAMService._startNativeLogin] PKCE generated, verifier length:", verifier.length);
+
+    // Store PKCE verifier in sessionStorage (will be retrieved when callback is received)
+    sessionStorage.setItem("kc_pkce_verifier", verifier);
+    if (returnUrl) {
+      sessionStorage.setItem("kc_return_url", returnUrl);
+    }
+
+    // Get redirect URI from adapter (can be async)
+    const redirectUri = await Promise.resolve(adapter.getRedirectUri());
+    sessionStorage.setItem("kc_redirect_uri", redirectUri);
+
+    // Build auth URL
+    const authUrl =
+      `${authServerUrl}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/auth` +
+      `?client_id=${encodeURIComponent(clientId)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&response_type=code` +
+      `&scope=${encodeURIComponent(scope)}` +
+      `&code_challenge=${encodeURIComponent(challenge)}` +
+      `&code_challenge_method=${encodeURIComponent(method)}` +
+      `&prompt=login`;
+
+    console.debug("[IAMService._startNativeLogin] Opening auth URL in external browser");
+
+    // Open in external browser via adapter
+    await adapter.openExternalUrl(authUrl);
+  }
+
+  /**
+   * Handle native auth callback: exchange code for tokens.
+   * @private
+   * @param {string} code - Authorization code from IdP
+   * @param {string} [voucher] - Optional voucher fetched during login (for encryption)
+   */
+  async _handleNativeCallback(code, voucher) {
+    // Guard against concurrent/duplicate callback processing
+    if (this._nativeCallbackProcessing) {
+      console.debug("[IAMService._handleNativeCallback] Already processing callback, ignoring duplicate");
+      return;
+    }
+    this._nativeCallbackProcessing = true;
+    this._nativeCallbackHandled = true;
+
+    console.debug("[IAMService._handleNativeCallback] Handling native callback with code");
+
+    const adapter = this._nativeAdapter;
+    const { authServerUrl, realm, clientId } = this._getNativeOIDCConfig();
+
+    // Retrieve PKCE verifier
+    const verifier = sessionStorage.getItem("kc_pkce_verifier");
+    const redirectUri = sessionStorage.getItem("kc_redirect_uri") || await Promise.resolve(adapter.getRedirectUri());
+    const returnUrl = sessionStorage.getItem("kc_return_url") || "";
+
+    // Clear session storage immediately to prevent reuse
+    sessionStorage.removeItem("kc_pkce_verifier");
+    sessionStorage.removeItem("kc_redirect_uri");
+    sessionStorage.removeItem("kc_return_url");
+
+    if (!verifier) {
+      console.debug("[IAMService._handleNativeCallback] PKCE verifier not found, callback already processed");
+      this._nativeCallbackProcessing = false;
+      // Don't emit error - this is likely a duplicate callback after successful auth
+      return;
+    }
+
+    try {
+      // Exchange code for tokens at token endpoint
+      const tokenUrl = `${authServerUrl}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/token`;
+
+      const body = new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: clientId,
+        code: code,
+        redirect_uri: redirectUri,
+        code_verifier: verifier,
+      });
+
+      const response = await fetch(tokenUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Token exchange failed: ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.debug("[IAMService._handleNativeCallback] Token exchange successful");
+
+      // Note: Voucher is NOT fetched here - the RequestEnclave will fetch it
+      // via its ORK iframe when encryption/decryption is needed. This avoids
+      // the complexity of session cookie handling during login.
+
+      // Build token object for storage
+      const tokens = {
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        idToken: data.id_token,
+        doken: data.doken, // Tide doken for encryption/decryption
+        expiresAt: Date.now() + data.expires_in * 1000,
+      };
+
+      // Save tokens via adapter
+      await adapter.saveTokens(tokens);
+      this._nativeTokens = tokens;
+      this._nativeDoken = data.doken;
+      this._nativeDokenParsed = data.doken ? this._parseToken(data.doken) : null;
+      // Note: _nativeVoucher is NOT set here - RequestEnclave fetches it on-demand
+      this._nativeAuthenticated = true;
+      this._nativeCallbackProcessing = false;
+
+      this._emit("authSuccess");
+      console.debug("[IAMService._handleNativeCallback] Native auth complete, returnUrl:", returnUrl);
+
+    } catch (err) {
+      console.error("[IAMService._handleNativeCallback] Token exchange error:", err);
+      this._nativeAuthenticated = false;
+      this._nativeCallbackProcessing = false;
+      this._emit("authError", err);
+    }
+  }
+
+  /**
+   * Refresh native token using refresh token.
+   * @private
+   * @param {string} refreshToken - The refresh token
+   * @returns {Promise<Object>} New token data
+   */
+  async _refreshNativeToken(refreshToken) {
+    const { authServerUrl, realm, clientId } = this._getNativeOIDCConfig();
+
+    const tokenUrl = `${authServerUrl}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/token`;
+
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: clientId,
+      refresh_token: refreshToken,
+    });
+
+    const response = await fetch(tokenUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Token refresh failed: ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    // Update doken if present in refresh response
+    if (data.doken) {
+      this._nativeDoken = data.doken;
+      this._nativeDokenParsed = this._parseToken(data.doken);
+      console.debug("[IAMService] Updated doken from token refresh");
+    }
+
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      idToken: data.id_token,
+      doken: data.doken,
+      expiresAt: Date.now() + data.expires_in * 1000,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // NATIVE MODE ENCRYPTION SUPPORT (private helpers)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Initialize the native RequestEnclave for encryption/decryption.
+   * @private
+   * @param {string} voucherDataUrl - Pre-fetched voucher as data URL
+   */
+  _initNativeRequestEnclave(voucherDataUrl) {
+    if (!this._nativeDoken) {
+      throw new Error("[IAMService] No doken available for encryption - user must be authenticated with Tide");
+    }
+    if (!this._nativeDokenParsed) {
+      throw new Error("[IAMService] Doken not parsed");
+    }
+
+    // Get encryption config from the main config (auto-selects clientOriginAuth based on origin)
+    const encryptionConfig = this._getNativeEncryptionConfig();
+    if (!encryptionConfig || !encryptionConfig.vendorId || !encryptionConfig.clientOriginAuth) {
+      throw new Error("[IAMService] Native encryption requires vendorId and client-origin-auth-{origin} in config");
+    }
+
+    // Reuse existing enclave if already initialized
+    if (this._nativeRequestEnclave) {
+      console.debug("[IAMService] Reusing existing RequestEnclave");
+      return;
+    }
+
+    const homeOrkOrigin = this._nativeDokenParsed['t.uho'] || encryptionConfig.homeOrkUrl;
+
+    if (!homeOrkOrigin) {
+      throw new Error("[IAMService] Home ORK URL not available - check doken or config.homeOrkUrl");
+    }
+
+    console.debug("[IAMService] Initializing native RequestEnclave", {
+      homeOrkOrigin,
+      vendorId: encryptionConfig.vendorId,
+      voucherURL: voucherDataUrl,
+    });
+
+    this._nativeRequestEnclave = new RequestEnclave({
+      homeOrkOrigin,
+      signed_client_origin: encryptionConfig.clientOriginAuth,
+      vendorId: encryptionConfig.vendorId,
+      voucherURL: voucherDataUrl,
+      isRunningLocal: false,
+    }).init({
+      doken: this._nativeDoken,
+      dokenRefreshCallback: async () => {
+        // Refresh tokens and return the new doken
+        await this.forceUpdateToken();
+        if (!this._nativeDoken) {
+          throw new Error("[IAMService] No doken available after token refresh");
+        }
+        return this._nativeDoken;
+      },
+      requireReloginCallback: async () => {
+        // User needs to re-authenticate
+        console.warn("[IAMService] Re-authentication required for encryption");
+        this._emit("authError", new Error("Re-authentication required"));
+      },
+    });
+  }
+
+  /**
+   * Build the encryption page URL for external browser.
+   * This page is hosted on the TideCloak server and has session cookies.
+   * @private
+   * @param {string} operation - 'encrypt' or 'decrypt'
+   * @param {string} requestId - Unique request ID
+   * @param {string} dataBase64 - Base64-encoded data to process
+   * @param {string} tagsJson - JSON-encoded tags array
+   * @param {string} callbackUrl - URL to redirect with result
+   * @returns {string} URL to open in external browser
+   */
+  _buildEncryptionPageUrl(operation, requestId, dataBase64, tagsJson, callbackUrl) {
+    const { authServerUrl, realm, clientId } = this._getNativeOIDCConfig();
+    const encryptionConfig = this._getNativeEncryptionConfig();
+
+    // Build URL to a page on the TideCloak server that can perform encryption
+    // This page will have access to session cookies
+    const baseUrl = `${authServerUrl}/realms/${encodeURIComponent(realm)}/tide-encrypt`;
+
+    const url = new URL(baseUrl);
+    url.searchParams.set('operation', operation);
+    url.searchParams.set('requestId', requestId);
+    url.searchParams.set('data', dataBase64);
+    url.searchParams.set('tags', tagsJson);
+    url.searchParams.set('callback', callbackUrl);
+    url.searchParams.set('vendorId', encryptionConfig?.vendorId || '');
+    url.searchParams.set('clientId', clientId);
+
+    return url.toString();
+  }
+
+  /**
+   * Perform an encryption operation via external browser.
+   * @private
+   * @param {'encrypt' | 'decrypt'} operation - The operation to perform
+   * @param {string} dataBase64 - Base64-encoded data to process
+   * @param {string[]} tags - Tags for the operation
+   * @returns {Promise<string>} Base64-encoded result
+   */
+  async _doExternalBrowserOperation(operation, dataBase64, tags) {
+    const adapter = this._nativeAdapter;
+
+    // Generate unique request ID
+    const requestId = `${operation}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+    // Get callback URL for encryption operations
+    let callbackUrl;
+    if (adapter.getEncryptionRedirectUri) {
+      callbackUrl = await Promise.resolve(adapter.getEncryptionRedirectUri());
+    } else {
+      // Default: use auth redirect URI with /encrypt/callback suffix
+      const authRedirectUri = await Promise.resolve(adapter.getRedirectUri());
+      // Replace /callback with /encrypt/callback, or append if no /callback
+      if (authRedirectUri.endsWith('/callback')) {
+        callbackUrl = authRedirectUri.replace('/callback', '/encrypt/callback');
+      } else {
+        callbackUrl = authRedirectUri + '/encrypt/callback';
+      }
+    }
+
+    // Build the URL
+    const tagsJson = JSON.stringify(tags);
+    const encryptionUrl = this._buildEncryptionPageUrl(operation, requestId, dataBase64, tagsJson, callbackUrl);
+
+    console.debug(`[IAMService] Opening external browser for ${operation}:`, {
+      requestId,
+      callbackUrl,
+      urlLength: encryptionUrl.length,
+    });
+
+    // Create a promise that will resolve when we get the callback
+    const resultPromise = new Promise((resolve, reject) => {
+      // Store the pending request
+      this._pendingEncryptionRequests.set(requestId, { resolve, reject });
+
+      // Set a timeout (60 seconds)
+      const timeout = setTimeout(() => {
+        if (this._pendingEncryptionRequests.has(requestId)) {
+          this._pendingEncryptionRequests.delete(requestId);
+          reject(new Error(`Encryption ${operation} timed out after 60 seconds`));
+        }
+      }, 60000);
+
+      // Update the stored request to include timeout cleanup
+      const pending = this._pendingEncryptionRequests.get(requestId);
+      const originalResolve = pending.resolve;
+      const originalReject = pending.reject;
+      pending.resolve = (result) => {
+        clearTimeout(timeout);
+        originalResolve(result);
+      };
+      pending.reject = (error) => {
+        clearTimeout(timeout);
+        originalReject(error);
+      };
+    });
+
+    // Open the URL in external browser
+    await adapter.openExternalUrl(encryptionUrl);
+
+    // Wait for the callback
+    return resultPromise;
+  }
+
+  /**
+   * Get the voucher URL for native mode.
+   * @private
+   * @returns {string} Voucher URL
+   */
+  _getNativeVoucherUrl() {
+    if (!this._nativeTokens?.accessToken) {
+      throw new Error("[IAMService] No access token available for voucher URL");
+    }
+
+    const tokenPayload = this._parseToken(this._nativeTokens.accessToken);
+    if (!tokenPayload) {
+      throw new Error("[IAMService] Failed to parse access token for voucher URL");
+    }
+
+    const sid = tokenPayload.sid;
+    if (!sid) {
+      throw new Error("[IAMService] No session ID in access token for voucher URL");
+    }
+
+    const { authServerUrl, realm } = this._getNativeOIDCConfig();
+    return `${authServerUrl}/realms/${encodeURIComponent(realm)}/tidevouchers/fromUserSession?sessionId=${encodeURIComponent(sid)}`;
+  }
+
+
+  /**
+   * Check if user has a realm role (native mode helper).
+   * @private
+   * @param {string} role - Role to check
+   * @returns {boolean}
+   */
+  _nativeHasRealmRole(role) {
+    if (!this._nativeTokens?.accessToken) return false;
+    try {
+      const payload = this._parseToken(this._nativeTokens.accessToken);
+      const realmRoles = payload?.realm_access?.roles || [];
+      return realmRoles.includes(role);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Native mode encryption using RequestEnclave.
+   * Uses either a pre-fetched voucher (as data URL) or the live voucherURL
+   * that the ORK iframe will fetch with session cookies.
+   * @private
+   * @param {{ data: string | Uint8Array, tags: string[] }[]} toEncrypt
+   * @returns {Promise<(string | Uint8Array)[]>}
+   */
+  async _nativeEncrypt(toEncrypt) {
+    // Ensure token is fresh
+    await this.updateIAMToken();
+
+    if (!Array.isArray(toEncrypt)) {
+      throw new Error("Pass array as parameter");
+    }
+    if (!this._nativeAuthenticated) {
+      throw new Error("Not authenticated");
+    }
+
+    // Convert and validate input
+    const dataToSend = toEncrypt.map((e) => {
+      if (typeof e !== 'object' || e === null) {
+        throw new Error("All entries must be an object to encrypt");
+      }
+      for (const property of ['data', 'tags']) {
+        if (!e[property]) {
+          throw new Error(`The object is missing the required '${property}' property.`);
+        }
+      }
+      if (!Array.isArray(e.tags)) {
+        throw new Error("tags must be provided as a string array");
+      }
+      if (typeof e.data !== 'string' && !(e.data instanceof Uint8Array)) {
+        throw new Error("data must be provided as string or Uint8Array");
+      }
+
+      // Check roles
+      for (const tag of e.tags) {
+        if (typeof tag !== 'string') {
+          throw new Error("tags must be provided as an array of strings");
+        }
+        const tagAccess = this._nativeHasRealmRole(`_tide_${tag}.selfencrypt`);
+        if (!tagAccess) {
+          throw new Error(`User has not been given any access to '${tag}'`);
+        }
+      }
+
+      return {
+        data: typeof e.data === 'string' ? this._stringToUint8Array(e.data) : e.data,
+        tags: e.tags,
+        isRaw: typeof e.data === 'string' ? false : true,
+      };
+    });
+
+    // Get voucher URL - RequestEnclave will fetch it via ORK iframe
+    const voucherUrl = this._getNativeVoucherUrl();
+    console.debug("[IAMService._nativeEncrypt] Using voucherURL:", voucherUrl);
+
+    this._initNativeRequestEnclave(voucherUrl);
+
+    const encrypted = await this._nativeRequestEnclave.encrypt(dataToSend);
+    return encrypted.map((cipher, i) => (dataToSend[i].isRaw ? cipher : this._bytesToBase64(cipher)));
+  }
+
+  /**
+   * Native mode decryption using RequestEnclave.
+   * Uses either a pre-fetched voucher (as data URL) or the live voucherURL
+   * that the ORK iframe will fetch with session cookies.
+   * @private
+   * @param {{ encrypted: string | Uint8Array, tags: string[] }[]} toDecrypt
+   * @returns {Promise<(string | Uint8Array)[]>}
+   */
+  async _nativeDecrypt(toDecrypt) {
+    // Ensure token is fresh
+    await this.updateIAMToken();
+
+    if (!Array.isArray(toDecrypt)) {
+      throw new Error("Pass array as parameter");
+    }
+    if (!this._nativeAuthenticated) {
+      throw new Error("Not authenticated");
+    }
+
+    // Convert and validate input
+    const dataToSend = toDecrypt.map((e) => {
+      if (typeof e !== 'object' || e === null) {
+        throw new Error("All entries must be an object to decrypt");
+      }
+      for (const property of ['encrypted', 'tags']) {
+        if (!e[property]) {
+          throw new Error(`The object is missing the required '${property}' property.`);
+        }
+      }
+      if (!Array.isArray(e.tags)) {
+        throw new Error("tags must be provided as a string array");
+      }
+      if (typeof e.encrypted !== 'string' && !(e.encrypted instanceof Uint8Array)) {
+        throw new Error("encrypted must be provided as string or Uint8Array");
+      }
+
+      // Check roles
+      for (const tag of e.tags) {
+        if (typeof tag !== 'string') {
+          throw new Error("tags must be provided as an array of strings");
+        }
+        const tagAccess = this._nativeHasRealmRole(`_tide_${tag}.selfdecrypt`);
+        if (!tagAccess) {
+          throw new Error(`User has not been given any access to '${tag}'`);
+        }
+      }
+
+      return {
+        encrypted: typeof e.encrypted === 'string' ? this._base64ToBytes(e.encrypted) : e.encrypted,
+        tags: e.tags,
+        isRaw: typeof e.encrypted === 'string' ? false : true,
+      };
+    });
+
+    // Get voucher URL - RequestEnclave will fetch it via ORK iframe
+    const voucherUrl = this._getNativeVoucherUrl();
+    console.debug("[IAMService._nativeDecrypt] Using voucherURL:", voucherUrl);
+
+    this._initNativeRequestEnclave(voucherUrl);
+
+    const decrypted = await this._nativeRequestEnclave.decrypt(dataToSend);
+    return decrypted.map((d, i) => (dataToSend[i].isRaw ? d : this._stringFromUint8Array(d)));
+  }
+
+  /**
+   * Convert string to Uint8Array.
+   * @private
+   */
+  _stringToUint8Array(str) {
+    return new TextEncoder().encode(str);
+  }
+
+  /**
+   * Convert Uint8Array to string.
+   * @private
+   */
+  _stringFromUint8Array(bytes) {
+    return new TextDecoder('utf-8').decode(bytes);
+  }
+
+  /**
+   * Convert bytes to base64.
+   * @private
+   */
+  _bytesToBase64(bytes) {
+    const binString = String.fromCodePoint(...bytes);
+    return btoa(binString);
+  }
+
+  /**
+   * Convert base64 to bytes.
+   * @private
+   */
+  _base64ToBytes(base64) {
+    const binString = atob(base64);
+    const len = binString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binString.codePointAt(i);
+    }
+    return bytes;
+  }
+
+  /**
+   * Parse a JWT token and return its payload.
+   * @private
+   * @param {string} token - JWT token string
+   * @returns {Object|null} Parsed token payload or null on error
+   */
+  _parseToken(token) {
+    if (!token) return null;
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload;
+    } catch (e) {
+      console.error("[IAMService] Failed to parse token:", e);
+      return null;
+    }
+  }
+
+  /**
+   * Cleanup native mode resources.
+   */
+  destroy() {
+    if (this._nativeCallbackUnsubscribe) {
+      this._nativeCallbackUnsubscribe();
+      this._nativeCallbackUnsubscribe = null;
+    }
+    if (this._nativeEncryptionCallbackUnsubscribe) {
+      this._nativeEncryptionCallbackUnsubscribe();
+      this._nativeEncryptionCallbackUnsubscribe = null;
+    }
+    // Cleanup pending encryption requests
+    for (const [requestId, pending] of this._pendingEncryptionRequests) {
+      pending.reject(new Error("IAMService destroyed"));
+    }
+    this._pendingEncryptionRequests.clear();
+    // Cleanup request enclave
+    if (this._nativeRequestEnclave) {
+      try {
+        this._nativeRequestEnclave.close();
+      } catch (e) {
+        console.debug("[IAMService] Error closing request enclave:", e);
+      }
+      this._nativeRequestEnclave = null;
     }
   }
 
