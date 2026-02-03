@@ -125,6 +125,9 @@ class IAMService {
     this._nativeRequestEnclave = null;
     this._nativeEncryptionCallbackUnsubscribe = null;
     this._pendingEncryptionRequests = new Map(); // requestId -> { resolve, reject }
+
+    // --- DPoP state ---
+    this._dpopProvider = null;
   }
 
   /**
@@ -313,7 +316,35 @@ class IAMService {
         return this._nativeAuthenticated;
       }
 
+      // Mark as handled BEFORE creating the promise to prevent
+      // React StrictMode double-execution from re-initializing
+      this._nativeCallbackHandled = true;
+
       this._nativeCallbackPromise = (async () => {
+        // Initialize DPoP if configured
+        if (this._config?.useDPoP && !this._dpopProvider) {
+          try {
+            const { authServerUrl, realm, clientId } = this._getNativeOIDCConfig();
+            const issuerUrl = `${authServerUrl}/realms/${encodeURIComponent(realm)}`;
+            const { DPoPSignatureProvider, BrowserSignatureAlgs } = await import('../lib/tidecloak-dpop.js');
+            const alg = this._config.useDPoP.alg || 'ES256';
+            this._dpopProvider = new DPoPSignatureProvider({
+              issuerUrl: new URL(issuerUrl),
+              clientId: clientId,
+              serverSupportedAlgorithms: [alg],
+              requestedAlgorithm: BrowserSignatureAlgs[alg] || BrowserSignatureAlgs.ES256,
+            });
+            await this._dpopProvider.init();
+            console.debug("[IAMService] DPoP initialized for native mode");
+          } catch (err) {
+            console.warn("[IAMService] Failed to initialize DPoP:", err);
+            if (this._config.useDPoP.mode === 'strict') {
+              throw err;
+            }
+            // In 'auto' mode, continue without DPoP
+          }
+        }
+
         // Check for stored tokens
         const storedTokens = await this._nativeAdapter.getTokens();
         // sessionMode: 'online' (default) = validate tokens, refresh if needed, require login if invalid
@@ -446,6 +477,7 @@ class IAMService {
         onLoad: "check-sso",
         silentCheckSsoRedirectUri: `${window.location.origin}/silent-check-sso.html`,
         pkceMethod: "S256",
+        ...(this._config?.useDPoP && { useDPoP: this._config.useDPoP }),
       });
 
       // if successful, store token for middleware
@@ -1305,13 +1337,35 @@ class IAMService {
         code_verifier: verifier,
       });
 
-      const response = await fetch(tokenUrl, {
+      // Build headers, including DPoP proof if enabled
+      const headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+      };
+
+      if (this._dpopProvider) {
+        const nonce = await this._dpopProvider.getAuthServerNonce();
+        headers['DPoP'] = await this._dpopProvider.generateDPoPProof(tokenUrl, 'POST', undefined, nonce);
+      }
+
+      let response = await fetch(tokenUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
+        headers,
         body: body.toString(),
       });
+
+      // Handle DPoP nonce retry: server may respond with use_dpop_nonce error
+      if (!response.ok && this._dpopProvider) {
+        const dpopNonce = response.headers.get('DPoP-Nonce');
+        if (dpopNonce) {
+          await this._dpopProvider.updateAuthServerNonce(dpopNonce);
+          headers['DPoP'] = await this._dpopProvider.generateDPoPProof(tokenUrl, 'POST', undefined, dpopNonce);
+          response = await fetch(tokenUrl, {
+            method: "POST",
+            headers,
+            body: body.toString(),
+          });
+        }
+      }
 
       if (!response.ok) {
         const errorText = await response.text();

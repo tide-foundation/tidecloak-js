@@ -9,6 +9,7 @@
   },
   "include": [
     "src/**/*",                 // ⬅️ picks up policy-react.ts
-    "lib/tidecloak.js"
+    "lib/tidecloak.js",
+    "lib/tidecloak-dpop.js"
   ]
 }

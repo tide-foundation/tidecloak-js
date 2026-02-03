@@ -187,8 +187,15 @@ export function TideCloakContextProvider({
         return;
       }
 
-      // If config is provided directly, use it
-      if (configProp) {
+      // Check if configProp contains server connection info (realm, url, etc.)
+      // If it does, use it directly. If it only has options (sessionMode, useDPoP, etc.),
+      // fetch adapter.json and merge.
+      const hasServerConfig = configProp && (
+        configProp.realm || configProp.url || configProp['auth-server-url'] || configProp.authServerUrl
+      );
+
+      if (configProp && hasServerConfig) {
+        // Config prop has full server config - use it directly
         const finalConfig = {
           ...configProp,
           ...(authMode && { authMode }),
@@ -201,7 +208,7 @@ export function TideCloakContextProvider({
         return;
       }
 
-      // Otherwise, fetch from configUrl
+      // Fetch adapter.json and merge with any config options (sessionMode, useDPoP, etc.)
       try {
         console.debug(`[TideCloak] Fetching config from ${configUrl}`);
         const response = await fetch(configUrl);
@@ -212,6 +219,7 @@ export function TideCloakContextProvider({
 
         const finalConfig = {
           ...fetchedConfig,
+          ...(configProp || {}),
           ...(authMode && { authMode }),
           ...(adapter && { adapter }),
         };
