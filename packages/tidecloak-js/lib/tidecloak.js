@@ -1,3 +1,7 @@
+// @ts-check
+/**
+ * @import {Acr, KeycloakAccountOptions, KeycloakAdapter, KeycloakConfig, KeycloakError, KeycloakFlow, KeycloakInitOptions, KeycloakLoginOptions, KeycloakLogoutOptions, KeycloakPkceMethod, KeycloakProfile, KeycloakRegisterOptions, KeycloakResourceAccess, KeycloakResponseMode, KeycloakResponseType, KeycloakRoles, KeycloakTokenParsed, OpenIdProviderMetadata} from "./keycloak.ts"
+ */
 /*
  * Copyright 2016 Red Hat, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
@@ -78,11 +82,8 @@ export default class TideCloak {
   responseType = 'code'
   /** @type {KeycloakFlow} */
   flow = 'standard'
-  /** 
-   * Matches Keycloak: number | undefined (unset when skew unknown)
-   * @type {number | undefined} 
-   */
-  timeSkew
+  /** @type {number?} */
+  timeSkew = null
   /** @type {string=} */
   redirectUri
   /** @type {string=} */
@@ -96,8 +97,6 @@ export default class TideCloak {
   logoutMethod = 'GET'
   /** @type {string=} */
   scope
-  /** @type {string | undefined} */
-  acrValues
   messageReceiveTimeout = 10000
   /** @type {string=} */
   idToken
@@ -135,7 +134,7 @@ export default class TideCloak {
   resourceAccess
   /** @type {KeycloakProfile=} */
   profile
-  /** @type {KeycloakUserInfo | undefined} */
+  /** @type {{}=} */
   userInfo
   /** @type {Endpoints} */
   endpoints
@@ -161,7 +160,7 @@ export default class TideCloak {
   /**
    * @param {KeycloakConfig} config
    */
-  constructor(config) {
+  constructor (config) {
     if (typeof config !== 'string' && !isObject(config)) {
       throw new Error("The 'TideCloak' constructor must be provided with a configuration object, or a URL to a JSON configuration file.")
     }
@@ -172,7 +171,7 @@ export default class TideCloak {
     //     : ['url', 'realm', 'clientId', 'homeOrkUrl', 'vendorId', 'clientOriginAuth']
 
     //   for (const property of requiredProperties) {
-    //     if (!config[property]) {
+    //     if (!(property in config)) {
     //       throw new Error(`The configuration object is missing the required '${property}' property.`)
     //     }
     //   }
@@ -181,8 +180,8 @@ export default class TideCloak {
     if (!globalThis.isSecureContext) {
       this.#logWarn(
         "[TIDECLOAK] TideCloak JS must be used in a 'secure context' to function properly as it relies on browser APIs that are otherwise not available.\n" +
-        'Continuing to run your application insecurely will lead to unexpected behavior and breakage.\n\n' +
-        'For more information see: https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts'
+                'Continuing to run your application insecurely will lead to unexpected behavior and breakage.\n\n' +
+                'For more information see: https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts'
       )
     }
 
@@ -193,7 +192,7 @@ export default class TideCloak {
    * @param {KeycloakInitOptions} initOptions
    * @returns {Promise<boolean>}
    */
-  async init(initOptions = {}) {
+  init = async (initOptions = {}) => {
     if (this.didInitialize) {
       throw new Error("A 'TideCloak' instance can only be initialized once.")
     }
@@ -290,10 +289,6 @@ export default class TideCloak {
       this.scope = initOptions.scope
     }
 
-    if (typeof initOptions.acrValues === 'string') {
-      this.acrValues = initOptions.acrValues
-    }
-
     if (typeof initOptions.messageReceiveTimeout === 'number' && initOptions.messageReceiveTimeout > 0) {
       this.messageReceiveTimeout = initOptions.messageReceiveTimeout
     }
@@ -311,7 +306,7 @@ export default class TideCloak {
    * @param {"default" | "cordova" | "cordova-native"} type
    * @returns {KeycloakAdapter}
    */
-  #loadAdapter(type) {
+  #loadAdapter (type) {
     if (type === 'default') {
       return this.#loadDefaultAdapter()
     }
@@ -332,7 +327,7 @@ export default class TideCloak {
   /**
    * @returns {KeycloakAdapter}
    */
-  #loadDefaultAdapter() {
+  #loadDefaultAdapter () {
     /** @type {KeycloakAdapter['redirectUri']}{} */
     const redirectUri = (options) => {
       return options?.redirectUri || this.redirectUri || globalThis.location.href
@@ -341,7 +336,7 @@ export default class TideCloak {
     return {
       login: async (options) => {
         window.location.assign(await this.createLoginUrl(options))
-        return await new Promise(() => { })
+        return await new Promise(() => {})
       },
 
       logout: async (options) => {
@@ -371,7 +366,7 @@ export default class TideCloak {
 
           input.setAttribute('type', 'hidden')
           input.setAttribute('name', name)
-          input.setAttribute('value', /** @type {string} */(value))
+          input.setAttribute('value', /** @type {string} */ (value))
 
           form.appendChild(input)
         }
@@ -383,7 +378,7 @@ export default class TideCloak {
 
       register: async (options) => {
         window.location.assign(await this.createRegisterUrl(options))
-        return await new Promise(() => { })
+        return await new Promise(() => {})
       },
 
       accountManagement: async () => {
@@ -393,7 +388,7 @@ export default class TideCloak {
         } else {
           throw new Error('Not supported by the OIDC server')
         }
-        return await new Promise(() => { })
+        return await new Promise(() => {})
       },
 
       redirectUri
@@ -403,7 +398,7 @@ export default class TideCloak {
   /**
    * @returns {KeycloakAdapter}
    */
-  #loadCordovaAdapter() {
+  #loadCordovaAdapter () {
     /**
      * @param {string} loginUrl
      * @param {string} target
@@ -458,7 +453,7 @@ export default class TideCloak {
         let completed = false
         let closed = false
 
-        function closeBrowser() {
+        function closeBrowser () {
           closed = true
           ref.close()
         };
@@ -586,7 +581,7 @@ export default class TideCloak {
   /**
    * @returns {KeycloakAdapter}
    */
-  #loadCordovaNativeAdapter() {
+  #loadCordovaNativeAdapter () {
     /* global universalLinks */
     return {
       login: async (options) => {
@@ -669,7 +664,7 @@ export default class TideCloak {
   /**
    * @returns {Promise<void>}
    */
-  async #loadConfig() {
+  async #loadConfig () {
     if (typeof this.#config === 'string') {
       const jsonConfig = await fetchJsonConfig(this.#config)
       this.authServerUrl = jsonConfig['auth-server-url']
@@ -692,7 +687,7 @@ export default class TideCloak {
   /**
    * @returns {void}
    */
-  #setupEndpoints() {
+  #setupEndpoints () {
     this.endpoints = {
       authorize: () => {
         return this.#getRealmUrl() + '/protocol/openid-connect/auth'
@@ -722,7 +717,7 @@ export default class TideCloak {
    * @param {string | OpenIdProviderMetadata} oidcProvider
    * @returns {Promise<void>}
    */
-  async #loadOidcConfig(oidcProvider) {
+  async #loadOidcConfig (oidcProvider) {
     if (typeof oidcProvider === 'string') {
       const url = `${stripTrailingSlash(oidcProvider)}/.well-known/openid-configuration`
       const openIdConfig = await fetchOpenIdConfig(url)
@@ -736,30 +731,30 @@ export default class TideCloak {
    * @param {OpenIdProviderMetadata} config
    * @returns {void}
    */
-  #setupOidcEndpoints(config) {
+  #setupOidcEndpoints (config) {
     this.endpoints = {
-      authorize() {
+      authorize () {
         return config.authorization_endpoint
       },
-      token() {
+      token () {
         return config.token_endpoint
       },
-      logout() {
+      logout () {
         if (!config.end_session_endpoint) {
           throw new Error('Not supported by the OIDC server')
         }
         return config.end_session_endpoint
       },
-      checkSessionIframe() {
+      checkSessionIframe () {
         if (!config.check_session_iframe) {
           throw new Error('Not supported by the OIDC server')
         }
         return config.check_session_iframe
       },
-      register() {
+      register () {
         throw new Error('Redirection to "Register user" page not supported in standard OIDC mode')
       },
-      userinfo() {
+      userinfo () {
         if (!config.userinfo_endpoint) {
           throw new Error('Not supported by the OIDC server')
         }
@@ -771,7 +766,7 @@ export default class TideCloak {
   /**
    * @returns {Promise<void>}
    */
-  async #check3pCookiesSupported() {
+  async #check3pCookiesSupported () {
     if ((!this.#loginIframe.enable && !this.silentCheckSsoRedirectUri) || typeof this.endpoints.thirdPartyCookiesIframe !== 'function') {
       return
     }
@@ -798,9 +793,9 @@ export default class TideCloak {
         } else if (event.data === 'unsupported') {
           this.#logWarn(
             '[TIDECLOAK] Your browser is blocking access to 3rd-party cookies, this means:\n\n' +
-            ' - It is not possible to retrieve tokens without redirecting to the TideCloak server (a.k.a. no support for silent authentication).\n' +
-            ' - It is not possible to automatically detect changes to the session status (such as the user logging out in another tab).\n\n' +
-            'For more information see: https://www.keycloak.org/securing-apps/javascript-adapter#_modern_browsers'
+                        ' - It is not possible to retrieve tokens without redirecting to the TideCloak server (a.k.a. no support for silent authentication).\n' +
+                        ' - It is not possible to automatically detect changes to the session status (such as the user logging out in another tab).\n\n' +
+                        'For more information see: https://www.keycloak.org/securing-apps/javascript-adapter#_modern_browsers'
           )
 
           this.#loginIframe.enable = false
@@ -824,11 +819,11 @@ export default class TideCloak {
    * @param {KeycloakInitOptions} initOptions
    * @returns {Promise<void>}
    */
-  async #processInit(initOptions) {
+  async #processInit (initOptions) {
     const callback = this.#parseCallback(window.location.href)
 
-    if (callback?.redirectUri) {
-      window.history.replaceState(window.history.state, '', callback.redirectUri)
+    if (callback?.newUrl) {
+      window.history.replaceState(window.history.state, '', callback.newUrl)
     }
 
     if (callback && callback.valid) {
@@ -907,7 +902,7 @@ export default class TideCloak {
   /**
    * @returns {Promise<void>}
    */
-  async #setupCheckLoginIframe() {
+  async #setupCheckLoginIframe () {
     if (!this.#loginIframe.enable || this.#loginIframe.iframe) {
       return
     }
@@ -969,7 +964,7 @@ export default class TideCloak {
   /**
    * @returns {Promise<boolean | undefined>}
    */
-  async #checkLoginIframe() {
+  async #checkLoginIframe () {
     if (!this.#loginIframe.iframe || !this.#loginIframe.iframeOrigin) {
       return
     }
@@ -980,7 +975,7 @@ export default class TideCloak {
     /** @type {Promise<boolean>} */
     const promise = new Promise((resolve, reject) => {
       /** @type {(error: Error | null, value?: boolean) => void} */
-      const callback = (error, result) => error ? reject(error) : resolve(/** @type {boolean} */(result))
+      const callback = (error, result) => error ? reject(error) : resolve(/** @type {boolean} */ (result))
 
       this.#loginIframe.callbackList.push(callback)
 
@@ -995,7 +990,7 @@ export default class TideCloak {
   /**
    * @returns {Promise<void>}
    */
-  async #checkSsoSilently() {
+  async #checkSsoSilently () {
     const iframe = document.createElement('iframe')
     const src = await this.createLoginUrl({ prompt: 'none', redirectUri: this.silentCheckSsoRedirectUri })
     iframe.setAttribute('src', src)
@@ -1033,7 +1028,7 @@ export default class TideCloak {
   /**
    * @param {string} url
    */
-  #parseCallback(url) {
+  #parseCallback (url) {
     const oauth = this.#parseCallbackUrl(url)
     if (!oauth) {
       return
@@ -1056,7 +1051,7 @@ export default class TideCloak {
   /**
    * @param {string} urlString
    */
-  #parseCallbackUrl(urlString) {
+  #parseCallbackUrl (urlString) {
     let supportedParams = []
     switch (this.flow) {
       case 'standard':
@@ -1075,28 +1070,28 @@ export default class TideCloak {
     supportedParams.push('error_uri')
 
     const url = new URL(urlString)
-    let redirectUri = ''
+    let newUrl = ''
     let parsed
 
     if (this.responseMode === 'query' && url.searchParams.size > 0) {
       parsed = this.#parseCallbackParams(url.search, supportedParams)
       url.search = parsed.paramsString
-      redirectUri = url.toString()
+      newUrl = url.toString()
     } else if (this.responseMode === 'fragment' && url.hash.length > 0) {
       parsed = this.#parseCallbackParams(url.hash.substring(1), supportedParams)
-      url.hash = ''
-      redirectUri = url.toString()
+      url.hash = parsed.paramsString
+      newUrl = url.toString()
     }
 
     if (parsed?.oauthParams) {
       if (this.flow === 'standard' || this.flow === 'hybrid') {
         if ((parsed.oauthParams.code || parsed.oauthParams.error) && parsed.oauthParams.state) {
-          parsed.oauthParams.redirectUri = redirectUri
+          parsed.oauthParams.newUrl = newUrl
           return parsed.oauthParams
         }
       } else if (this.flow === 'implicit') {
         if ((parsed.oauthParams.access_token || parsed.oauthParams.error) && parsed.oauthParams.state) {
-          parsed.oauthParams.redirectUri = redirectUri
+          parsed.oauthParams.newUrl = newUrl
           return parsed.oauthParams
         }
       }
@@ -1114,7 +1109,7 @@ export default class TideCloak {
    * @param {string[]} supportedParams
    * @returns {ParsedCallbackParams}
    */
-  #parseCallbackParams(paramsString, supportedParams) {
+  #parseCallbackParams (paramsString, supportedParams) {
     const params = new URLSearchParams(paramsString)
     /** @type {Record<string, string>} */
     const oauthParams = {}
@@ -1132,7 +1127,7 @@ export default class TideCloak {
     }
   }
 
-  async #processCallback(oauth) {
+  async #processCallback (oauth) {
     const { code, error, prompt, doken } = oauth
     let timeLocal = new Date().getTime()
 
@@ -1176,7 +1171,7 @@ export default class TideCloak {
 
     if ((this.flow !== 'implicit') && code) {
       try {
-        const response = await fetchAccessToken(this.endpoints.token(), code, /** @type {string} */(this.clientId), oauth.redirectUri, oauth.pkceCodeVerifier)
+        const response = await fetchAccessToken(this.endpoints.token(), code, /** @type {string} */ (this.clientId), oauth.redirectUri, oauth.pkceCodeVerifier)
         authSuccess(response.access_token, response.refresh_token, response.id_token, response.doken)
 
         if (this.flow === 'standard') {
@@ -1191,7 +1186,7 @@ export default class TideCloak {
     }
   }
 
-  async #scheduleCheckIframe() {
+  async #scheduleCheckIframe () {
     if (this.#loginIframe.enable && this.token) {
       await waitForTimeout(this.#loginIframe.interval * 1000)
       const unchanged = await this.#checkLoginIframe()
@@ -1206,7 +1201,7 @@ export default class TideCloak {
    * @param {KeycloakLoginOptions} [options]
    * @returns {Promise<void>}
    */
-  login(options) {
+  login = (options) => {
     return this.#adapter.login(options)
   }
 
@@ -1226,7 +1221,7 @@ export default class TideCloak {
    * @param {KeycloakLoginOptions} [options]
    * @returns {Promise<string>}
    */
-  async createLoginUrl(options) {
+  createLoginUrl = async (options) => {
     const state = createUUID()
     const nonce = createUUID()
     const redirectUri = this.#adapter.redirectUri(options)
@@ -1258,8 +1253,6 @@ export default class TideCloak {
 
     const params = new URLSearchParams([
       ['client_id', /** @type {string} */ (this.clientId)],
-      // The endpoint URI MUST NOT include a fragment component.
-      // https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2
       ['redirect_uri', stripHash(redirectUri)],
       ['state', state],
       ['response_mode', this.responseMode],
@@ -1299,8 +1292,8 @@ export default class TideCloak {
       params.append('claims', buildClaimsParameter(options.acr))
     }
 
-    if (options?.acrValues || this.acrValues) {
-      params.append('acr_values', options.acrValues || this.acrValues)
+    if (options?.acrValues) {
+      params.append('acr_values', options.acrValues)
     }
 
     if (this.pkceMethod) {
@@ -1326,7 +1319,7 @@ export default class TideCloak {
    * @param {KeycloakLogoutOptions} [options]
    * @returns {Promise<void>}
    */
-  logout(options) {
+  logout = (options) => {
     return this.#adapter.logout(options)
   }
 
@@ -1334,7 +1327,7 @@ export default class TideCloak {
    * @param {KeycloakLogoutOptions} [options]
    * @returns {string}
    */
-  createLogoutUrl(options) {
+  createLogoutUrl = (options) => {
     const logoutMethod = options?.logoutMethod ?? this.logoutMethod
     const url = this.endpoints.logout()
 
@@ -1358,7 +1351,7 @@ export default class TideCloak {
    * @param {KeycloakRegisterOptions} [options]
    * @returns {Promise<void>}
    */
-  register(options) {
+  register = (options) => {
     return this.#adapter.register(options)
   }
 
@@ -1366,7 +1359,7 @@ export default class TideCloak {
    * @param {KeycloakRegisterOptions} [options]
    * @returns {Promise<string>}
    */
-  createRegisterUrl(options) {
+  createRegisterUrl = (options) => {
     return this.createLoginUrl({ ...options, action: 'register' })
   }
 
@@ -1374,7 +1367,7 @@ export default class TideCloak {
    * @param {KeycloakAccountOptions} [options]
    * @returns {string}
    */
-  createAccountUrl(options) {
+  createAccountUrl = (options) => {
     const url = this.#getRealmUrl()
 
     if (!url) {
@@ -1392,7 +1385,7 @@ export default class TideCloak {
   /**
    * @returns {Promise<void>}
    */
-  accountManagement() {
+  accountManagement = () => {
     return this.#adapter.accountManagement()
   }
 
@@ -1400,7 +1393,7 @@ export default class TideCloak {
    * @param {string} role
    * @returns {boolean}
    */
-  hasRealmRole(role) {
+  hasRealmRole = (role) => {
     const access = this.realmAccess
     return !!access && access.roles.indexOf(role) >= 0
   }
@@ -1410,7 +1403,7 @@ export default class TideCloak {
    * @param {string} [resource]
    * @returns {boolean}
    */
-  hasResourceRole(role, resource) {
+  hasResourceRole = (role, resource) => {
     if (!this.resourceAccess) {
       return false
     }
@@ -1422,7 +1415,7 @@ export default class TideCloak {
   /**
    * @returns {Promise<KeycloakProfile>}
    */
-  async loadUserProfile() {
+  loadUserProfile = async () => {
     const realmUrl = this.#getRealmUrl()
 
     if (!realmUrl) {
@@ -1439,11 +1432,11 @@ export default class TideCloak {
   }
 
   /**
-   * @returns {Promise<KeycloakUserInfo>}
+   * @returns {Promise<{}>}
    */
-  async loadUserInfo() {
+  loadUserInfo = async () => {
     const url = this.endpoints.userinfo()
-    /** @type {KeycloakUserInfo} */
+    /** @type {{}} */
     const userInfo = await fetchJSON(url, {
       headers: [buildAuthorizationHeader(this.token)]
     })
@@ -1455,7 +1448,7 @@ export default class TideCloak {
    * @param {number} [minValidity]
    * @returns {boolean}
    */
-  isTokenExpired(minValidity) {
+  isTokenExpired = (minValidity) => {
     if (!this.tokenParsed || (!this.refreshToken && this.flow !== 'implicit')) {
       throw new Error('Not authenticated')
     }
@@ -1480,11 +1473,10 @@ export default class TideCloak {
   }
 
   /**
-   * Matches Keycloak: minValidity is optional.
-   * @param {number} [minValidity]
+   * @param {number} minValidity
    * @returns {Promise<boolean>}
    */
-  async updateToken(minValidity) {
+  updateToken = async (minValidity) => {
     if (!this.refreshToken) {
       throw new Error('Unable to update token, no refresh token available.')
     }
@@ -1519,7 +1511,7 @@ export default class TideCloak {
       let timeLocal = new Date().getTime()
 
       try {
-        const response = await fetchRefreshToken(url, this.refreshToken, /** @type {string} */(this.clientId))
+        const response = await fetchRefreshToken(url, this.refreshToken, /** @type {string} */ (this.clientId))
         this.#logInfo('[TIDECLOAK] Token refreshed')
 
         timeLocal = (timeLocal + new Date().getTime()) / 2
@@ -1547,7 +1539,7 @@ export default class TideCloak {
     return await promise
   }
 
-  clearToken() {
+  clearToken = () => {
     if (this.token) {
       this.#setToken()
       this.onAuthLogout?.()
@@ -1763,7 +1755,7 @@ export default class TideCloak {
    * @param {number} [timeLocal]
    * @param {string} [doken]
    */
-  #setToken(token, refreshToken, idToken, timeLocal, doken) {
+  #setToken (token, refreshToken, idToken, timeLocal, doken) {
     if (this.tokenTimeoutHandle) {
       clearTimeout(this.tokenTimeoutHandle)
       this.tokenTimeoutHandle = undefined
@@ -1798,7 +1790,7 @@ export default class TideCloak {
         this.timeSkew = Math.floor(timeLocal / 1000) - this.tokenParsed.iat
       }
 
-      if (typeof this.timeSkew === 'number') {
+      if (this.timeSkew !== null) {
         this.#logInfo('[TIDECLOAK] Estimated time difference between browser and server is ' + this.timeSkew + ' seconds')
 
         if (this.onTokenExpired) {
@@ -1820,6 +1812,7 @@ export default class TideCloak {
 
       this.authenticated = false
     }
+  }
 
     // Tide doken handling
     if (doken) {
@@ -1840,19 +1833,19 @@ export default class TideCloak {
   /**
    * @returns {string=}
    */
-  #getRealmUrl() {
+  #getRealmUrl () {
     if (typeof this.authServerUrl === 'undefined') {
       return
     }
 
-    return `${stripTrailingSlash(this.authServerUrl)}/realms/${encodeURIComponent(/** @type {string} */(this.realm))}`
+    return `${stripTrailingSlash(this.authServerUrl)}/realms/${encodeURIComponent(/** @type {string} */ (this.realm))}`
   }
 
   /**
    * @param {Function} fn
    * @returns {(message: string) => void}
    */
-  #createLogger(fn) {
+  #createLogger (fn) {
     return (message) => {
       if (this.enableLogging) {
         fn.call(console, message)
@@ -1864,7 +1857,7 @@ export default class TideCloak {
 /**
  * @returns {string}
  */
-function createUUID() {
+function createUUID () {
   if (typeof crypto === 'undefined' || typeof crypto.randomUUID === 'undefined') {
     throw new Error('Web Crypto API is not available.')
   }
@@ -1876,7 +1869,7 @@ function createUUID() {
  * @param {Acr} requestedAcr
  * @returns {string}
  */
-function buildClaimsParameter(requestedAcr) {
+function buildClaimsParameter (requestedAcr) {
   return JSON.stringify({
     id_token: {
       acr: requestedAcr
@@ -1888,7 +1881,7 @@ function buildClaimsParameter(requestedAcr) {
  * @param {number} len
  * @returns {string}
  */
-function generateCodeVerifier(len) {
+function generateCodeVerifier (len) {
   return generateRandomString(len, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789')
 }
 
@@ -1897,7 +1890,7 @@ function generateCodeVerifier(len) {
  * @param {string} codeVerifier
  * @returns {Promise<string>}
  */
-async function generatePkceChallenge(pkceMethod, codeVerifier) {
+async function generatePkceChallenge (pkceMethod, codeVerifier) {
   if (pkceMethod !== 'S256') {
     throw new TypeError(`Invalid value for 'pkceMethod', expected 'S256' but got '${pkceMethod}'.`)
   }
@@ -1917,7 +1910,7 @@ async function generatePkceChallenge(pkceMethod, codeVerifier) {
  * @param {string} alphabet
  * @returns {string}
  */
-function generateRandomString(len, alphabet) {
+function generateRandomString (len, alphabet) {
   const randomData = generateRandomData(len)
   const chars = new Array(len)
   for (let i = 0; i < len; i++) {
@@ -1930,7 +1923,7 @@ function generateRandomString(len, alphabet) {
  * @param {number} len
  * @returns {Uint8Array<ArrayBuffer>}
  */
-function generateRandomData(len) {
+function generateRandomData (len) {
   if (typeof crypto === 'undefined' || typeof crypto.getRandomValues === 'undefined') {
     throw new Error('Web Crypto API is not available.')
   }
@@ -1947,7 +1940,7 @@ function generateRandomData(len) {
  * @param {string} errorMessage
  * @returns {Promise<T>}
  */
-function applyTimeoutToPromise(promise, timeout, errorMessage) {
+function applyTimeoutToPromise (promise, timeout, errorMessage) {
   /** @type {number} */
   let timeoutHandle
   const timeoutPromise = new Promise(function (resolve, reject) {
@@ -1964,7 +1957,7 @@ function applyTimeoutToPromise(promise, timeout, errorMessage) {
 /**
  * @returns {CallbackStorage}
  */
-function createCallbackStorage() {
+function createCallbackStorage () {
   try {
     return new LocalStorage()
   } catch (err) {
@@ -1994,7 +1987,7 @@ const STORAGE_KEY_PREFIX = 'kc-callback-'
  * @implements {CallbackStorage}
  */
 class LocalStorage {
-  constructor() {
+  constructor () {
     globalThis.localStorage.setItem('kc-test', 'test')
     globalThis.localStorage.removeItem('kc-test')
   }
@@ -2003,7 +1996,7 @@ class LocalStorage {
    * @param {string} [state]
    * @returns {CallbackState | null}
    */
-  get(state) {
+  get (state) {
     if (!state) {
       return null
     }
@@ -2024,7 +2017,7 @@ class LocalStorage {
   /**
    * @param {CallbackState} state
    */
-  add(state) {
+  add (state) {
     this.#clearInvalidValues()
 
     const key = STORAGE_KEY_PREFIX + state.state
@@ -2046,7 +2039,7 @@ class LocalStorage {
   /**
    * Clears all values from local storage that are no longer valid.
    */
-  #clearInvalidValues() {
+  #clearInvalidValues () {
     const currentTime = Date.now()
 
     for (const [key, value] of this.#getStoredEntries()) {
@@ -2063,7 +2056,7 @@ class LocalStorage {
   /**
    * Clears all known values from local storage.
    */
-  #clearAllValues() {
+  #clearAllValues () {
     for (const [key] of this.#getStoredEntries()) {
       globalThis.localStorage.removeItem(key)
     }
@@ -2073,7 +2066,7 @@ class LocalStorage {
    * Gets all entries stored in local storage that are known to be managed by this class.
    * @returns {[string, string][]} An array of key-value pairs.
    */
-  #getStoredEntries() {
+  #getStoredEntries () {
     return Object.entries(globalThis.localStorage).filter(([key]) => key.startsWith(STORAGE_KEY_PREFIX))
   }
 
@@ -2082,7 +2075,7 @@ class LocalStorage {
    * @param {string} value
    * @returns {number | null} The expiry time in milliseconds, or `null` if the value is malformed.
    */
-  #parseExpiry(value) {
+  #parseExpiry (value) {
     let parsedValue
 
     // Attempt to parse the value as JSON.
@@ -2109,7 +2102,7 @@ class CookieStorage {
    * @param {string} [state]
    * @returns {CallbackState | null}
    */
-  get(state) {
+  get (state) {
     if (!state) {
       return null
     }
@@ -2126,7 +2119,7 @@ class CookieStorage {
   /**
    * @param {CallbackState} state
    */
-  add(state) {
+  add (state) {
     this.#setCookie(STORAGE_KEY_PREFIX + state.state, JSON.stringify(state), this.#cookieExpiration(60))
   }
 
@@ -2134,7 +2127,7 @@ class CookieStorage {
    * @param {string} key
    * @returns
    */
-  #getCookie(key) {
+  #getCookie (key) {
     const name = key + '='
     const ca = document.cookie.split(';')
     for (let i = 0; i < ca.length; i++) {
@@ -2154,9 +2147,9 @@ class CookieStorage {
    * @param {string} value
    * @param {Date} expirationDate
    */
-  #setCookie(key, value, expirationDate) {
+  #setCookie (key, value, expirationDate) {
     const cookie = key + '=' + value + '; ' +
-      'expires=' + expirationDate.toUTCString() + '; '
+            'expires=' + expirationDate.toUTCString() + '; '
     document.cookie = cookie
   }
 
@@ -2164,7 +2157,7 @@ class CookieStorage {
    * @param {number} minutes
    * @returns {Date}
    */
-  #cookieExpiration(minutes) {
+  #cookieExpiration (minutes) {
     const exp = new Date()
     exp.setTime(exp.getTime() + (minutes * 60 * 1000))
     return exp
@@ -2175,7 +2168,7 @@ class CookieStorage {
  * @param {Uint8Array<ArrayBuffer>} bytes
  * @see https://developer.mozilla.org/en-US/docs/Glossary/Base64#the_unicode_problem
  */
-function bytesToBase64(bytes) {
+function bytesToBase64 (bytes) {
   const binString = String.fromCodePoint(...bytes)
   return btoa(binString)
 }
@@ -2214,7 +2207,7 @@ function StringFromUint8Array(bytes){
  * @param {string} message
  * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest#basic_example
  */
-async function sha256Digest(message) {
+async function sha256Digest (message) {
   const encoder = new TextEncoder()
   const data = encoder.encode(message)
 
@@ -2229,7 +2222,7 @@ async function sha256Digest(message) {
  * @param {string} token
  * @returns {KeycloakTokenParsed}
  */
-function decodeToken(token) {
+function decodeToken (token) {
   const [, payload] = token.split('.')
 
   if (typeof payload !== 'string') {
@@ -2254,7 +2247,7 @@ function decodeToken(token) {
 /**
  * @param {string} input
  */
-function base64UrlDecode(input) {
+function base64UrlDecode (input) {
   let output = input
     .replaceAll('-', '+')
     .replaceAll('_', '/')
@@ -2282,7 +2275,7 @@ function base64UrlDecode(input) {
 /**
  * @param {string} input
  */
-function b64DecodeUnicode(input) {
+function b64DecodeUnicode (input) {
   return decodeURIComponent(atob(input).replace(/(.)/g, (m, p) => {
     let code = p.charCodeAt(0).toString(16).toUpperCase()
 
@@ -2298,7 +2291,7 @@ function b64DecodeUnicode(input) {
  * Check if the input is an object that can be operated on.
  * @param {unknown} input
  */
-function isObject(input) {
+function isObject (input) {
   return typeof input === 'object' && input !== null
 }
 
@@ -2314,7 +2307,7 @@ function isObject(input) {
  * @param {string} url
  * @returns {Promise<JsonConfig>}
  */
-async function fetchJsonConfig(url) {
+async function fetchJsonConfig (url) {
   return await fetchJSON(url)
 }
 
@@ -2323,7 +2316,7 @@ async function fetchJsonConfig(url) {
  * @param {string} url
  * @returns {Promise<OpenIdProviderMetadata>}
  */
-async function fetchOpenIdConfig(url) {
+async function fetchOpenIdConfig (url) {
   return await fetchJSON(url)
 }
 
@@ -2346,7 +2339,7 @@ async function fetchOpenIdConfig(url) {
  * @param {string} [pkceCodeVerifier]
  * @returns {Promise<AccessTokenResponse>}
  */
-async function fetchAccessToken(url, code, clientId, redirectUri, pkceCodeVerifier) {
+async function fetchAccessToken (url, code, clientId, redirectUri, pkceCodeVerifier) {
   const body = new URLSearchParams([
     ['code', code],
     ['grant_type', 'authorization_code'],
@@ -2372,7 +2365,7 @@ async function fetchAccessToken(url, code, clientId, redirectUri, pkceCodeVerifi
  * @param {string} clientId
  * @returns {Promise<AccessTokenResponse>}
  */
-async function fetchRefreshToken(url, refreshToken, clientId) {
+async function fetchRefreshToken (url, refreshToken, clientId) {
   const body = new URLSearchParams([
     ['grant_type', 'refresh_token'],
     ['refresh_token', refreshToken],
@@ -2392,7 +2385,7 @@ async function fetchRefreshToken(url, refreshToken, clientId) {
  * @param {RequestInit} init
  * @returns {Promise<T>}
  */
-async function fetchJSON(url, init = {}) {
+async function fetchJSON (url, init = {}) {
   const headers = new Headers(init.headers)
   headers.set('Accept', CONTENT_TYPE_JSON)
 
@@ -2409,7 +2402,7 @@ async function fetchJSON(url, init = {}) {
  * @param {RequestInit} [init]
  * @returns {Promise<Response>}
  */
-async function fetchWithErrorHandling(url, init) {
+async function fetchWithErrorHandling (url, init) {
   const response = await fetch(url, init)
 
   if (!response.ok) {
@@ -2423,7 +2416,7 @@ async function fetchWithErrorHandling(url, init) {
  * @param {string} [token]
  * @returns {[string, string]}
  */
-function buildAuthorizationHeader(token) {
+function buildAuthorizationHeader (token) {
   if (!token) {
     throw new Error('Unable to build authorization header, token is not set, make sure the user is authenticated.')
   }
@@ -2435,7 +2428,7 @@ function buildAuthorizationHeader(token) {
  * @param {string} url
  * @returns {string}
  */
-function stripTrailingSlash(url) {
+function stripTrailingSlash (url) {
   return url.endsWith('/') ? url.slice(0, -1) : url
 }
 
@@ -2463,7 +2456,7 @@ export class NetworkError extends Error {
    * @param {string} message
    * @param {NetworkErrorOptions} options
    */
-  constructor(message, options) {
+  constructor (message, options) {
     super(message, options)
     this.response = options.response
   }
