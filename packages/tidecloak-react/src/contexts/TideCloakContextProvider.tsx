@@ -54,6 +54,9 @@ export interface TideCloakContextValue {
   // Tide actions
   doEncrypt: (data: any) => Promise<any>;
   doDecrypt: (data: any) => Promise<any>;
+
+  // DPoP-aware fetch
+  secureFetch: (url: string | URL | RequestInfo, init?: RequestInit) => Promise<Response>;
 }
 
 export interface TideCloakContextProviderProps {
@@ -492,7 +495,11 @@ export function TideCloakContextProvider({
 
     // Tide encryption - return null during initialization
     doEncrypt: async (data: any) => isInitializing ? null : await IAMService.doEncrypt(data),
-    doDecrypt: async (data: any) => isInitializing ? null : await IAMService.doDecrypt(data)
+    doDecrypt: async (data: any) => isInitializing ? null : await IAMService.doDecrypt(data),
+
+    // DPoP-aware fetch - falls back to regular fetch during initialization
+    secureFetch: (url: string | URL | RequestInfo, init?: RequestInit) =>
+      isInitializing ? fetch(url, init) : IAMService.secureFetch(url, init),
   };
 
   return (
@@ -534,6 +541,7 @@ const defaultContextValue: TideCloakContextValue = {
   resetWasOffline: () => {},
   doEncrypt: async () => null,
   doDecrypt: async () => null,
+  secureFetch: (url: string | URL | RequestInfo, init?: RequestInit) => fetch(url, init),
 };
 
 export function useTideCloakContext(): TideCloakContextValue {

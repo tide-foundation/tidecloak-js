@@ -478,6 +478,7 @@ class IAMService {
         silentCheckSsoRedirectUri: `${window.location.origin}/silent-check-sso.html`,
         pkceMethod: "S256",
         ...(this._config?.useDPoP && { useDPoP: this._config.useDPoP }),
+        ...(this._config?.checkLoginIframe === false && { checkLoginIframe: false }),
       });
 
       // if successful, store token for middleware
@@ -836,6 +837,99 @@ class IAMService {
       return this._nativeDecrypt(data);
     }
     return this.getTideCloakClient().decrypt(data);
+  }
+
+  /**
+   * Drop-in replacement for fetch that automatically handles DPoP authentication.
+   * If the request includes a Bearer token matching the TideCloak-managed token,
+   * it's replaced with DPoP authorization and proof. Also manages resource server
+   * nonces automatically. Otherwise, behaves like regular fetch.
+   *
+   * @param {string|URL|RequestInfo} url - The resource URL to fetch
+   * @param {RequestInit} [init] - Optional fetch init options (same as standard fetch)
+   * @returns {Promise<Response>} A promise that resolves to the fetch Response
+   * @throws {Error} In hybrid mode (tokens are server-side)
+   *
+   * @example
+   * ```js
+   * const token = await IAMService.getToken();
+   * const response = await IAMService.secureFetch('https://api.example.com/data', {
+   *   method: 'POST',
+   *   headers: {
+   *     'Authorization': `Bearer ${token}`,
+   *     'Content-Type': 'application/json',
+   *   },
+   *   body: JSON.stringify({ key: 'value' }),
+   * });
+   * ```
+   */
+  async secureFetch(url, init) {
+    if (this.isHybridMode()) {
+      throw new Error("secureFetch() not available in hybrid mode - tokens are server-side");
+    }
+    if (this.isNativeMode()) {
+      return this._nativeSecureFetch(url, init);
+    }
+    return this.getTideCloakClient().secureFetch(url, init);
+  }
+
+  /**
+   * Native mode secure fetch with DPoP support.
+   * @private
+   */
+  async _nativeSecureFetch(url, init = {}) {
+    if (!this._dpopProvider) {
+      // No DPoP configured, fall through to regular fetch
+      return fetch(url, init);
+    }
+
+    const token = await this.getToken();
+    if (!token) {
+      return fetch(url, init);
+    }
+
+    const urlStr = typeof url === "string" ? url : url.toString();
+    const method = (init.method || "GET").toUpperCase();
+    const origin = new URL(urlStr).origin;
+
+    // Check if the Authorization header contains the managed token
+    const headers = new Headers(init.headers || {});
+    const authHeader = headers.get("Authorization") || "";
+    const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.substring(7) : null;
+
+    if (!bearerToken || bearerToken !== token) {
+      // Not our managed token, use regular fetch
+      return fetch(url, init);
+    }
+
+    // Generate DPoP proof and replace Bearer with DPoP scheme
+    const nonce = this._dpopProvider.getResourceServerNonce(origin);
+    const proof = await this._dpopProvider.generateDPoPProof(urlStr, method, token, nonce);
+
+    headers.set("Authorization", `DPoP ${token}`);
+    headers.set("DPoP", proof);
+
+    let response = await fetch(url, { ...init, headers });
+
+    // Handle DPoP-Nonce from response
+    const dpopNonce = response.headers.get("DPoP-Nonce");
+    if (dpopNonce) {
+      this._dpopProvider.updateResourceServerNonce(origin, dpopNonce);
+    }
+
+    // Retry on 401 with use_dpop_nonce
+    if (response.status === 401 && dpopNonce) {
+      const retryProof = await this._dpopProvider.generateDPoPProof(urlStr, method, token, dpopNonce);
+      headers.set("DPoP", retryProof);
+      response = await fetch(url, { ...init, headers });
+
+      const retryNonce = response.headers.get("DPoP-Nonce");
+      if (retryNonce) {
+        this._dpopProvider.updateResourceServerNonce(origin, retryNonce);
+      }
+    }
+
+    return response;
   }
 
   /**
