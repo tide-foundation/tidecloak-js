@@ -66,9 +66,11 @@ export interface TideCloakContextValue {
   resetWasOffline: () => void;
 
   // Tide actions
-  doEncrypt: (data: any) => Promise<any>
-  doDecrypt: (data: any) => Promise<any>
+  doEncrypt: (data: any) => Promise<any>;
+  doDecrypt: (data: any) => Promise<any>;
 
+  // DPoP-aware fetch
+  secureFetch: (url: string | URL | RequestInfo, init?: RequestInit) => Promise<Response>;
   // Tide request signing (for policy creation)
   initializeTideRequest: <T extends { encode: () => Uint8Array }>(request: T) => Promise<T>
   getVendorId: () => string
@@ -232,8 +234,15 @@ export function TideCloakContextProvider({
         return;
       }
 
-      // If config is provided directly, use it
-      if (configProp) {
+      // Check if configProp contains server connection info (realm, url, etc.)
+      // If it does, use it directly. If it only has options (sessionMode, useDPoP, etc.),
+      // fetch adapter.json and merge.
+      const hasServerConfig = configProp && (
+        configProp.realm || configProp.url || configProp['auth-server-url'] || configProp.authServerUrl
+      );
+
+      if (configProp && hasServerConfig) {
+        // Config prop has full server config - use it directly
         const finalConfig = {
           ...configProp,
           ...(authMode && { authMode }),
@@ -246,7 +255,7 @@ export function TideCloakContextProvider({
         return;
       }
 
-      // Otherwise, fetch from configUrl
+      // Fetch adapter.json and merge with any config options (sessionMode, useDPoP, etc.)
       try {
         console.debug(`[TideCloak] Fetching config from ${configUrl}`);
         const response = await fetch(configUrl);
@@ -257,6 +266,7 @@ export function TideCloakContextProvider({
 
         const finalConfig = {
           ...fetchedConfig,
+          ...(configProp || {}),
           ...(authMode && { authMode }),
           ...(adapter && { adapter }),
         };
@@ -607,8 +617,11 @@ export function TideCloakContextProvider({
     triggerReauth,
     clearReauth,
     resetWasOffline,
-
-    // Tide encryption - return null during initialization
+    
+    // DPoP-aware fetch - falls back to regular fetch during initialization
+    
+    secureFetch: (url: string | URL | RequestInfo, init?: RequestInit) =>
+      isInitializing ? fetch(url, init) : IAMService.secureFetch(url, init),
     doEncrypt: async (data: any) => {
       if (isInitializing) return null;
       try {
@@ -786,6 +799,7 @@ const defaultContextValue: TideCloakContextValue = {
   resetWasOffline: () => {},
   doEncrypt: async () => null,
   doDecrypt: async () => null,
+  secureFetch: (url: string | URL | RequestInfo, init?: RequestInit) => fetch(url, init),
   initializeTideRequest: async () => { throw new Error("TideCloakContextProvider not available"); },
   getVendorId: () => "",
   getResource: () => "",
