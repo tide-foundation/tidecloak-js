@@ -3,8 +3,7 @@ import { useTideCloakContext } from './contexts/TideCloakContextProvider';
 import type { TideCloakContextValue, TideCloakContextProviderProps } from './contexts/TideCloakContextProvider';
 
 export { TideCloakContextProvider } from './contexts/TideCloakContextProvider';
-export type { TideCloakContextValue, TideCloakContextProviderProps } from './contexts/TideCloakContextProvider';
-export { RequestEnclave } from "@tidecloak/js";
+export type { TideCloakContextValue, TideCloakContextProviderProps, ActionNotification, ActionNotificationType } from './contexts/TideCloakContextProvider';
 export type { NativeAdapter, NativeTokenData, NativeAuthCallbackResult } from "@tidecloak/js";
 
 // Hybrid mode utilities
@@ -12,6 +11,7 @@ export { useAuthCallback, parseCallbackUrl } from './hooks/useAuthCallback';
 export type { AuthCallbackState, UseAuthCallbackOptions } from './hooks/useAuthCallback';
 export { AuthCallback, SimpleAuthCallback } from './components/AuthCallback';
 export type { AuthCallbackProps } from './components/AuthCallback';
+export { RequestEnclave, AdminAPI } from "@tidecloak/js";
 
 /**
  * Hook to access authentication state and helpers.
