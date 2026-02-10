@@ -1834,6 +1834,8 @@ export default class TideCloak {
         vendorId: this.#config.vendorId,
         voucherURL: this.#getVoucherUrl()
       }).init({
+        backgroundUrl: this.#config['backgroundUrl'],
+        logoUrl: this.#config['logoUrl'],
         doken: this.doken,
         dokenRefreshCallback: async () => {
           await this.ensureTokenReady()
