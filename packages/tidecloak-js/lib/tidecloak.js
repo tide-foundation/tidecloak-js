@@ -1,3 +1,6 @@
+/**
+ * @import {Acr, TideCloakAccountOptions, TideCloakAdapter, TideCloakConfig, TideCloakError, TideCloakFlow, TideCloakInitOptions, TideCloakLoginOptions, TideCloakLogoutOptions, TideCloakPkceMethod, TideCloakProfile, TideCloakRegisterOptions, TideCloakResourceAccess, TideCloakResponseMode, TideCloakResponseType, TideCloakRoles, TideCloakTokenParsed, OpenIdProviderMetadata} from "./tidecloak.js"
+ */
 /*
  * Copyright 2016 Red Hat, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
@@ -52,7 +55,7 @@ export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, TideMemory, BaseTi
 export default class TideCloak {
   /** @type {Pick<PromiseWithResolvers<boolean>, 'resolve' | 'reject'>[]} */
   #refreshQueue = []
-  /** @type {KeycloakAdapter} */
+  /** @type {TideCloakAdapter} */
   #adapter
   /** @type {boolean} */
   #useNonce = true
@@ -66,54 +69,51 @@ export default class TideCloak {
     callbackList: [],
     interval: 5
   }
+  /** @type {import('./tidecloak-dpop.js').DPoPSignatureProvider=} */
+  #dpopProvider
 
-  /** @type {KeycloakConfig} config */
+  /** @type {TideCloakConfig} config */
   #config
   didInitialize = false
   authenticated = false
   loginRequired = false
-  /** @type {KeycloakResponseMode} */
+  /** @type {TideCloakResponseMode} */
   responseMode = 'fragment'
-  /** @type {KeycloakResponseType} */
+  /** @type {TideCloakResponseType} */
   responseType = 'code'
-  /** @type {KeycloakFlow} */
+  /** @type {TideCloakFlow} */
   flow = 'standard'
-  /** 
-   * Matches Keycloak: number | undefined (unset when skew unknown)
-   * @type {number | undefined} 
-   */
-  timeSkew
+  /** @type {number?} */
+  timeSkew = null
   /** @type {string=} */
   redirectUri
   /** @type {string=} */
   silentCheckSsoRedirectUri
   /** @type {boolean} */
   silentCheckSsoFallback = true
-  /** @type {KeycloakPkceMethod} */
+  /** @type {TideCloakPkceMethod} */
   pkceMethod = 'S256'
   enableLogging = false
   /** @type {'GET' | 'POST'} */
   logoutMethod = 'GET'
   /** @type {string=} */
   scope
-  /** @type {string | undefined} */
-  acrValues
   messageReceiveTimeout = 10000
   /** @type {string=} */
   idToken
-  /** @type {KeycloakTokenParsed=} */
+  /** @type {TideCloakTokenParsed=} */
   idTokenParsed
   /** @type {string=} */
   token
-  /** @type {KeycloakTokenParsed=} */
+  /** @type {TideCloakTokenParsed=} */
   tokenParsed
   /** @type {string=} */
   refreshToken
-  /** @type {KeycloakTokenParsed=} */
+  /** @type {TideCloakTokenParsed=} */
   refreshTokenParsed
   /** @type {string | undefined} */
   doken
-  /** @type {KeycloakTokenParsed | undefined} */
+  /** @type {TideCloakTokenParsed | undefined} */
   dokenParsed
   /** @type {any} */
   requestEnclave
@@ -129,13 +129,13 @@ export default class TideCloak {
   authServerUrl
   /** @type {string=} */
   realm
-  /** @type {KeycloakRoles=} */
+  /** @type {TideCloakRoles=} */
   realmAccess
-  /** @type {KeycloakResourceAccess=} */
+  /** @type {TideCloakResourceAccess=} */
   resourceAccess
-  /** @type {KeycloakProfile=} */
+  /** @type {TideCloakProfile=} */
   profile
-  /** @type {KeycloakUserInfo | undefined} */
+  /** @type {{}=} */
   userInfo
   /** @type {Endpoints} */
   endpoints
@@ -143,7 +143,7 @@ export default class TideCloak {
   tokenTimeoutHandle
   /** @type {() => void=} */
   onAuthSuccess
-  /** @type {(errorData?: KeycloakError) => void=} */
+  /** @type {(errorData?: TideCloakError) => void=} */
   onAuthError
   /** @type {() => void=} */
   onAuthRefreshSuccess
@@ -159,24 +159,24 @@ export default class TideCloak {
   onActionUpdate
 
   /**
-   * @param {KeycloakConfig} config
+   * @param {TideCloakConfig} config
    */
-  constructor(config) {
+  constructor (config) {
     if (typeof config !== 'string' && !isObject(config)) {
       throw new Error("The 'TideCloak' constructor must be provided with a configuration object, or a URL to a JSON configuration file.")
     }
 
-    // if (isObject(config)) {
-    //   const requiredProperties = 'oidcProvider' in config
-    //     ? ['clientId']
-    //     : ['url', 'realm', 'clientId', 'homeOrkUrl', 'vendorId', 'clientOriginAuth']
+    if (isObject(config)) {
+      const requiredProperties = 'oidcProvider' in config
+        ? ['clientId']
+        : ['url', 'realm', 'clientId']
 
-    //   for (const property of requiredProperties) {
-    //     if (!config[property]) {
-    //       throw new Error(`The configuration object is missing the required '${property}' property.`)
-    //     }
-    //   }
-    // }
+      for (const property of requiredProperties) {
+        if (!(property in config)) {
+          throw new Error(`The configuration object is missing the required '${property}' property.`)
+        }
+      }
+    }
 
     if (!globalThis.isSecureContext) {
       this.#logWarn(
@@ -190,10 +190,10 @@ export default class TideCloak {
   }
 
   /**
-   * @param {KeycloakInitOptions} initOptions
+   * @param {TideCloakInitOptions} initOptions
    * @returns {Promise<boolean>}
    */
-  async init(initOptions = {}) {
+  init = async (initOptions = {}) => {
     if (this.didInitialize) {
       throw new Error("A 'TideCloak' instance can only be initialized once.")
     }
@@ -290,15 +290,37 @@ export default class TideCloak {
       this.scope = initOptions.scope
     }
 
-    if (typeof initOptions.acrValues === 'string') {
-      this.acrValues = initOptions.acrValues
-    }
-
     if (typeof initOptions.messageReceiveTimeout === 'number' && initOptions.messageReceiveTimeout > 0) {
       this.messageReceiveTimeout = initOptions.messageReceiveTimeout
     }
 
+    if (initOptions.useDPoP) {
+      this.useDPoP = initOptions.useDPoP
+    }
+
     await this.#loadConfig()
+
+    if (this.useDPoP?.mode === 'strict' && (!this.dpopSigningAlgValuesSupported || this.dpopSigningAlgValuesSupported.length === 0)) {
+      throw new Error('DPoP is set to strict mode but the server does not advertise DPoP support (dpop_signing_alg_values_supported is missing or empty).')
+    }
+
+    // Initialize DPoP if enabled and server supports it
+    if (this.useDPoP && this.dpopSigningAlgValuesSupported?.length) {
+      const issuerUrl = this.#getIssuerUrl()
+      if (!issuerUrl) throw new Error('Cannot initialize DPoP: issuer URL is not available. Ensure authServerUrl and realm are configured, or use OIDC provider mode with a valid issuer.')
+      if (!this.clientId) throw new Error('Cannot initialize DPoP: clientId is not configured.')
+
+      const { DPoPSignatureProvider, BrowserSignatureAlgs } = await import('./tidecloak-dpop.js')
+      this.#dpopProvider = new DPoPSignatureProvider({
+        issuerUrl: new URL(issuerUrl),
+        clientId: this.clientId,
+        serverSupportedAlgorithms: this.dpopSigningAlgValuesSupported,
+        requestedAlgorithm: !this.useDPoP.alg ? BrowserSignatureAlgs.ES256 : BrowserSignatureAlgs[this.useDPoP.alg]
+      })
+      await this.#dpopProvider.init()
+      this.#logInfo('[TIDECLOAK] DPoP initialized')
+    }
+
     await this.#check3pCookiesSupported()
     await this.#processInit(initOptions)
 
@@ -309,9 +331,9 @@ export default class TideCloak {
 
   /**
    * @param {"default" | "cordova" | "cordova-native"} type
-   * @returns {KeycloakAdapter}
+   * @returns {TideCloakAdapter}
    */
-  #loadAdapter(type) {
+  #loadAdapter (type) {
     if (type === 'default') {
       return this.#loadDefaultAdapter()
     }
@@ -330,10 +352,10 @@ export default class TideCloak {
   }
 
   /**
-   * @returns {KeycloakAdapter}
+   * @returns {TideCloakAdapter}
    */
-  #loadDefaultAdapter() {
-    /** @type {KeycloakAdapter['redirectUri']}{} */
+  #loadDefaultAdapter () {
+    /** @type {TideCloakAdapter['redirectUri']}{} */
     const redirectUri = (options) => {
       return options?.redirectUri || this.redirectUri || globalThis.location.href
     }
@@ -341,7 +363,7 @@ export default class TideCloak {
     return {
       login: async (options) => {
         window.location.assign(await this.createLoginUrl(options))
-        return await new Promise(() => { })
+        return await new Promise(() => {})
       },
 
       logout: async (options) => {
@@ -371,7 +393,7 @@ export default class TideCloak {
 
           input.setAttribute('type', 'hidden')
           input.setAttribute('name', name)
-          input.setAttribute('value', /** @type {string} */(value))
+          input.setAttribute('value', /** @type {string} */ (value))
 
           form.appendChild(input)
         }
@@ -383,7 +405,7 @@ export default class TideCloak {
 
       register: async (options) => {
         window.location.assign(await this.createRegisterUrl(options))
-        return await new Promise(() => { })
+        return await new Promise(() => {})
       },
 
       accountManagement: async () => {
@@ -393,7 +415,7 @@ export default class TideCloak {
         } else {
           throw new Error('Not supported by the OIDC server')
         }
-        return await new Promise(() => { })
+        return await new Promise(() => {})
       },
 
       redirectUri
@@ -401,9 +423,9 @@ export default class TideCloak {
   }
 
   /**
-   * @returns {KeycloakAdapter}
+   * @returns {TideCloakAdapter}
    */
-  #loadCordovaAdapter() {
+  #loadCordovaAdapter () {
     /**
      * @param {string} loginUrl
      * @param {string} target
@@ -458,7 +480,7 @@ export default class TideCloak {
         let completed = false
         let closed = false
 
-        function closeBrowser() {
+        function closeBrowser () {
           closed = true
           ref.close()
         };
@@ -584,9 +606,9 @@ export default class TideCloak {
   }
 
   /**
-   * @returns {KeycloakAdapter}
+   * @returns {TideCloakAdapter}
    */
-  #loadCordovaNativeAdapter() {
+  #loadCordovaNativeAdapter () {
     /* global universalLinks */
     return {
       login: async (options) => {
@@ -669,13 +691,13 @@ export default class TideCloak {
   /**
    * @returns {Promise<void>}
    */
-  async #loadConfig() {
+  async #loadConfig () {
     if (typeof this.#config === 'string') {
       const jsonConfig = await fetchJsonConfig(this.#config)
       this.authServerUrl = jsonConfig['auth-server-url']
       this.realm = jsonConfig.realm
       this.clientId = jsonConfig.resource
-      this.#setupEndpoints()
+      await this.#setupEndpoints()
     } else {
       this.clientId = this.#config.clientId
 
@@ -684,15 +706,31 @@ export default class TideCloak {
       } else {
         this.authServerUrl = this.#config.url
         this.realm = this.#config.realm
-        this.#setupEndpoints()
+        await this.#setupEndpoints()
       }
     }
   }
 
   /**
-   * @returns {void}
+   * @returns {Promise<void>}
    */
-  #setupEndpoints() {
+  async #setupEndpoints () {
+    // Fetch OIDC metadata to get DPoP supported algorithms (only if DPoP is enabled)
+    if (this.useDPoP) {
+      const issuerUrl = this.#getIssuerUrl()
+      if (!issuerUrl) {
+        this.#logWarn('[TIDECLOAK] Cannot fetch OIDC metadata: issuer URL is not available')
+      } else {
+        const url = `${stripTrailingSlash(issuerUrl)}/.well-known/openid-configuration`
+        try {
+          const openIdConfig = await fetchOpenIdConfig(url)
+          this.dpopSigningAlgValuesSupported = openIdConfig.dpop_signing_alg_values_supported ? openIdConfig.dpop_signing_alg_values_supported : undefined
+        } catch (error) {
+          this.#logWarn('[TIDECLOAK] Failed to fetch OIDC metadata for DPoP configuration: ' + (error instanceof Error ? error.message : error))
+        }
+      }
+    }
+
     this.endpoints = {
       authorize: () => {
         return this.#getRealmUrl() + '/protocol/openid-connect/auth'
@@ -722,7 +760,7 @@ export default class TideCloak {
    * @param {string | OpenIdProviderMetadata} oidcProvider
    * @returns {Promise<void>}
    */
-  async #loadOidcConfig(oidcProvider) {
+  async #loadOidcConfig (oidcProvider) {
     if (typeof oidcProvider === 'string') {
       const url = `${stripTrailingSlash(oidcProvider)}/.well-known/openid-configuration`
       const openIdConfig = await fetchOpenIdConfig(url)
@@ -736,30 +774,33 @@ export default class TideCloak {
    * @param {OpenIdProviderMetadata} config
    * @returns {void}
    */
-  #setupOidcEndpoints(config) {
+  #setupOidcEndpoints (config) {
+    // Store DPoP supported algorithms if present
+    this.dpopSigningAlgValuesSupported = config.dpop_signing_alg_values_supported
+    this.issuer = config.issuer
     this.endpoints = {
-      authorize() {
+      authorize () {
         return config.authorization_endpoint
       },
-      token() {
+      token () {
         return config.token_endpoint
       },
-      logout() {
+      logout () {
         if (!config.end_session_endpoint) {
           throw new Error('Not supported by the OIDC server')
         }
         return config.end_session_endpoint
       },
-      checkSessionIframe() {
+      checkSessionIframe () {
         if (!config.check_session_iframe) {
           throw new Error('Not supported by the OIDC server')
         }
         return config.check_session_iframe
       },
-      register() {
+      register () {
         throw new Error('Redirection to "Register user" page not supported in standard OIDC mode')
       },
-      userinfo() {
+      userinfo () {
         if (!config.userinfo_endpoint) {
           throw new Error('Not supported by the OIDC server')
         }
@@ -769,9 +810,18 @@ export default class TideCloak {
   }
 
   /**
+   * @returns {string=}
+   */
+  #getIssuerUrl () {
+    if (this.issuer) return this.issuer
+    const realmUrl = this.#getRealmUrl()
+    return realmUrl || undefined
+  }
+
+  /**
    * @returns {Promise<void>}
    */
-  async #check3pCookiesSupported() {
+  async #check3pCookiesSupported () {
     if ((!this.#loginIframe.enable && !this.silentCheckSsoRedirectUri) || typeof this.endpoints.thirdPartyCookiesIframe !== 'function') {
       return
     }
@@ -821,14 +871,14 @@ export default class TideCloak {
   }
 
   /**
-   * @param {KeycloakInitOptions} initOptions
+   * @param {TideCloakInitOptions} initOptions
    * @returns {Promise<void>}
    */
-  async #processInit(initOptions) {
+  async #processInit (initOptions) {
     const callback = this.#parseCallback(window.location.href)
 
-    if (callback?.redirectUri) {
-      window.history.replaceState(window.history.state, '', callback.redirectUri)
+    if (callback?.newUrl) {
+      window.history.replaceState(window.history.state, '', callback.newUrl)
     }
 
     if (callback && callback.valid) {
@@ -839,7 +889,7 @@ export default class TideCloak {
 
     /** @param {boolean} prompt */
     const doLogin = async (prompt) => {
-      /** @type {KeycloakLoginOptions} */
+      /** @type {TideCloakLoginOptions} */
       const options = {}
 
       if (!prompt) {
@@ -907,7 +957,7 @@ export default class TideCloak {
   /**
    * @returns {Promise<void>}
    */
-  async #setupCheckLoginIframe() {
+  async #setupCheckLoginIframe () {
     if (!this.#loginIframe.enable || this.#loginIframe.iframe) {
       return
     }
@@ -969,7 +1019,7 @@ export default class TideCloak {
   /**
    * @returns {Promise<boolean | undefined>}
    */
-  async #checkLoginIframe() {
+  async #checkLoginIframe () {
     if (!this.#loginIframe.iframe || !this.#loginIframe.iframeOrigin) {
       return
     }
@@ -980,7 +1030,7 @@ export default class TideCloak {
     /** @type {Promise<boolean>} */
     const promise = new Promise((resolve, reject) => {
       /** @type {(error: Error | null, value?: boolean) => void} */
-      const callback = (error, result) => error ? reject(error) : resolve(/** @type {boolean} */(result))
+      const callback = (error, result) => error ? reject(error) : resolve(/** @type {boolean} */ (result))
 
       this.#loginIframe.callbackList.push(callback)
 
@@ -995,7 +1045,7 @@ export default class TideCloak {
   /**
    * @returns {Promise<void>}
    */
-  async #checkSsoSilently() {
+  async #checkSsoSilently () {
     const iframe = document.createElement('iframe')
     const src = await this.createLoginUrl({ prompt: 'none', redirectUri: this.silentCheckSsoRedirectUri })
     iframe.setAttribute('src', src)
@@ -1033,7 +1083,7 @@ export default class TideCloak {
   /**
    * @param {string} url
    */
-  #parseCallback(url) {
+  #parseCallback (url) {
     const oauth = this.#parseCallbackUrl(url)
     if (!oauth) {
       return
@@ -1056,7 +1106,7 @@ export default class TideCloak {
   /**
    * @param {string} urlString
    */
-  #parseCallbackUrl(urlString) {
+  #parseCallbackUrl (urlString) {
     let supportedParams = []
     switch (this.flow) {
       case 'standard':
@@ -1075,28 +1125,28 @@ export default class TideCloak {
     supportedParams.push('error_uri')
 
     const url = new URL(urlString)
-    let redirectUri = ''
+    let newUrl = ''
     let parsed
 
     if (this.responseMode === 'query' && url.searchParams.size > 0) {
       parsed = this.#parseCallbackParams(url.search, supportedParams)
       url.search = parsed.paramsString
-      redirectUri = url.toString()
+      newUrl = url.toString()
     } else if (this.responseMode === 'fragment' && url.hash.length > 0) {
       parsed = this.#parseCallbackParams(url.hash.substring(1), supportedParams)
-      url.hash = ''
-      redirectUri = url.toString()
+      url.hash = parsed.paramsString
+      newUrl = url.toString()
     }
 
     if (parsed?.oauthParams) {
       if (this.flow === 'standard' || this.flow === 'hybrid') {
         if ((parsed.oauthParams.code || parsed.oauthParams.error) && parsed.oauthParams.state) {
-          parsed.oauthParams.redirectUri = redirectUri
+          parsed.oauthParams.newUrl = newUrl
           return parsed.oauthParams
         }
       } else if (this.flow === 'implicit') {
         if ((parsed.oauthParams.access_token || parsed.oauthParams.error) && parsed.oauthParams.state) {
-          parsed.oauthParams.redirectUri = redirectUri
+          parsed.oauthParams.newUrl = newUrl
           return parsed.oauthParams
         }
       }
@@ -1114,7 +1164,7 @@ export default class TideCloak {
    * @param {string[]} supportedParams
    * @returns {ParsedCallbackParams}
    */
-  #parseCallbackParams(paramsString, supportedParams) {
+  #parseCallbackParams (paramsString, supportedParams) {
     const params = new URLSearchParams(paramsString)
     /** @type {Record<string, string>} */
     const oauthParams = {}
@@ -1132,7 +1182,7 @@ export default class TideCloak {
     }
   }
 
-  async #processCallback(oauth) {
+  async #processCallback (oauth) {
     const { code, error, prompt, doken } = oauth
     let timeLocal = new Date().getTime()
 
@@ -1176,7 +1226,7 @@ export default class TideCloak {
 
     if ((this.flow !== 'implicit') && code) {
       try {
-        const response = await fetchAccessToken(this.endpoints.token(), code, /** @type {string} */(this.clientId), oauth.redirectUri, oauth.pkceCodeVerifier)
+        const response = await this.#fetchAccessToken(this.endpoints.token(), code, /** @type {string} */ (this.clientId), oauth.redirectUri, oauth.pkceCodeVerifier)
         authSuccess(response.access_token, response.refresh_token, response.id_token, response.doken)
 
         if (this.flow === 'standard') {
@@ -1191,7 +1241,7 @@ export default class TideCloak {
     }
   }
 
-  async #scheduleCheckIframe() {
+  async #scheduleCheckIframe () {
     if (this.#loginIframe.enable && this.token) {
       await waitForTimeout(this.#loginIframe.interval * 1000)
       const unchanged = await this.#checkLoginIframe()
@@ -1203,10 +1253,10 @@ export default class TideCloak {
   }
 
   /**
-   * @param {KeycloakLoginOptions} [options]
+   * @param {TideCloakLoginOptions} [options]
    * @returns {Promise<void>}
    */
-  login(options) {
+  login = (options) => {
     return this.#adapter.login(options)
   }
 
@@ -1214,7 +1264,7 @@ export default class TideCloak {
    * Ensure the access token is valid, refreshing if needed.
    * @returns {Promise<void>}
    */
-  async ensureTokenReady() {
+  async ensureTokenReady () {
     if (!this.tokenParsed) return
 
     if (this.isTokenExpired()) {
@@ -1223,10 +1273,10 @@ export default class TideCloak {
   }
 
   /**
-   * @param {KeycloakLoginOptions} [options]
+   * @param {TideCloakLoginOptions} [options]
    * @returns {Promise<string>}
    */
-  async createLoginUrl(options) {
+  createLoginUrl = async (options) => {
     const state = createUUID()
     const nonce = createUUID()
     const redirectUri = this.#adapter.redirectUri(options)
@@ -1258,9 +1308,7 @@ export default class TideCloak {
 
     const params = new URLSearchParams([
       ['client_id', /** @type {string} */ (this.clientId)],
-      // The endpoint URI MUST NOT include a fragment component.
-      // https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2
-      ['redirect_uri', stripHash(redirectUri)],
+      ['redirect_uri', redirectUri],
       ['state', state],
       ['response_mode', this.responseMode],
       ['response_type', this.responseType],
@@ -1299,8 +1347,8 @@ export default class TideCloak {
       params.append('claims', buildClaimsParameter(options.acr))
     }
 
-    if (options?.acrValues || this.acrValues) {
-      params.append('acr_values', options.acrValues || this.acrValues)
+    if (options?.acrValues) {
+      params.append('acr_values', options.acrValues)
     }
 
     if (this.pkceMethod) {
@@ -1323,18 +1371,19 @@ export default class TideCloak {
   }
 
   /**
-   * @param {KeycloakLogoutOptions} [options]
+   * @param {TideCloakLogoutOptions} [options]
    * @returns {Promise<void>}
    */
-  logout(options) {
+  logout = async (options) => {
+    await this.#dpopProvider?.flush()
     return this.#adapter.logout(options)
   }
 
   /**
-   * @param {KeycloakLogoutOptions} [options]
+   * @param {TideCloakLogoutOptions} [options]
    * @returns {string}
    */
-  createLogoutUrl(options) {
+  createLogoutUrl = (options) => {
     const logoutMethod = options?.logoutMethod ?? this.logoutMethod
     const url = this.endpoints.logout()
 
@@ -1355,26 +1404,26 @@ export default class TideCloak {
   }
 
   /**
-   * @param {KeycloakRegisterOptions} [options]
+   * @param {TideCloakRegisterOptions} [options]
    * @returns {Promise<void>}
    */
-  register(options) {
+  register = (options) => {
     return this.#adapter.register(options)
   }
 
   /**
-   * @param {KeycloakRegisterOptions} [options]
+   * @param {TideCloakRegisterOptions} [options]
    * @returns {Promise<string>}
    */
-  createRegisterUrl(options) {
+  createRegisterUrl = (options) => {
     return this.createLoginUrl({ ...options, action: 'register' })
   }
 
   /**
-   * @param {KeycloakAccountOptions} [options]
+   * @param {TideCloakAccountOptions} [options]
    * @returns {string}
    */
-  createAccountUrl(options) {
+  createAccountUrl = (options) => {
     const url = this.#getRealmUrl()
 
     if (!url) {
@@ -1392,7 +1441,7 @@ export default class TideCloak {
   /**
    * @returns {Promise<void>}
    */
-  accountManagement() {
+  accountManagement = () => {
     return this.#adapter.accountManagement()
   }
 
@@ -1400,7 +1449,7 @@ export default class TideCloak {
    * @param {string} role
    * @returns {boolean}
    */
-  hasRealmRole(role) {
+  hasRealmRole = (role) => {
     const access = this.realmAccess
     return !!access && access.roles.indexOf(role) >= 0
   }
@@ -1410,7 +1459,7 @@ export default class TideCloak {
    * @param {string} [resource]
    * @returns {boolean}
    */
-  hasResourceRole(role, resource) {
+  hasResourceRole = (role, resource) => {
     if (!this.resourceAccess) {
       return false
     }
@@ -1420,9 +1469,9 @@ export default class TideCloak {
   }
 
   /**
-   * @returns {Promise<KeycloakProfile>}
+   * @returns {Promise<TideCloakProfile>}
    */
-  async loadUserProfile() {
+  loadUserProfile = async () => {
     const realmUrl = this.#getRealmUrl()
 
     if (!realmUrl) {
@@ -1430,7 +1479,7 @@ export default class TideCloak {
     }
 
     const url = `${realmUrl}/account`
-    /** @type {KeycloakProfile} */
+    /** @type {TideCloakProfile} */
     const profile = await fetchJSON(url, {
       headers: [buildAuthorizationHeader(this.token)]
     })
@@ -1439,11 +1488,11 @@ export default class TideCloak {
   }
 
   /**
-   * @returns {Promise<KeycloakUserInfo>}
+   * @returns {Promise<{}>}
    */
-  async loadUserInfo() {
+  loadUserInfo = async () => {
     const url = this.endpoints.userinfo()
-    /** @type {KeycloakUserInfo} */
+    /** @type {{}} */
     const userInfo = await fetchJSON(url, {
       headers: [buildAuthorizationHeader(this.token)]
     })
@@ -1455,7 +1504,7 @@ export default class TideCloak {
    * @param {number} [minValidity]
    * @returns {boolean}
    */
-  isTokenExpired(minValidity) {
+  isTokenExpired = (minValidity) => {
     if (!this.tokenParsed || (!this.refreshToken && this.flow !== 'implicit')) {
       throw new Error('Not authenticated')
     }
@@ -1480,11 +1529,10 @@ export default class TideCloak {
   }
 
   /**
-   * Matches Keycloak: minValidity is optional.
-   * @param {number} [minValidity]
+   * @param {number} minValidity
    * @returns {Promise<boolean>}
    */
-  async updateToken(minValidity) {
+  updateToken = async (minValidity) => {
     if (!this.refreshToken) {
       throw new Error('Unable to update token, no refresh token available.')
     }
@@ -1519,7 +1567,7 @@ export default class TideCloak {
       let timeLocal = new Date().getTime()
 
       try {
-        const response = await fetchRefreshToken(url, this.refreshToken, /** @type {string} */(this.clientId))
+        const response = await this.#fetchRefreshToken(url, this.refreshToken, /** @type {string} */ (this.clientId))
         this.#logInfo('[TIDECLOAK] Token refreshed')
 
         timeLocal = (timeLocal + new Date().getTime()) / 2
@@ -1547,7 +1595,7 @@ export default class TideCloak {
     return await promise
   }
 
-  clearToken() {
+  clearToken = () => {
     if (this.token) {
       this.#setToken()
       this.onAuthLogout?.()
@@ -1557,10 +1605,175 @@ export default class TideCloak {
     }
   }
 
+  secureFetch = async (url, init = {}) => {
+    const dpopProvider = this.#dpopProvider
+    if (dpopProvider && this.authenticated && this.token) {
+      const existingAuth = new Headers(init.headers).get('Authorization')
+      const isOurBearerToken = existingAuth === `Bearer ${this.token}`
+
+      if (!isOurBearerToken) {
+        // Quick escape - didn't put this check in first if statement as it's more expensive than other checks
+        return fetch(url, init)
+      }
+
+      const urlString = url instanceof URL ? url.href : url.toString()
+      const origin = new URL(urlString).origin
+      const method = init.method ?? 'GET'
+      const resourceNonce = dpopProvider.getResourceServerNonce(origin)
+      const proof = await dpopProvider.generateDPoPProof(urlString, method, this.token, resourceNonce)
+      const headers = new Headers(init.headers)
+      headers.set('Authorization', `DPoP ${this.token}`)
+      headers.set('DPoP', proof)
+      const resp = await fetch(url, { ...init, headers })
+
+      // Check for new nonce in response
+      const newNonce = resp.headers.get('DPoP-Nonce')
+      if (newNonce) {
+        dpopProvider.updateResourceServerNonce(origin, newNonce)
+      }
+
+      // https://datatracker.ietf.org/doc/html/rfc9449#section-9
+      // Resource servers signal via: WWW-Authenticate: DPoP error="use_dpop_nonce"
+      if (resp.status === 401 && newNonce) {
+        const wwwAuth = resp.headers.get('WWW-Authenticate') ?? ''
+        if (wwwAuth.includes('DPoP') && wwwAuth.includes('error="use_dpop_nonce"')) {
+          const retryProof = await dpopProvider.generateDPoPProof(urlString, method, this.token, newNonce)
+          const retryHeaders = new Headers(init.headers)
+          retryHeaders.set('Authorization', `DPoP ${this.token}`)
+          retryHeaders.set('DPoP', retryProof)
+          const retryResp = await fetch(url, { ...init, headers: retryHeaders })
+          // Capture nonce from retry response for future requests
+          const retryNonce = retryResp.headers.get('DPoP-Nonce')
+          if (retryNonce) {
+            dpopProvider.updateResourceServerNonce(origin, retryNonce)
+          }
+          return retryResp
+        }
+      }
+      return resp
+    } else {
+      return fetch(url, init)
+    }
+  }
+
+  /**
+   * @typedef {Object} AccessTokenResponse The successful token response from the authorization server, based on the {@link https://datatracker.ietf.org/doc/html/rfc6749#section-5.1 OAuth 2.0 Authorization Framework specification}.
+   * @property {string} access_token The access token issued by the authorization server.
+   * @property {string} token_type The type of the token issued by the authorization server.
+   * @property {number} [expires_in] The lifetime in seconds of the access token.
+   * @property {string} [refresh_token] The refresh token issued by the authorization server.
+   * @property {string} [id_token] The ID token issued by the authorization server, if requested.
+   * @property {string} [scope] The scope of the access token.
+   * @property {string} [doken] The Tide doken issued by the authorization server.
+   */
+
+  /**
+   * Fetch the access token from the given URL.
+   * @param {string} url
+   * @param {string} code
+   * @param {string} clientId
+   * @param {string} redirectUri
+   * @param {string} [pkceCodeVerifier]
+   * @returns {Promise<AccessTokenResponse>}
+   */
+  async #fetchAccessToken (url, code, clientId, redirectUri, pkceCodeVerifier) {
+    const body = new URLSearchParams([
+      ['code', code],
+      ['grant_type', 'authorization_code'],
+      ['client_id', clientId],
+      ['redirect_uri', redirectUri]
+    ])
+
+    if (pkceCodeVerifier) {
+      body.append('code_verifier', pkceCodeVerifier)
+    }
+
+    /** @type {Record<string, string>} */
+    const headers = {}
+
+    if (this.#dpopProvider) {
+      const nonce = await this.#dpopProvider.getAuthServerNonce()
+      headers['DPoP'] = await this.#dpopProvider.generateDPoPProof(url, 'POST', undefined, nonce)
+    }
+
+    try {
+      return await fetchJSON(url, {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body
+      })
+    } catch (error) {
+      // Handle DPoP nonce retry for token endpoint
+      if (this.#dpopProvider && error instanceof NetworkError) {
+        const newNonce = error.response.headers.get('DPoP-Nonce')
+        if (newNonce) {
+          await this.#dpopProvider.updateAuthServerNonce(newNonce)
+          headers['DPoP'] = await this.#dpopProvider.generateDPoPProof(url, 'POST', undefined, newNonce)
+          return await fetchJSON(url, {
+            method: 'POST',
+            credentials: 'include',
+            headers,
+            body
+          })
+        }
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Fetch the refresh token from the given URL.
+   * @param {string} url
+   * @param {string} refreshToken
+   * @param {string} clientId
+   * @returns {Promise<AccessTokenResponse>}
+   */
+  async #fetchRefreshToken (url, refreshToken, clientId) {
+    const body = new URLSearchParams([
+      ['grant_type', 'refresh_token'],
+      ['refresh_token', refreshToken],
+      ['client_id', clientId]
+    ])
+
+    /** @type {Record<string, string>} */
+    const headers = {}
+
+    if (this.#dpopProvider) {
+      const nonce = await this.#dpopProvider.getAuthServerNonce()
+      headers['DPoP'] = await this.#dpopProvider.generateDPoPProof(url, 'POST', undefined, nonce)
+    }
+
+    try {
+      return await fetchJSON(url, {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body
+      })
+    } catch (error) {
+      // Handle DPoP nonce retry for token endpoint
+      if (this.#dpopProvider && error instanceof NetworkError) {
+        const newNonce = error.response.headers.get('DPoP-Nonce')
+        if (newNonce) {
+          await this.#dpopProvider.updateAuthServerNonce(newNonce)
+          headers['DPoP'] = await this.#dpopProvider.generateDPoPProof(url, 'POST', undefined, newNonce)
+          return await fetchJSON(url, {
+            method: 'POST',
+            credentials: 'include',
+            headers,
+            body
+          })
+        }
+      }
+      throw error
+    }
+  }
+
   /**
    * Initialize Tide RequestEnclave.
    */
-  initRequestEnclave() {
+  initRequestEnclave () {
     if (!this.doken) throw new Error('[TIDECLOAK] No doken found')
     if (!this.dokenParsed) throw new Error('[TIDECLOAK] Token not parsed')
 
@@ -1592,7 +1805,7 @@ export default class TideCloak {
   /**
    * Initialize Tide ApprovalEnclave.
    */
-  initApprovalEnclave() {
+  initApprovalEnclave () {
     if (!this.doken) throw new Error('[TIDECLOAK] No doken found')
     if (!this.dokenParsed) throw new Error('[TIDECLOAK] Token not parsed')
 
@@ -1623,7 +1836,7 @@ export default class TideCloak {
   /**
    * @returns {string}
    */
-  #getVoucherUrl() {
+  #getVoucherUrl () {
     if (!this.tokenParsed) throw new Error('User authentication required to access voucher service')
     const sid = this.tokenParsed['sid']
     const realmUrl = this.#getRealmUrl()
@@ -1636,7 +1849,7 @@ export default class TideCloak {
    * @param {{ data: string | Uint8Array, tags: string[] }[]} toEncrypt
    * @returns {Promise<(string | Uint8Array)[]>}
    */
-  async encrypt(toEncrypt) {
+  async encrypt (toEncrypt) {
     await this.ensureTokenReady()
     if (!Array.isArray(toEncrypt)) {
       throw new Error('Pass array as parameter')
@@ -1681,7 +1894,7 @@ export default class TideCloak {
    * @param {Uint8Array} encodedRequest
    * @returns {Promise<Uint8Array>}
    */
-  async createTideRequest(encodedRequest) {
+  async createTideRequest (encodedRequest) {
     await this.ensureTokenReady()
     this.initRequestEnclave()
     return await this.requestEnclave.initializeRequest(encodedRequest)
@@ -1692,7 +1905,7 @@ export default class TideCloak {
    * @param {{id: string, request: Uint8Array}[]} requests
    * @returns {Promise<{ id: string; request: Uint8Array; status: "approved" | "denied" | "pending" }[]>}
    */
-  async requestTideOperatorApproval(requests) {
+  async requestTideOperatorApproval (requests) {
     await this.ensureTokenReady()
     this.initApprovalEnclave()
     return await this.approvalEnclave.approve(requests)
@@ -1704,19 +1917,18 @@ export default class TideCloak {
    * @param {boolean} [waitForAll=false]
    * @returns {Promise<Array>} Array of signatures
    */
-  async executeSignRequest(request, waitForAll = false) {
+  async executeSignRequest (request, waitForAll = false) {
     await this.ensureTokenReady();
     this.initRequestEnclave();
     return this.requestEnclave.execute(request, waitForAll);
   }
-
 
   /**
    * Role-based decryption via Tide RequestEnclave.
    * @param {{ encrypted: string | Uint8Array, tags: string[] }[]} toDecrypt
    * @returns {Promise<(string | Uint8Array)[]>}
    */
-  async decrypt(toDecrypt) {
+  async decrypt (toDecrypt) {
     await this.ensureTokenReady()
     if (!Array.isArray(toDecrypt)) {
       throw new Error('Pass array as parameter')
@@ -1763,7 +1975,7 @@ export default class TideCloak {
    * @param {number} [timeLocal]
    * @param {string} [doken]
    */
-  #setToken(token, refreshToken, idToken, timeLocal, doken) {
+  #setToken (token, refreshToken, idToken, timeLocal, doken) {
     if (this.tokenTimeoutHandle) {
       clearTimeout(this.tokenTimeoutHandle)
       this.tokenTimeoutHandle = undefined
@@ -1840,19 +2052,19 @@ export default class TideCloak {
   /**
    * @returns {string=}
    */
-  #getRealmUrl() {
+  #getRealmUrl () {
     if (typeof this.authServerUrl === 'undefined') {
       return
     }
 
-    return `${stripTrailingSlash(this.authServerUrl)}/realms/${encodeURIComponent(/** @type {string} */(this.realm))}`
+    return `${stripTrailingSlash(this.authServerUrl)}/realms/${encodeURIComponent(/** @type {string} */ (this.realm))}`
   }
 
   /**
    * @param {Function} fn
    * @returns {(message: string) => void}
    */
-  #createLogger(fn) {
+  #createLogger (fn) {
     return (message) => {
       if (this.enableLogging) {
         fn.call(console, message)
@@ -1864,7 +2076,7 @@ export default class TideCloak {
 /**
  * @returns {string}
  */
-function createUUID() {
+function createUUID () {
   if (typeof crypto === 'undefined' || typeof crypto.randomUUID === 'undefined') {
     throw new Error('Web Crypto API is not available.')
   }
@@ -1876,7 +2088,7 @@ function createUUID() {
  * @param {Acr} requestedAcr
  * @returns {string}
  */
-function buildClaimsParameter(requestedAcr) {
+function buildClaimsParameter (requestedAcr) {
   return JSON.stringify({
     id_token: {
       acr: requestedAcr
@@ -1888,7 +2100,7 @@ function buildClaimsParameter(requestedAcr) {
  * @param {number} len
  * @returns {string}
  */
-function generateCodeVerifier(len) {
+function generateCodeVerifier (len) {
   return generateRandomString(len, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789')
 }
 
@@ -1897,7 +2109,7 @@ function generateCodeVerifier(len) {
  * @param {string} codeVerifier
  * @returns {Promise<string>}
  */
-async function generatePkceChallenge(pkceMethod, codeVerifier) {
+async function generatePkceChallenge (pkceMethod, codeVerifier) {
   if (pkceMethod !== 'S256') {
     throw new TypeError(`Invalid value for 'pkceMethod', expected 'S256' but got '${pkceMethod}'.`)
   }
@@ -1917,7 +2129,7 @@ async function generatePkceChallenge(pkceMethod, codeVerifier) {
  * @param {string} alphabet
  * @returns {string}
  */
-function generateRandomString(len, alphabet) {
+function generateRandomString (len, alphabet) {
   const randomData = generateRandomData(len)
   const chars = new Array(len)
   for (let i = 0; i < len; i++) {
@@ -1930,7 +2142,7 @@ function generateRandomString(len, alphabet) {
  * @param {number} len
  * @returns {Uint8Array<ArrayBuffer>}
  */
-function generateRandomData(len) {
+function generateRandomData (len) {
   if (typeof crypto === 'undefined' || typeof crypto.getRandomValues === 'undefined') {
     throw new Error('Web Crypto API is not available.')
   }
@@ -1947,7 +2159,7 @@ function generateRandomData(len) {
  * @param {string} errorMessage
  * @returns {Promise<T>}
  */
-function applyTimeoutToPromise(promise, timeout, errorMessage) {
+function applyTimeoutToPromise (promise, timeout, errorMessage) {
   /** @type {number} */
   let timeoutHandle
   const timeoutPromise = new Promise(function (resolve, reject) {
@@ -1964,7 +2176,7 @@ function applyTimeoutToPromise(promise, timeout, errorMessage) {
 /**
  * @returns {CallbackStorage}
  */
-function createCallbackStorage() {
+function createCallbackStorage () {
   try {
     return new LocalStorage()
   } catch (err) {
@@ -1979,8 +2191,8 @@ const STORAGE_KEY_PREFIX = 'kc-callback-'
  * @property {string} state
  * @property {string} nonce
  * @property {string} redirectUri
- * @property {KeycloakLoginOptions} [loginOptions]
- * @property {KeycloakLoginOptions['prompt']} [prompt]
+ * @property {TideCloakLoginOptions} [loginOptions]
+ * @property {TideCloakLoginOptions['prompt']} [prompt]
  * @property {string} [pkceCodeVerifier]
  */
 
@@ -1994,7 +2206,7 @@ const STORAGE_KEY_PREFIX = 'kc-callback-'
  * @implements {CallbackStorage}
  */
 class LocalStorage {
-  constructor() {
+  constructor () {
     globalThis.localStorage.setItem('kc-test', 'test')
     globalThis.localStorage.removeItem('kc-test')
   }
@@ -2003,7 +2215,7 @@ class LocalStorage {
    * @param {string} [state]
    * @returns {CallbackState | null}
    */
-  get(state) {
+  get (state) {
     if (!state) {
       return null
     }
@@ -2024,7 +2236,7 @@ class LocalStorage {
   /**
    * @param {CallbackState} state
    */
-  add(state) {
+  add (state) {
     this.#clearInvalidValues()
 
     const key = STORAGE_KEY_PREFIX + state.state
@@ -2046,7 +2258,7 @@ class LocalStorage {
   /**
    * Clears all values from local storage that are no longer valid.
    */
-  #clearInvalidValues() {
+  #clearInvalidValues () {
     const currentTime = Date.now()
 
     for (const [key, value] of this.#getStoredEntries()) {
@@ -2063,7 +2275,7 @@ class LocalStorage {
   /**
    * Clears all known values from local storage.
    */
-  #clearAllValues() {
+  #clearAllValues () {
     for (const [key] of this.#getStoredEntries()) {
       globalThis.localStorage.removeItem(key)
     }
@@ -2073,7 +2285,7 @@ class LocalStorage {
    * Gets all entries stored in local storage that are known to be managed by this class.
    * @returns {[string, string][]} An array of key-value pairs.
    */
-  #getStoredEntries() {
+  #getStoredEntries () {
     return Object.entries(globalThis.localStorage).filter(([key]) => key.startsWith(STORAGE_KEY_PREFIX))
   }
 
@@ -2082,7 +2294,7 @@ class LocalStorage {
    * @param {string} value
    * @returns {number | null} The expiry time in milliseconds, or `null` if the value is malformed.
    */
-  #parseExpiry(value) {
+  #parseExpiry (value) {
     let parsedValue
 
     // Attempt to parse the value as JSON.
@@ -2109,7 +2321,7 @@ class CookieStorage {
    * @param {string} [state]
    * @returns {CallbackState | null}
    */
-  get(state) {
+  get (state) {
     if (!state) {
       return null
     }
@@ -2126,7 +2338,7 @@ class CookieStorage {
   /**
    * @param {CallbackState} state
    */
-  add(state) {
+  add (state) {
     this.#setCookie(STORAGE_KEY_PREFIX + state.state, JSON.stringify(state), this.#cookieExpiration(60))
   }
 
@@ -2134,7 +2346,7 @@ class CookieStorage {
    * @param {string} key
    * @returns
    */
-  #getCookie(key) {
+  #getCookie (key) {
     const name = key + '='
     const ca = document.cookie.split(';')
     for (let i = 0; i < ca.length; i++) {
@@ -2154,7 +2366,7 @@ class CookieStorage {
    * @param {string} value
    * @param {Date} expirationDate
    */
-  #setCookie(key, value, expirationDate) {
+  #setCookie (key, value, expirationDate) {
     const cookie = key + '=' + value + '; ' +
       'expires=' + expirationDate.toUTCString() + '; '
     document.cookie = cookie
@@ -2164,7 +2376,7 @@ class CookieStorage {
    * @param {number} minutes
    * @returns {Date}
    */
-  #cookieExpiration(minutes) {
+  #cookieExpiration (minutes) {
     const exp = new Date()
     exp.setTime(exp.getTime() + (minutes * 60 * 1000))
     return exp
@@ -2175,7 +2387,7 @@ class CookieStorage {
  * @param {Uint8Array<ArrayBuffer>} bytes
  * @see https://developer.mozilla.org/en-US/docs/Glossary/Base64#the_unicode_problem
  */
-function bytesToBase64(bytes) {
+function bytesToBase64 (bytes) {
   const binString = String.fromCodePoint(...bytes)
   return btoa(binString)
 }
@@ -2184,7 +2396,7 @@ function bytesToBase64(bytes) {
  * @param {string} base64
  * @returns {Uint8Array}
  */
-function base64ToBytes(base64) {
+function base64ToBytes (base64) {
   const binString = atob(base64)
   const len = binString.length
   const bytes = new Uint8Array(len)
@@ -2195,26 +2407,26 @@ function base64ToBytes(base64) {
 }
 
 /**
- * @param {string} string 
+ * @param {string} string
  */
-function StringToUint8Array(string) {
-	const enc = new TextEncoder();
-	return enc.encode(string);
+function StringToUint8Array (string) {
+  const enc = new TextEncoder()
+  return enc.encode(string)
 }
 
 /**
- * @param {Uint8Array} bytes 
+ * @param {Uint8Array} bytes
  */
-function StringFromUint8Array(bytes){
-	const decoder = new TextDecoder('utf-8');
-    return decoder.decode(bytes);
+function StringFromUint8Array (bytes) {
+  const decoder = new TextDecoder('utf-8')
+  return decoder.decode(bytes)
 }
 
 /**
  * @param {string} message
  * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest#basic_example
  */
-async function sha256Digest(message) {
+async function sha256Digest (message) {
   const encoder = new TextEncoder()
   const data = encoder.encode(message)
 
@@ -2227,9 +2439,9 @@ async function sha256Digest(message) {
 
 /**
  * @param {string} token
- * @returns {KeycloakTokenParsed}
+ * @returns {TideCloakTokenParsed}
  */
-function decodeToken(token) {
+function decodeToken (token) {
   const [, payload] = token.split('.')
 
   if (typeof payload !== 'string') {
@@ -2254,7 +2466,7 @@ function decodeToken(token) {
 /**
  * @param {string} input
  */
-function base64UrlDecode(input) {
+function base64UrlDecode (input) {
   let output = input
     .replaceAll('-', '+')
     .replaceAll('_', '/')
@@ -2282,7 +2494,7 @@ function base64UrlDecode(input) {
 /**
  * @param {string} input
  */
-function b64DecodeUnicode(input) {
+function b64DecodeUnicode (input) {
   return decodeURIComponent(atob(input).replace(/(.)/g, (m, p) => {
     let code = p.charCodeAt(0).toString(16).toUpperCase()
 
@@ -2298,7 +2510,7 @@ function b64DecodeUnicode(input) {
  * Check if the input is an object that can be operated on.
  * @param {unknown} input
  */
-function isObject(input) {
+function isObject (input) {
   return typeof input === 'object' && input !== null
 }
 
@@ -2314,7 +2526,7 @@ function isObject(input) {
  * @param {string} url
  * @returns {Promise<JsonConfig>}
  */
-async function fetchJsonConfig(url) {
+async function fetchJsonConfig (url) {
   return await fetchJSON(url)
 }
 
@@ -2323,67 +2535,8 @@ async function fetchJsonConfig(url) {
  * @param {string} url
  * @returns {Promise<OpenIdProviderMetadata>}
  */
-async function fetchOpenIdConfig(url) {
+async function fetchOpenIdConfig (url) {
   return await fetchJSON(url)
-}
-
-/**
- * @typedef {Object} AccessTokenResponse The successful token response from the authorization server, based on the {@link https://datatracker.ietf.org/doc/html/rfc6749#section-5.1 OAuth 2.0 Authorization Framework specification}.
- * @property {string} access_token The access token issued by the authorization server.
- * @property {string} token_type The type of the token issued by the authorization server.
- * @property {number} [expires_in] The lifetime in seconds of the access token.
- * @property {string} [refresh_token] The refresh token issued by the authorization server.
- * @property {string} [id_token] The ID token issued by the authorization server, if requested.
- * @property {string} [scope] The scope of the access token.
- */
-
-/**
- * Fetch the access token from the given URL.
- * @param {string} url
- * @param {string} code
- * @param {string} clientId
- * @param {string} redirectUri
- * @param {string} [pkceCodeVerifier]
- * @returns {Promise<AccessTokenResponse>}
- */
-async function fetchAccessToken(url, code, clientId, redirectUri, pkceCodeVerifier) {
-  const body = new URLSearchParams([
-    ['code', code],
-    ['grant_type', 'authorization_code'],
-    ['client_id', clientId],
-    ['redirect_uri', stripHash(redirectUri)]
-  ])
-
-  if (pkceCodeVerifier) {
-    body.append('code_verifier', pkceCodeVerifier)
-  }
-
-  return await fetchJSON(url, {
-    method: 'POST',
-    credentials: 'include',
-    body
-  })
-}
-
-/**
- * Fetch the refresh token from the given URL.
- * @param {string} url
- * @param {string} refreshToken
- * @param {string} clientId
- * @returns {Promise<AccessTokenResponse>}
- */
-async function fetchRefreshToken(url, refreshToken, clientId) {
-  const body = new URLSearchParams([
-    ['grant_type', 'refresh_token'],
-    ['refresh_token', refreshToken],
-    ['client_id', clientId]
-  ])
-
-  return await fetchJSON(url, {
-    method: 'POST',
-    credentials: 'include',
-    body
-  })
 }
 
 /**
@@ -2392,7 +2545,7 @@ async function fetchRefreshToken(url, refreshToken, clientId) {
  * @param {RequestInit} init
  * @returns {Promise<T>}
  */
-async function fetchJSON(url, init = {}) {
+async function fetchJSON (url, init = {}) {
   const headers = new Headers(init.headers)
   headers.set('Accept', CONTENT_TYPE_JSON)
 
@@ -2409,7 +2562,7 @@ async function fetchJSON(url, init = {}) {
  * @param {RequestInit} [init]
  * @returns {Promise<Response>}
  */
-async function fetchWithErrorHandling(url, init) {
+async function fetchWithErrorHandling (url, init) {
   const response = await fetch(url, init)
 
   if (!response.ok) {
@@ -2423,7 +2576,7 @@ async function fetchWithErrorHandling(url, init) {
  * @param {string} [token]
  * @returns {[string, string]}
  */
-function buildAuthorizationHeader(token) {
+function buildAuthorizationHeader (token) {
   if (!token) {
     throw new Error('Unable to build authorization header, token is not set, make sure the user is authenticated.')
   }
@@ -2435,18 +2588,8 @@ function buildAuthorizationHeader(token) {
  * @param {string} url
  * @returns {string}
  */
-function stripTrailingSlash(url) {
+function stripTrailingSlash (url) {
   return url.endsWith('/') ? url.slice(0, -1) : url
-}
-
-/**
- * @param {string} url
- * @returns {string}
- */
-function stripHash(url) {
-  const parsedUrl = new URL(url)
-  parsedUrl.hash = ''
-  return parsedUrl.toString()
 }
 
 /**
@@ -2463,7 +2606,7 @@ export class NetworkError extends Error {
    * @param {string} message
    * @param {NetworkErrorOptions} options
    */
-  constructor(message, options) {
+  constructor (message, options) {
     super(message, options)
     this.response = options.response
   }
