@@ -326,6 +326,14 @@ export default class TideCloak {
 
     this.onReady?.(this.authenticated)
 
+    // initialize request enclave if authenticated
+    if(this.token) this.initRequestEnclave();
+
+    // to get around popups requiring user gestures
+    document.addEventListener('click', () => {
+      this.#ensureRequestEnclaveOpen();
+    })
+
     return this.authenticated
   }
 
@@ -1768,6 +1776,14 @@ export default class TideCloak {
       }
       throw error
     }
+  }
+
+  /**
+   * Make sure enclave is up - attach this function to a user gesture.
+   */
+  #ensureRequestEnclaveOpen() {
+    if(!this.requestEnclave) return;
+    this.requestEnclave.checkEnclaveOpen();
   }
 
   /**
