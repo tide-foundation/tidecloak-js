@@ -215,7 +215,10 @@ class IAMService {
         clientId: config.resource,
         vendorId: config.vendorId,
         homeOrkUrl: config.homeOrkUrl,
-        clientOriginAuth: config['client-origin-auth-' + window.location.origin]
+        clientOriginAuth: config['client-origin-auth-' + window.location.origin],
+        backgroundUrl: config['backgroundUrl'],
+        logoUrl: config['logoUrl'],
+        setupRequestEnclave: config["setupRequestEnclave"] ?? true // set true by default as its most likely for a client to need it
       });
     } catch (err) {
       console.error("[loadConfig] Failed to initialize TideCloak client:", err);
