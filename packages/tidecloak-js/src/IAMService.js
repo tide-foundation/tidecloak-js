@@ -474,6 +474,7 @@ class IAMService {
     let authenticated = false;
     try {
       authenticated = await this._tc.init({
+        setupRequestEnclave: config.setupRequestEnclave ?? true, // true by default because most clients that uses this will need it on
         onLoad: "check-sso",
         silentCheckSsoRedirectUri: `${window.location.origin}/silent-check-sso.html`,
         pkceMethod: "S256",
