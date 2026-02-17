@@ -1863,9 +1863,10 @@ export default class TideCloak {
   /**
    * Role-based encryption via Tide RequestEnclave.
    * @param {{ data: string | Uint8Array, tags: string[] }[]} toEncrypt
+   * @param {Uint8Array} decryption_policy If you'd like the data to be protected by a decryption policy
    * @returns {Promise<(string | Uint8Array)[]>}
    */
-  async encrypt (toEncrypt) {
+  async encrypt (toEncrypt, decryption_policy=null) {
     await this.ensureTokenReady()
     if (!Array.isArray(toEncrypt)) {
       throw new Error('Pass array as parameter')
@@ -1888,8 +1889,11 @@ export default class TideCloak {
 
       for (const tag of e.tags) {
         if (typeof tag !== 'string') throw new Error('tags must be provided as an array of strings')
-        const tagAccess = this.hasRealmRole(`_tide_${tag}.selfencrypt`)
-        if (!tagAccess) throw new Error(`User has not been given any access to '${tag}'`)
+        if(!decryption_policy){
+          // if using standard encryption, check for doken includes default self encrypt roles
+          const tagAccess = this.hasRealmRole(`_tide_${tag}.selfencrypt`)
+          if (!tagAccess) throw new Error(`User has not been given any access to '${tag}'`)
+        }
       }
 
       return {
@@ -1901,7 +1905,7 @@ export default class TideCloak {
 
     this.initRequestEnclave()
 
-    const encrypted = await this.requestEnclave.encrypt(dataToSend)
+    const encrypted = await this.requestEnclave.encrypt(dataToSend, decryption_policy)
     return encrypted.map((cipher, i) => (dataToSend[i].isRaw ? cipher : bytesToBase64(cipher)))
   }
 
@@ -1942,9 +1946,10 @@ export default class TideCloak {
   /**
    * Role-based decryption via Tide RequestEnclave.
    * @param {{ encrypted: string | Uint8Array, tags: string[] }[]} toDecrypt
+   * @param {Uint8Array} decryption_policy If the data is protected by a decryption policy
    * @returns {Promise<(string | Uint8Array)[]>}
    */
-  async decrypt (toDecrypt) {
+  async decrypt (toDecrypt, decryption_policy=null) {
     await this.ensureTokenReady()
     if (!Array.isArray(toDecrypt)) {
       throw new Error('Pass array as parameter')
@@ -1967,8 +1972,12 @@ export default class TideCloak {
 
       for (const tag of e.tags) {
         if (typeof tag !== 'string') throw new Error('tags must be provided as an array of strings')
-        const tagAccess = this.hasRealmRole(`_tide_${tag}.selfdecrypt`)
-        if (!tagAccess) throw new Error(`User has not been given any access to '${tag}'`)
+        if(!decryption_policy){
+          // if using standard decryption, check for doken includes default self decrypt roles
+          const tagAccess = this.hasRealmRole(`_tide_${tag}.selfdecrypt`)
+          if (!tagAccess) throw new Error(`User has not been given any access to '${tag}'`)
+        }
+        
       }
 
       return {
@@ -1980,7 +1989,7 @@ export default class TideCloak {
 
     this.initRequestEnclave()
 
-    const decrypted = await this.requestEnclave.decrypt(dataToSend)
+    const decrypted = await this.requestEnclave.decrypt(dataToSend, decryption_policy)
     return decrypted.map((d, i) => (dataToSend[i].isRaw ? d : StringFromUint8Array(d)))
   }
 

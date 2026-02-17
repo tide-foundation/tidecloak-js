@@ -811,32 +811,34 @@ class IAMService {
    * Encrypt data via adapter.
    * Not available in hybrid mode (encryption requires client-side doken).
    * @param {{ data: string | Uint8Array, tags: string[] }[]} data - Array of objects to encrypt
+   * @param {Uint8Array} decryption_policy Optional policy to protect the encrypted data
    * @returns {Promise<(string | Uint8Array)[]>} Array of encrypted values
    */
-  async doEncrypt(data) {
+  async doEncrypt(data, decryption_policy=null) {
     if (this.isHybridMode()) {
       throw new Error("Encrypt not supported in hybrid mode (tokens are server-side)");
     }
     if (this.isNativeMode()) {
       return this._nativeEncrypt(data);
     }
-    return this.getTideCloakClient().encrypt(data);
+    return this.getTideCloakClient().encrypt(data, decryption_policy);
   }
 
   /**
    * Decrypt data via adapter.
    * Not available in hybrid mode (decryption requires client-side doken).
    * @param {{ encrypted: string | Uint8Array, tags: string[] }[]} data - Array of objects to decrypt
+   * @param {Uint8Array} decryption_policy Optional policy to protect the encrypted data
    * @returns {Promise<(string | Uint8Array)[]>} Array of decrypted values
    */
-  async doDecrypt(data) {
+  async doDecrypt(data, decryption_policy=null) {
     if (this.isHybridMode()) {
       throw new Error("Decrypt not supported in hybrid mode (tokens are server-side)");
     }
     if (this.isNativeMode()) {
       return this._nativeDecrypt(data);
     }
-    return this.getTideCloakClient().decrypt(data);
+    return this.getTideCloakClient().decrypt(data, decryption_policy);
   }
 
   /**

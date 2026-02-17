@@ -843,12 +843,13 @@ declare class TideCloak {
   /**
    * Role-based encryption via Tide RequestEnclave.
    * @param toEncrypt Array of objects with data and tags to encrypt.
+   * @param decryption_policy If you'd like the data to be protected by a decryption policy.
    * @returns A promise resolving to an array of encrypted values.
    */
   encrypt (toEncrypt: {
     data: string | Uint8Array
     tags: string[]
-  }[]): Promise<(string | Uint8Array)[]>
+  }[], decryption_policy?: Uint8Array | null): Promise<(string | Uint8Array)[]>
 
   /**
    * Initialize a Tide request that requires operator approvals.
@@ -882,12 +883,13 @@ declare class TideCloak {
   /**
    * Role-based decryption via Tide RequestEnclave.
    * @param toDecrypt Array of objects with encrypted data and tags to decrypt.
+   * @param decryption_policy If the data is protected by a decryption policy.
    * @returns A promise resolving to an array of decrypted values.
    */
   decrypt (toDecrypt: {
     encrypted: string | Uint8Array
     tags: string[]
-  }[]): Promise<(string | Uint8Array)[]>
+  }[], decryption_policy?: Uint8Array | null): Promise<(string | Uint8Array)[]>
 }
 
 export default TideCloak
