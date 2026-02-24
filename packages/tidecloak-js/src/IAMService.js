@@ -215,7 +215,10 @@ class IAMService {
         clientId: config.resource,
         vendorId: config.vendorId,
         homeOrkUrl: config.homeOrkUrl,
-        clientOriginAuth: config['client-origin-auth-' + window.location.origin]
+        clientOriginAuth: config['client-origin-auth-' + window.location.origin],
+        backgroundUrl: config['backgroundUrl'],
+        logoUrl: config['logoUrl'],
+        setupRequestEnclave: config["setupRequestEnclave"] ?? true // set true by default as its most likely for a client to need it
       });
     } catch (err) {
       console.error("[loadConfig] Failed to initialize TideCloak client:", err);
@@ -474,6 +477,7 @@ class IAMService {
     let authenticated = false;
     try {
       authenticated = await this._tc.init({
+        setupRequestEnclave: config.setupRequestEnclave ?? true, // true by default because most clients that uses this will need it on
         onLoad: "check-sso",
         silentCheckSsoRedirectUri: `${window.location.origin}/silent-check-sso.html`,
         pkceMethod: "S256",

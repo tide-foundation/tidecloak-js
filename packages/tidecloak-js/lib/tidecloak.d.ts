@@ -85,6 +85,13 @@ export interface Acr {
 }
 
 export interface TideCloakInitOptions {
+
+  /**
+   * Triggers the setup and fallback of the request enclave if required by the client
+   * 
+   */
+  setupRequestEnclave?: boolean
+
   /**
    * Adds a [cryptographic nonce](https://en.wikipedia.org/wiki/Cryptographic_nonce)
    * to verify that the authentication response matches the request.
@@ -527,7 +534,7 @@ declare class TideCloak {
    * Flow passed in init.
    */
   flow: TideCloakFlow
-
+  
   /**
    * The realm roles associated with the token.
    */
