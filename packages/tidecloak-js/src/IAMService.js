@@ -815,32 +815,100 @@ class IAMService {
    * Encrypt data via adapter.
    * Not available in hybrid mode (encryption requires client-side doken).
    * @param {{ data: string | Uint8Array, tags: string[] }[]} data - Array of objects to encrypt
+   * @param {Uint8Array} decryption_policy Optional policy to protect the encrypted data
    * @returns {Promise<(string | Uint8Array)[]>} Array of encrypted values
    */
-  async doEncrypt(data) {
+  async doEncrypt(data, decryption_policy=null) {
     if (this.isHybridMode()) {
       throw new Error("Encrypt not supported in hybrid mode (tokens are server-side)");
     }
     if (this.isNativeMode()) {
       return this._nativeEncrypt(data);
     }
-    return this.getTideCloakClient().encrypt(data);
+    return this.getTideCloakClient().encrypt(data, decryption_policy);
   }
 
   /**
    * Decrypt data via adapter.
    * Not available in hybrid mode (decryption requires client-side doken).
    * @param {{ encrypted: string | Uint8Array, tags: string[] }[]} data - Array of objects to decrypt
+   * @param {Uint8Array} decryption_policy Optional policy to protect the encrypted data
    * @returns {Promise<(string | Uint8Array)[]>} Array of decrypted values
    */
-  async doDecrypt(data) {
+  async doDecrypt(data, decryption_policy=null) {
     if (this.isHybridMode()) {
       throw new Error("Decrypt not supported in hybrid mode (tokens are server-side)");
     }
     if (this.isNativeMode()) {
       return this._nativeDecrypt(data);
     }
-    return this.getTideCloakClient().decrypt(data);
+    return this.getTideCloakClient().decrypt(data, decryption_policy);
+  }
+
+  /**
+   * Draft an encryption request (two-step encryption flow).
+   * Not available in hybrid or native mode.
+   * @param {{ data: Uint8Array, tags: string[] }[]} data - Array of objects to draft encryption for
+   * @returns {Promise<Uint8Array>} Draft encryption request
+   */
+  async doDraftEncryption(data) {
+    if (this.isHybridMode()) {
+      throw new Error("draftEncryption not supported in hybrid mode (tokens are server-side)");
+    }
+    if (this.isNativeMode()) {
+      throw new Error("draftEncryption not supported in native mode");
+    }
+    return this.getTideCloakClient().draftEncryption(data);
+  }
+
+  /**
+   * Commit a drafted encryption request with a specified policy.
+   * Not available in hybrid or native mode.
+   * @param {Uint8Array} request - Draft request from doDraftEncryption
+   * @param {Uint8Array} decryption_policy - Policy to protect the encrypted data
+   * @returns {Promise<Uint8Array[]>} Encrypted data
+   */
+  async doCommitEncryption(request, decryption_policy) {
+    if (this.isHybridMode()) {
+      throw new Error("commitEncryption not supported in hybrid mode (tokens are server-side)");
+    }
+    if (this.isNativeMode()) {
+      throw new Error("commitEncryption not supported in native mode");
+    }
+    return this.getTideCloakClient().commitEncryption(request, decryption_policy);
+  }
+
+  /**
+   * Draft a decryption request (two-step decryption flow).
+   * Not available in hybrid or native mode.
+   * @param {{ encrypted: Uint8Array, tags: string[] }[]} data - Array of objects to draft decryption for
+   * @returns {Promise<Uint8Array>} Draft decryption request
+   */
+  async doDraftDecryption(data) {
+    if (this.isHybridMode()) {
+      throw new Error("draftDecryption not supported in hybrid mode (tokens are server-side)");
+    }
+    if (this.isNativeMode()) {
+      throw new Error("draftDecryption not supported in native mode");
+    }
+    return this.getTideCloakClient().draftDecryption(data);
+  }
+
+  /**
+   * Commit a drafted decryption request.
+   * Not available in hybrid or native mode.
+   * @param {Uint8Array} request - Draft request from doDraftDecryption
+   * @param {Uint8Array} decryption_policy - Policy to decrypt the data
+   * @returns {Promise<Uint8Array[]>} Decrypted data
+   */
+  async doCommitDecryption(request, decryption_policy) {
+    if (this.isHybridMode()) {
+      throw new Error("commitDecryption not supported in hybrid mode (tokens are server-side)");
+    }
+    if (this.isNativeMode()) {
+      throw new Error("commitDecryption not supported in native mode");
+    }
+    return this.getTideCloakClient().commitDecryption(request, decryption_policy);
   }
 
   /**

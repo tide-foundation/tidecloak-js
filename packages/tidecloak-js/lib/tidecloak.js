@@ -1867,9 +1867,10 @@ export default class TideCloak {
   /**
    * Role-based encryption via Tide RequestEnclave.
    * @param {{ data: string | Uint8Array, tags: string[] }[]} toEncrypt
+   * @param {Uint8Array} decryption_policy If you'd like the data to be protected by a decryption policy
    * @returns {Promise<(string | Uint8Array)[]>}
    */
-  async encrypt (toEncrypt) {
+  async encrypt (toEncrypt, decryption_policy=null) {
     await this.ensureTokenReady()
     if (!Array.isArray(toEncrypt)) {
       throw new Error('Pass array as parameter')
@@ -1892,8 +1893,11 @@ export default class TideCloak {
 
       for (const tag of e.tags) {
         if (typeof tag !== 'string') throw new Error('tags must be provided as an array of strings')
-        const tagAccess = this.hasRealmRole(`_tide_${tag}.selfencrypt`)
-        if (!tagAccess) throw new Error(`User has not been given any access to '${tag}'`)
+        if(!decryption_policy){
+          // if using standard encryption, check for doken includes default self encrypt roles
+          const tagAccess = this.hasRealmRole(`_tide_${tag}.selfencrypt`)
+          if (!tagAccess) throw new Error(`User has not been given any access to '${tag}'`)
+        }
       }
 
       return {
@@ -1905,8 +1909,116 @@ export default class TideCloak {
 
     this.initRequestEnclave()
 
-    const encrypted = await this.requestEnclave.encrypt(dataToSend)
+    const encrypted = await this.requestEnclave.encrypt(dataToSend, decryption_policy)
     return encrypted.map((cipher, i) => (dataToSend[i].isRaw ? cipher : bytesToBase64(cipher)))
+  }
+
+  
+  /**
+   * Begin the process of drafting a encryption request
+   * @param {{ data: string | Uint8Array, tags: string[] }[]} toEncrypt
+   * @returns 
+   */
+  async draftEncryption(toEncrypt) {
+    await this.ensureTokenReady()
+    if (!Array.isArray(toEncrypt)) {
+      throw new Error('Pass array as parameter')
+    }
+    if (!this.tokenParsed) {
+      throw new Error('Not authenticated')
+    }
+
+    const dataToSend = toEncrypt.map((e) => {
+      if (!isObject(e)) throw new Error('All entries must be an object to encrypt')
+      for (const property of ['data', 'tags']) {
+        if (!e[property]) {
+          throw new Error(`The configuration object is missing the required '${property}' property.`)
+        }
+      }
+      if (!Array.isArray(e.tags)) throw new Error('tags must be provided as a string array in object to encrypt')
+      if (!(e.data instanceof Uint8Array)) {
+        throw new Error('data must be provided as Uint8Array in object to encrypt')
+      }
+
+      for (const tag of e.tags) {
+        if (typeof tag !== 'string') throw new Error('tags must be provided as an array of strings')
+      }
+
+      return {
+        data: e.data,
+        tags: e.tags,
+      }
+    })
+
+    this.initRequestEnclave()
+    return await this.requestEnclave.draftEncryption(dataToSend);
+  }
+
+  /**
+   * Commit a encryption request with a specified policy
+   * @param {Uint8Array} request 
+   * @param {Uint8Array} decryption_policy 
+   * @returns {Promise<Uint8Array[]>}
+   */
+  async commitEncryption(request, decryption_policy) {
+    // Commit the encryption request and return data similar to encrypt()
+    await this.ensureTokenReady()
+    this.initRequestEnclave()
+    return await this.requestEnclave.commitEncryption(request, decryption_policy);
+  }
+
+  /**
+   * Begin the process of drafting a encryption request
+   * @param {{ encrypted: string | Uint8Array, tags: string[] }[]} toDecrypt
+   * @returns {Uint8Array}
+   */
+  async draftDecryption(toDecrypt) {
+    await this.ensureTokenReady()
+    if (!Array.isArray(toDecrypt)) {
+      throw new Error('Pass array as parameter')
+    }
+    if (!this.tokenParsed) {
+      throw new Error('Not authenticated')
+    }
+
+    const dataToSend = toDecrypt.map((e) => {
+      if (!isObject(e)) throw new Error('All entries must be an object to decrypt')
+      for (const property of ['encrypted', 'tags']) {
+        if (!e[property]) {
+          throw new Error(`The configuration object is missing the required '${property}' property.`)
+        }
+      }
+      if (!Array.isArray(e.tags)) throw new Error('tags must be provided as a string array in object to decrypt')
+      if (!(e.encrypted instanceof Uint8Array)) {
+        throw new Error('encrypted must be provided as string or Uint8Array')
+      }
+
+      for (const tag of e.tags) {
+        if (typeof tag !== 'string') throw new Error('tags must be provided as an array of strings')
+      }
+
+      return {
+        encrypted: e.encrypted,
+        tags: e.tags
+      }
+    })
+
+    this.initRequestEnclave()
+
+    const decryptionRequest = await this.requestEnclave.draftDecryption(dataToSend)
+    return decryptionRequest;
+  }
+  /**
+   * Commit a decryption request with a specified policy
+   * @param {Uint8Array} request 
+   * @param {Uint8Array} decryption_policy 
+   * @returns {Promise<Uint8Array[]>}
+   */
+  async commitDecryption(request, decryption_policy) {
+    // Commit the encryption request and return data similar to encrypt()
+    await this.ensureTokenReady()
+    this.initRequestEnclave()
+    return await this.requestEnclave.commitDecryption(request, decryption_policy);
   }
 
   /**
@@ -1946,9 +2058,10 @@ export default class TideCloak {
   /**
    * Role-based decryption via Tide RequestEnclave.
    * @param {{ encrypted: string | Uint8Array, tags: string[] }[]} toDecrypt
+   * @param {Uint8Array} decryption_policy If the data is protected by a decryption policy
    * @returns {Promise<(string | Uint8Array)[]>}
    */
-  async decrypt (toDecrypt) {
+  async decrypt (toDecrypt, decryption_policy=null) {
     await this.ensureTokenReady()
     if (!Array.isArray(toDecrypt)) {
       throw new Error('Pass array as parameter')
@@ -1971,8 +2084,12 @@ export default class TideCloak {
 
       for (const tag of e.tags) {
         if (typeof tag !== 'string') throw new Error('tags must be provided as an array of strings')
-        const tagAccess = this.hasRealmRole(`_tide_${tag}.selfdecrypt`)
-        if (!tagAccess) throw new Error(`User has not been given any access to '${tag}'`)
+        if(!decryption_policy){
+          // if using standard decryption, check for doken includes default self decrypt roles
+          const tagAccess = this.hasRealmRole(`_tide_${tag}.selfdecrypt`)
+          if (!tagAccess) throw new Error(`User has not been given any access to '${tag}'`)
+        }
+        
       }
 
       return {
@@ -1984,7 +2101,7 @@ export default class TideCloak {
 
     this.initRequestEnclave()
 
-    const decrypted = await this.requestEnclave.decrypt(dataToSend)
+    const decrypted = await this.requestEnclave.decrypt(dataToSend, decryption_policy)
     return decrypted.map((d, i) => (dataToSend[i].isRaw ? d : StringFromUint8Array(d)))
   }
 
