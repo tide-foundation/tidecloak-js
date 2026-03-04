@@ -13,5 +13,6 @@
     "react": "19.x",
     "react-dom": "19.x",
     "@tidecloak/nextjs": "^0.13.19"
+
   }
 }
