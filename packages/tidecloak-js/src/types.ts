@@ -114,6 +114,10 @@ export interface NativeConfig {
    */
   [key: `client-origin-auth-${string}`]: string;
 
+  backgroundUrl: string;
+
+  logoUrl: string;
+
   // --- Optional Settings ---
 
   /** Session mode: 'online' (default) validates tokens, 'offline' accepts stored tokens */

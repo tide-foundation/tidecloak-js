@@ -107,6 +107,113 @@ const decrypted_addresses = await tidecloak.decrypt([
 ]);
 ```
 
+## Policy-Protected Encryption
+
+Encryption and decryption can be governed by a **Tide Policy + Forseti Contract**, adding an extra layer of access control beyond the default realm-role checks. To learn how to create a policy, see the [Policy Creation Guide](https://docs.tidecloak.com) *(coming soon)*.
+
+There are two ways to use a policy:
+
+1. **Inline policy** — pass the policy directly to `encrypt()` / `decrypt()`. The ORKs enforce the policy, but no separate approval step is needed.
+2. **Approval flow** — use a draft/approve/commit cycle where Tide operators must approve each request before encryption or decryption can proceed. This is suited for custom Forseti contracts with multi-party approval requirements.
+
+### Inline policy (no approval step)
+
+Pass the signed policy as the second argument. When a policy is provided, the default realm-role tag checks are skipped — the policy itself controls access.
+
+```javascript
+const policy = yourSignedPolicy; // Uint8Array
+
+// Encrypt with policy
+const encrypted_dob = (await tidecloak.encrypt([
+  {
+    data: "03/04/2005",
+    tags: ["dob"]
+  }
+], policy))[0];
+
+// Decrypt with policy
+const decrypted_dob = (await tidecloak.decrypt([
+  {
+    encrypted: encrypted_dob,
+    tags: ["dob"]
+  }
+], policy))[0];
+```
+
+### Approval flow (draft / approve / commit)
+
+This flow splits the operation into three steps:
+
+1. **Draft** — prepare the request locally.
+2. **Approve** — submit the draft to Tide operators for approval via `requestTideOperatorApproval()`.
+3. **Commit** — once approved, finalize the operation with the policy.
+
+> **Note:** `draftEncryption()` and `draftDecryption()` require data as `Uint8Array`. Use `new TextEncoder().encode(str)` to convert strings.
+
+#### Encryption with approval
+
+```javascript
+const policy = yourSignedPolicy; // Uint8Array
+const encoder = new TextEncoder();
+
+// 1. Draft the encryption request
+const encryptionDraft = await tidecloak.draftEncryption([
+  {
+    data: encoder.encode("03/04/2005"),
+    tags: ["dob"]
+  }
+]);
+
+// 2. Submit for operator approval
+const approvalResults = await tidecloak.requestTideOperatorApproval([
+  {
+    id: "enc-dob-001",
+    request: encryptionDraft
+  }
+]);
+
+const { request: approvedRequest, status } = approvalResults[0];
+
+if (status !== "approved") {
+  throw new Error(`Approval denied or still pending: ${status}`);
+}
+
+// 3. Commit with the approved request and policy
+const encrypted_dob = (await tidecloak.commitEncryption(approvedRequest, policy))[0];
+```
+
+#### Decryption with approval
+
+```javascript
+const policy = yourSignedPolicy; // Uint8Array
+
+// 1. Draft the decryption request
+const decryptionDraft = await tidecloak.draftDecryption([
+  {
+    encrypted: encrypted_dob, // Uint8Array from the encryption step above
+    tags: ["dob"]
+  }
+]);
+
+// 2. Submit for operator approval
+const approvalResults = await tidecloak.requestTideOperatorApproval([
+  {
+    id: "dec-dob-001",
+    request: decryptionDraft
+  }
+]);
+
+const { request: approvedRequest, status } = approvalResults[0];
+
+if (status !== "approved") {
+  throw new Error(`Approval denied or still pending: ${status}`);
+}
+
+// 3. Commit with the approved request and policy
+const decrypted_dob = (await tidecloak.commitDecryption(approvedRequest, policy))[0];
+// decrypted_dob is a Uint8Array — decode with new TextDecoder().decode(decrypted_dob)
+```
+
 # Reference guide
 
 ## TideCloak server configuration
@@ -601,6 +708,66 @@ Clear authentication state, including tokens.
 This can be useful if application has detected the session was expired, for example if updating token fails.
 
 Invoking this results in onAuthLogout callback listener being invoked.
+
+### encrypt(toEncrypt, decryptionPolicy?)
+
+Role-based encryption via the Tide RequestEnclave.
+
+* **toEncrypt** - Array of objects, each with `data` (`string` or `Uint8Array`) and `tags` (`string[]`).
+* **decryptionPolicy** *(optional)* - A `Uint8Array` policy. When provided, the default realm-role tag checks are skipped and the policy governs access instead.
+
+Returns a promise resolving to an array of encrypted values (`string` if input was a string, `Uint8Array` if input was `Uint8Array`).
+
+### decrypt(toDecrypt, decryptionPolicy?)
+
+Role-based decryption via the Tide RequestEnclave.
+
+* **toDecrypt** - Array of objects, each with `encrypted` (`string` or `Uint8Array`) and `tags` (`string[]`).
+* **decryptionPolicy** *(optional)* - A `Uint8Array` policy. When provided, the default realm-role tag checks are skipped and the policy governs access instead.
+
+Returns a promise resolving to an array of decrypted values (`string` if input was a string, `Uint8Array` if input was `Uint8Array`).
+
+### draftEncryption(toEncrypt)
+
+Begins the approval-based encryption flow by creating a draft request.
+
+* **toEncrypt** - Array of objects, each with `data` (`Uint8Array`) and `tags` (`string[]`). Unlike `encrypt()`, strings are **not** accepted — convert with `new TextEncoder().encode(str)`.
+
+Returns a promise resolving to a `Uint8Array` draft request, which should be submitted to `requestTideOperatorApproval()`.
+
+### commitEncryption(request, decryptionPolicy)
+
+Finalizes an approved encryption request.
+
+* **request** - The approved `Uint8Array` request from `requestTideOperatorApproval()`.
+* **decryptionPolicy** - The `Uint8Array` policy to protect the encrypted data.
+
+Returns a promise resolving to `Uint8Array[]` of encrypted values.
+
+### draftDecryption(toDecrypt)
+
+Begins the approval-based decryption flow by creating a draft request.
+
+* **toDecrypt** - Array of objects, each with `encrypted` (`Uint8Array`) and `tags` (`string[]`).
+
+Returns a promise resolving to a `Uint8Array` draft request, which should be submitted to `requestTideOperatorApproval()`.
+
+### commitDecryption(request, decryptionPolicy)
+
+Finalizes an approved decryption request.
+
+* **request** - The approved `Uint8Array` request from `requestTideOperatorApproval()`.
+* **decryptionPolicy** - The `Uint8Array` policy.
+
+Returns a promise resolving to `Uint8Array[]` of decrypted values.
+
+### requestTideOperatorApproval(requests)
+
+Submits draft requests to Tide operators for approval.
+
+* **requests** - Array of objects, each with `id` (`string`) and `request` (`Uint8Array`).
+
+Returns a promise resolving to an array of objects with `id` (`string`), `request` (`Uint8Array`), and `status` (`"approved"` | `"denied"` | `"pending"`).
 
 ## Callback Events
 

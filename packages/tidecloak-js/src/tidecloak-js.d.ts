@@ -157,6 +157,10 @@ export interface FrontChannelConfig {
   redirectUri?: string;
   /** Client origin auth (keyed by origin) */
   [key: `client-origin-auth-${string}`]: string;
+
+  backgroundUrl?: string;
+
+  logoUrl?: string
 }
 
 /**
