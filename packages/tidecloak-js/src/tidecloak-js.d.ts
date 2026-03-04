@@ -2,8 +2,6 @@ import type {
   RequestEnclave as HeimdallRequestEnclave,
   ApprovalEnclave as HeimdallApprovalEnclave,
   ApprovalEnclaveNew,
-  TideMemory,
-  BaseTideRequest,
 } from "heimdall-tide";
 
 /**
@@ -454,7 +452,7 @@ export const IAMService: IAMServiceInstance;
 // Tide / Heimdall re-exports
 export type RequestEnclave = HeimdallRequestEnclave;
 export type ApprovalEnclave = HeimdallApprovalEnclave;
-export { ApprovalEnclaveNew, TideMemory, BaseTideRequest };
+export { ApprovalEnclaveNew };
 
 // Admin API re-exports
 export {

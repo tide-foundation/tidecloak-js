@@ -83,4 +83,10 @@ export class DPoPSignatureProvider {
    * @returns The DPoP proof JWT
    */
   generateDPoPProof(url: string, httpMethod: string, accessToken?: string, nonce?: string): Promise<string>
+
+  /**
+   * Generate a JWK Thumbprint of the DPoP public key (RFC 7638).
+   * @returns Base64url-encoded SHA-256 thumbprint
+   */
+  generateJWKThumbprint(): Promise<string>
 }

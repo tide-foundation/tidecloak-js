@@ -51,7 +51,7 @@ const CONTENT_TYPE_JSON = 'application/json'
  * @property {string=} iframeOrigin
  */
 
-export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, TideMemory, BaseTideRequest, PolicySignRequest, Policy, PolicyParameters } from "heimdall-tide";
+export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, PolicySignRequest } from "heimdall-tide";
 export default class TideCloak {
   /** @type {Pick<PromiseWithResolvers<boolean>, 'resolve' | 'reject'>[]} */
   #refreshQueue = []
@@ -1373,6 +1373,11 @@ export default class TideCloak {
       } catch (error) {
         throw new Error('Failed to generate PKCE challenge.', { cause: error })
       }
+    }
+
+    if (this.#dpopProvider) {
+      const thumbprint = await this.#dpopProvider.generateJWKThumbprint();
+      params.append('dpop_jkt', thumbprint);
     }
 
     this.#callbackStorage.add(callbackState)
