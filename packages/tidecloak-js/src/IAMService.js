@@ -1669,6 +1669,7 @@ class IAMService {
       vendorId: encryptionConfig.vendorId,
       voucherURL: voucherDataUrl,
       isRunningLocal: false,
+      clientOrigin: encryptionConfig.clientOrigin || null,
     }).init({
       doken: this._nativeDoken,
       dokenRefreshCallback: async () => {

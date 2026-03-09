@@ -1801,7 +1801,8 @@ export default class TideCloak {
         signed_client_origin: this.#config['clientOriginAuth'],
         vendorId: this.#config.vendorId,
         voucherURL: this.#getVoucherUrl(),
-        isRunningLocal: new URL(this.#getVoucherUrl()).hostname === "localhost"
+        isRunningLocal: new URL(this.#getVoucherUrl()).hostname === "localhost",
+        clientOrigin: this.#config['clientOrigin'] || null
       }).init({
         doken: this.doken,
         dokenRefreshCallback: async () => {
@@ -1832,7 +1833,8 @@ export default class TideCloak {
         homeOrkOrigin: this.dokenParsed['t.uho'],
         signed_client_origin: this.#config['clientOriginAuth'],
         vendorId: this.#config.vendorId,
-        voucherURL: this.#getVoucherUrl()
+        voucherURL: this.#getVoucherUrl(),
+        clientOrigin: this.#config['clientOrigin'] || null
       }).init({
         backgroundUrl: this.#config['backgroundUrl'],
         logoUrl: this.#config['logoUrl'],
