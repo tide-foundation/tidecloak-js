@@ -1,0 +1,125 @@
+<html>
+
+<body>
+    <script>
+        const thisVersion = 1;
+        const dbname = undefined; // this value should be overwritten
+
+
+
+        // need to make flow or something that generates this template file with the correct db name
+        // given tidecloakConfig (where iss and aud are listed)
+
+
+
+
+
+
+
+
+
+        const version1Flow = async () => {
+            let dpopKey;
+            try {
+                // Ensure we have access to IndexedDB + dpop key
+                const db = await new Promise((resolve, reject) => {
+                    const req = indexedDB.open(dbname);
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+                dpopKey = await new Promise((resolve, reject) => {
+                    const tx = db.transaction("main", "readonly");
+                    const store = tx.objectStore("main");
+                    const req = store.get("dpopState");
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+                db.close();
+                if (!dpopKey || !dpopKey.keys) throw Error("No DPoP key found in IndexedDB");
+            } catch (ex) {
+                window.parent.postMessage({
+                    type: "error",
+                    message: "db failed"
+                }, openerOrigin);
+                throw ex;
+            }
+
+            const challenge = () => new Promise((resolve) => {
+                const handler = (event) => {
+                    if (event.origin !== openerOrigin) {
+                        // Something's not right... The message has come from an unknown domain... 
+                        return;
+                    }
+                    if(event.data.type === "challenge"){
+                        resolve(event.data.challenge);
+                        window.removeEventListener("message", handler);
+                    }
+                };
+                window.addEventListener("message", handler, false);
+            });
+
+            const pre_challenge = challenge();
+
+            // Send page loaded signal to opener
+            window.parent.postMessage({
+                type: "pageLoaded",
+                message: "yay"
+            }, openerOrigin);
+
+            // Wait for challenge from enclave
+            const challengeResp = await pre_challenge;
+            if(typeof challengeResp !== "string" || challengeResp?.length != 64) throw Error("Unexpect challenge format");
+
+            // Sign challenge with dpop key - make sure to use a signature format to not blindly sign data
+            // Wrap in a structured message to prevent blind-signing attacks
+            const te = new TextEncoder();
+            const signatureInput = te.encode("dpop-auth-challenge:" + challengeResp);
+            const algName = dpopKey.keys.privateKey.algorithm.name;
+            const signParams = algName === "ECDSA"
+                ? { name: "ECDSA", hash: { "P-256": "SHA-256", "P-384": "SHA-384", "P-521": "SHA-512" }[dpopKey.keys.privateKey.algorithm.namedCurve] }
+                : { name: algName };
+            const signature = await crypto.subtle.sign(signParams, dpopKey.keys.privateKey, signatureInput);
+
+            // Send to signature + dpop_public to enclave
+            const publicJwk = await crypto.subtle.exportKey("jwk", dpopKey.keys.publicKey);
+
+            window.parent.postMessage({
+                type: "challenge response",
+                message: {
+                    dpop_public: JSON.stringify({
+                        crv: publicJwk.crv,
+                        kty: publicJwk.kty,
+                        x: publicJwk.x,
+                        y: publicJwk.y
+                    }),
+                    signature: new Uint8Array(signature)
+                }
+            }, openerOrigin);
+        }
+
+        const versionFlows = new Map([
+            [1, version1Flow],
+            // [2, version2Flow] Add as required later
+        ])
+
+        const latestFlow = version1Flow;
+
+        // get enclave version + opener origin from url
+        const enclaveVersion = new URL(window.location.href).searchParams.get("version");
+        if (!enclaveVersion) throw Error("No enclave version provided in url");
+        let openerOrigin = new URL(window.location.href).searchParams.get("openerOrigin");
+        if (!openerOrigin) throw Error("No opener origin provided in url");
+        openerOrigin = new URL(decodeURIComponent(openerOrigin)).origin;
+
+        // If the enclave version is higher or equal than this, communicate our our current version (we don't have the higher version)
+        if (Number(enclaveVersion) >= thisVersion) await latestFlow();
+        else {
+            // If the enclave version is lower than this, communicate at the enclave version
+            const flow = versionFlows.get(Number(enclaveVersion));
+            if (!flow) throw Error("Cannot find supported enclave version: " + enclaveVersion)
+            await flow();
+        }            
+    </script>
+</body>
+
+</html>
