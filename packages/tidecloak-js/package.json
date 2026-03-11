@@ -33,7 +33,7 @@
   ],
   "dependencies": {
     "heimdall-tide": "^0.13.21",
-    "asgard-tide": "^0.13.21"
+    "@tideorg/js": "^0.13.21"
 
   }
 }

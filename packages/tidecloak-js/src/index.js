@@ -1,7 +1,7 @@
 export { default as IAMService } from './IAMService.js';
 export { default as TideCloak } from "../lib/tidecloak.js";
 export { RequestEnclave, ApprovalEnclaveNew } from "../lib/tidecloak.js";
-export { TideMemory, BaseTideRequest } from "asgard-tide";
+export { Tools, Models } from "@tideorg/js";
 
 // Re-export types for native mode (TypeScript will pick these up from types.ts)
 /** @typedef {import('./types.js').NativeAdapter} NativeAdapter */
