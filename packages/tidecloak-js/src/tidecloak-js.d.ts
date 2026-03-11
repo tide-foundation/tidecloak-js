@@ -2,9 +2,11 @@ import type {
   RequestEnclave as HeimdallRequestEnclave,
   ApprovalEnclave as HeimdallApprovalEnclave,
   ApprovalEnclaveNew,
+} from "heimdall-tide";
+import type {
   TideMemory,
   BaseTideRequest,
-} from "heimdall-tide";
+} from "asgard-tide";
 
 /**
  * TideCloak – Keycloak-like client with Tide extensions.
