@@ -51,7 +51,8 @@ const CONTENT_TYPE_JSON = 'application/json'
  * @property {string=} iframeOrigin
  */
 
-export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, TideMemory, BaseTideRequest, PolicySignRequest, Policy, PolicyParameters } from "heimdall-tide";
+export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, PolicySignRequest } from "heimdall-tide";
+export { Tools, Models } from "@tideorg/js";
 export default class TideCloak {
   /** @type {Pick<PromiseWithResolvers<boolean>, 'resolve' | 'reject'>[]} */
   #refreshQueue = []
