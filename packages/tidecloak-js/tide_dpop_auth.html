@@ -3,22 +3,41 @@
 <body>
     <script>
         const thisVersion = 1;
-        const dbname = undefined; // this value should be overwritten
 
+        const hexToStr = (hex) => {
+            if (!hex || hex.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(hex)) throw Error("Invalid hex string");
+            const bytes = new Uint8Array(hex.length / 2);
+            for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+            return new TextDecoder().decode(bytes);
+        };
 
+        const createDbName = async (issuer, clientId) => {
+            const encoder = new TextEncoder()
 
-        // need to make flow or something that generates this template file with the correct db name
-        // given tidecloakConfig (where iss and aud are listed)
+            // Hash issuer
+            const issuerData = encoder.encode(issuer)
+            const issuerHashBuffer = await crypto.subtle.digest('SHA-256', issuerData)
+            const issuerHashArray = new Uint8Array(issuerHashBuffer)
+            const issuerHash = Array.from(issuerHashArray.slice(0, 8))
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join('')
 
+            // Hash clientId to prevent special character issues and injection
+            const clientData = encoder.encode(clientId)
+            const clientHashBuffer = await crypto.subtle.digest('SHA-256', clientData)
+            const clientHashArray = new Uint8Array(clientHashBuffer)
+            const clientHash = Array.from(clientHashArray.slice(0, 8))
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join('')
 
-
-
-
-
-
-
+            return `dpop:${issuerHash}:${clientHash}`
+        }
 
         const version1Flow = async () => {
+            const paths = new URL(window.location.href).pathname.split("/");
+            const iss = hexToStr(paths[paths.indexOf("iss") + 1]); // https://abc.com/iss/issuerURLValue <- this will find the iss value in the path then get the next immediate value
+            const aud = hexToStr(paths[paths.indexOf("aud") + 1]);
+            const dbname = await createDbName(iss, aud);
             let dpopKey;
             try {
                 // Ensure we have access to IndexedDB + dpop key
@@ -37,10 +56,16 @@
                 db.close();
                 if (!dpopKey || !dpopKey.keys) throw Error("No DPoP key found in IndexedDB");
             } catch (ex) {
+                const isStorageBlocked = ex instanceof DOMException && (ex.name === "SecurityError" || ex.name === "UnknownError");
+                const detail = isStorageBlocked
+                    ? "Browser is blocking third-party storage. Please allow storage access for this site or disable strict tracking protection."
+                    : "Failed to access DPoP key from IndexedDB.";
                 window.parent.postMessage({
                     type: "error",
-                    message: "db failed"
+                    message: "db failed",
+                    detail: detail
                 }, openerOrigin);
+                document.body.textContent = detail;
                 throw ex;
             }
 
@@ -92,7 +117,7 @@
                         x: publicJwk.x,
                         y: publicJwk.y
                     }),
-                    signature: new Uint8Array(signature)
+                    signature: btoa(String.fromCharCode(...new Uint8Array(signature)))
                 }
             }, openerOrigin);
         }
@@ -111,14 +136,16 @@
         if (!openerOrigin) throw Error("No opener origin provided in url");
         openerOrigin = new URL(decodeURIComponent(openerOrigin)).origin;
 
-        // If the enclave version is higher or equal than this, communicate our our current version (we don't have the higher version)
-        if (Number(enclaveVersion) >= thisVersion) await latestFlow();
-        else {
-            // If the enclave version is lower than this, communicate at the enclave version
-            const flow = versionFlows.get(Number(enclaveVersion));
-            if (!flow) throw Error("Cannot find supported enclave version: " + enclaveVersion)
-            await flow();
-        }            
+        (async () => {
+            // If the enclave version is higher or equal than this, communicate our our current version (we don't have the higher version)
+            if (Number(enclaveVersion) >= thisVersion) await latestFlow();
+            else {
+                // If the enclave version is lower than this, communicate at the enclave version
+                const flow = versionFlows.get(Number(enclaveVersion));
+                if (!flow) throw Error("Cannot find supported enclave version: " + enclaveVersion)
+                await flow();
+            }
+        })();            
     </script>
 </body>
 
