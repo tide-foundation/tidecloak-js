@@ -49,6 +49,48 @@ const tidecloak = new TideCloak({
   homeOrkUrl: tcData['homeOrkUrl']
 });
 ```
+
+### Initializing with DPoP
+```javascript
+const authenticated = await tidecloak.init({
+  onLoad: "login-required",
+  checkLoginIframe: false,
+  useDPoP: { mode: "strict", alg: "EdDSA" },
+});
+```
+**Also ensure your resource server has DPoP JWT validation - this could be through using a package like Asgard or any other open sourced SDK**
+
+## DPoP Resource Server Setup
+Quick explainer on how to configure the hosting of tide_dpop_auth.html to ensure your resource server has full Tide DPoP protection
+
+#### 1. Know what your issuer and client (azp) values are
+Issuer will usually be a Tidecloak Realm URL such as "http://localhost:8080/realms/e756fd21-a055-4109-ba5d-afa536961ac7"
+
+Client will usually be a simple text like "myclient"
+
+#### 2. Convert your issue and client values into HEX format
+You can use a site such as https://codebeautify.org/string-hex-converter
+
+Exmaple from above would be:
+Issuer: 687474703a2f2f6c6f63616c686f73743a383038302f7265616c6d732f65373536666432312d613035352d343130392d626135642d616661353336393631616337
+Client: 6d79636c69656e74
+
+#### 3. Host tide_dpop_auth.html on your client server
+You MUST host tide_dpop_auth.html at this URL path on your resource server:
+`/tide_dpop/iss/{your issuer value in hex}/aud/{your client value in hex}/tide_dpop_auth.html`
+
+#### 4. Configure Response Headers for tide_dpop_auth.html
+There are 2 Response Headers you MUST add when executing a request for tide_dpop_auth.html
+1. Content-Security-Policy = default-src 'self'; script-src 'unsafe-inline'
+2. Allow-CSP-From = *
+
+#### 5. Set up correct authenticator flow on Tidecloak
+1. Login to Tidecloak
+2. Go to Authentication -> tidebrowser
+3. Delete the Cookie Authenticator
+4. Add Exection -> Search for Tide Cookie -> Add
+5. Ensure it is the first authenticator (above Identity Provider Redirector)
+
 ## Encryption
 ```javascript
 // tidecloak.encrypt returns string[] where the list are the encrypted strings
