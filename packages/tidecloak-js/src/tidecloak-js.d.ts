@@ -1,8 +1,12 @@
 import type {
   RequestEnclave as HeimdallRequestEnclave,
   ApprovalEnclave as HeimdallApprovalEnclave,
-  ApprovalEnclaveNew,
+  ApprovalEnclaveNew,  
 } from "heimdall-tide";
+import type {
+  Tools,
+  Models,
+} from "@tideorg/js";
 
 /**
  * TideCloak – Keycloak-like client with Tide extensions.
@@ -452,7 +456,7 @@ export const IAMService: IAMServiceInstance;
 // Tide / Heimdall re-exports
 export type RequestEnclave = HeimdallRequestEnclave;
 export type ApprovalEnclave = HeimdallApprovalEnclave;
-export { ApprovalEnclaveNew };
+export { ApprovalEnclaveNew, Tools, Models };
 
 // Admin API re-exports
 export {
@@ -460,8 +464,6 @@ export {
   AdminAPI as AdminAPIClass,
   type Role,
   type User,
-  type PolicyTemplate,
-  type TemplateParameter,
   type ChangeSet,
   type Policy,
   type AccessLog,
