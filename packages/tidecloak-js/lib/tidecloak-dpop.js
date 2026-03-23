@@ -508,6 +508,25 @@ export class DPoPSignatureProvider {
     const signature = await this.#sign(te.encode(unsignedToken), state.keys.privateKey);
     return `${unsignedToken}.${base64UrlEncodeBuffer(signature)}`
   }
+
+  /**
+   * Compute the SHA256 thumbprint of the DPoP Public Key
+   * @returns {string} Base64 URL Encoding of the thumbprint
+   */
+  async generateJWKThumbprint() {
+    const state = await this.#store.get() 
+    if(state === undefined) throw new Error('DPoP not initialized')
+    const exportedJwk = await crypto.subtle.exportKey("jwk", state.keys.publicKey);
+    // Note: `y` is undefined for EdDSA/OKP keys (RFC 8037) but present for EC keys.
+    // JSON.stringify omits undefined values, so this produces valid JWKs for both.
+    const jwk = {
+      crv: exportedJwk.crv,
+      kty: exportedJwk.kty,
+      x: exportedJwk.x,
+      y: exportedJwk.y
+    }
+    return base64UrlEncodeBuffer(await sha256Digest(JSON.stringify(jwk)));
+  }
 }
 
 /**

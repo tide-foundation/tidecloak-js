@@ -1376,6 +1376,11 @@ export default class TideCloak {
       }
     }
 
+    if (this.#dpopProvider) {
+      const thumbprint = await this.#dpopProvider.generateJWKThumbprint();
+      params.append('dpop_jkt', thumbprint);
+    }
+
     this.#callbackStorage.add(callbackState)
 
     return `${url}?${params.toString()}`
