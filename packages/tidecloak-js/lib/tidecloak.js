@@ -2062,6 +2062,17 @@ export default class TideCloak {
   }
 
   /**
+   * Request a Witness Signature from the Doken Owner
+   * @param {Uint8Array} dataToWitness 
+   * @returns 
+   */
+  async requestExecutorWitnessSignature (dataToWitness) {
+    await this.ensureTokenReady();
+    this.initRequestEnclave();
+    return this.requestEnclave.requestExecutorWitnessSignature(dataToWitness);
+  }
+
+  /**
    * Role-based decryption via Tide RequestEnclave.
    * @param {{ encrypted: string | Uint8Array, tags: string[] }[]} toDecrypt
    * @param {Uint8Array} decryption_policy If the data is protected by a decryption policy
