@@ -81,7 +81,7 @@ You MUST host tide_dpop_auth.html at this URL path on your resource server:
 
 #### 4. Configure Response Headers for tide_dpop_auth.html
 There are 2 Response Headers you MUST add when executing a request for tide_dpop_auth.html
-1. Content-Security-Policy = default-src 'self'; script-src 'unsafe-inline'
+1. Content-Security-Policy = default-src 'self'; script-src 'self' 'sha256-utc6UrebuHOyLd/2aiMXS/p1EDy9UZBDe/XEMKDw9Mc='; style-src 'self' 'sha256-1tYy8m3c1KLuGI2eID9TfLkc50Y+iSPJMpI7n/apN/w=' 'sha256-F7OJTdJYct4J+cQfuJUoDauitndqt8pAc8EbA8gwDPU='
 2. Allow-CSP-From = *
 
 #### 5. Set up correct authenticator flow on Tidecloak
