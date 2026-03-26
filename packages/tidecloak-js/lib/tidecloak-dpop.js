@@ -307,6 +307,8 @@ export class DPoPSignatureProvider {
   #serverAllowedAlgorithms;
   /** @type {Map<string, string>} Resource server nonces keyed by origin */
   #resourceNonces = new Map();
+  /** @type {(() => number)|undefined} */
+  #getTimeSkew;
   /**
    * @param {DPoPSignatureProviderOptions} options
    */
@@ -316,8 +318,10 @@ export class DPoPSignatureProvider {
       clientId,
       serverSupportedAlgorithms,
       requestedAlgorithm,
-      strictStorage = false
+      strictStorage = false,
+      getTimeSkew
     } = options;
+    this.#getTimeSkew = getTimeSkew;
 
     // Check for Web Crypto API availability
     if (typeof crypto === 'undefined' || !crypto.subtle) {
@@ -478,7 +482,7 @@ export class DPoPSignatureProvider {
             const urlObj = new URL(url);
             return urlObj.origin + urlObj.pathname;
         })(),
-        iat: Math.floor(Date.now() / 1000), // TODO - Get server time here instead of local time
+        iat: Math.floor(Date.now() / 1000) - (this.#getTimeSkew?.() ?? 0),
 
         ...(accessToken !== undefined && {
             ath: base64UrlEncodeBuffer(await sha256Digest(accessToken))

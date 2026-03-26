@@ -316,7 +316,8 @@ export default class TideCloak {
         issuerUrl: new URL(issuerUrl),
         clientId: this.clientId,
         serverSupportedAlgorithms: this.dpopSigningAlgValuesSupported,
-        requestedAlgorithm: !this.useDPoP.alg ? BrowserSignatureAlgs.ES256 : BrowserSignatureAlgs[this.useDPoP.alg]
+        requestedAlgorithm: !this.useDPoP.alg ? BrowserSignatureAlgs.ES256 : BrowserSignatureAlgs[this.useDPoP.alg],
+        getTimeSkew: () => this.timeSkew ?? 0 
       })
       await this.#dpopProvider.init()
       this.#logInfo('[TIDECLOAK] DPoP initialized')
