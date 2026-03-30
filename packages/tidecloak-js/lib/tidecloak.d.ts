@@ -906,4 +906,5 @@ export default TideCloak
  */
 export as namespace TideCloak
 
-export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, TideMemory, BaseTideRequest, PolicySignRequest, Policy, PolicyParameters } from "heimdall-tide"
+export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, PolicySignRequest } from "heimdall-tide"
+export { Tools, Models } from "@tideorg/js"

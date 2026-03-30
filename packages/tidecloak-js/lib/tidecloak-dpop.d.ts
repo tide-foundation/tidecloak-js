@@ -30,6 +30,8 @@ export interface DPoPSignatureProviderOptions {
   requestedAlgorithm?: BrowserSignatureAlgs
   /** If true, throws when IndexedDB unavailable instead of using memory fallback */
   strictStorage?: boolean
+  /** Returns the estimated time skew (browser - server) in seconds */
+  getTimeSkew?: () => number
 }
 
 /**
@@ -83,4 +85,10 @@ export class DPoPSignatureProvider {
    * @returns The DPoP proof JWT
    */
   generateDPoPProof(url: string, httpMethod: string, accessToken?: string, nonce?: string): Promise<string>
+
+  /**
+   * Generate a JWK Thumbprint of the DPoP public key (RFC 7638).
+   * @returns Base64url-encoded SHA-256 thumbprint
+   */
+  generateJWKThumbprint(): Promise<string>
 }
