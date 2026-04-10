@@ -2045,6 +2045,21 @@ class IAMService {
     }
   }
 
+  /**
+   * Sign a delegation request with the DPoP private key.
+   * Returns a compact JWT proving the user authorizes the delegation.
+   *
+   * @param {Record<string, unknown>} claims - The delegation request claims (aud, scope, iat, exp, jti, etc.)
+   * @returns {Promise<string>} Compact JWT string (header.payload.signature)
+   * @throws {Error} If DPoP is not initialized
+   */
+  async signDelegationRequest(claims) {
+    if (!this._dpopProvider) {
+      throw new Error('DPoP is not initialized. Ensure useDPoP is configured and initialization is complete.');
+    }
+    return await this._dpopProvider.signDelegationRequest(claims);
+  }
+
 }
 
 const IAMServiceInstance = new IAMService();

@@ -514,6 +514,35 @@ export class DPoPSignatureProvider {
   }
 
   /**
+   * Sign a delegation request as a JWT using the DPoP private key.
+   * The resulting JWT proves the user authorizes the delegation described by the claims.
+   *
+   * @param {Record<string, unknown>} claims - The delegation request claims (aud, scope, iat, exp, jti, etc.)
+   * @returns {Promise<string>} Compact JWT string (header.payload.signature)
+   */
+  async signDelegationRequest(claims) {
+    const state = await this.#store.get()
+    if (state === undefined) throw new Error('DPoP not initialized')
+
+    const exportedJwk = await crypto.subtle.exportKey("jwk", state.keys.publicKey);
+    const header = {
+      alg: this.#alg,
+      typ: "delegation+jwt",
+      jwk: {
+        crv: exportedJwk.crv,
+        kty: exportedJwk.kty,
+        x: exportedJwk.x,
+        y: exportedJwk.y
+      }
+    };
+
+    const te = new TextEncoder();
+    const unsignedToken = `${base64UrlEncodeBuffer(te.encode(JSON.stringify(header)))}.${base64UrlEncodeBuffer(te.encode(JSON.stringify(claims)))}`
+    const signature = await this.#sign(te.encode(unsignedToken), state.keys.privateKey);
+    return `${unsignedToken}.${base64UrlEncodeBuffer(signature)}`
+  }
+
+  /**
    * Compute the SHA256 thumbprint of the DPoP Public Key
    * @returns {string} Base64 URL Encoding of the thumbprint
    */
