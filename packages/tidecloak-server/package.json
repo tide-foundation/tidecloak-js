@@ -37,5 +37,8 @@
     "oidc",
     "oauth2",
     "authorization"
-  ]
+  ],
+  "devDependencies": {
+    "@types/node": "^25.6.0"
+  }
 }

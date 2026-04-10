@@ -7,6 +7,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "types": ["node"],
     "rootDir": "src",
     "jsx": "react-jsx",
     "moduleResolution": "bundler",
