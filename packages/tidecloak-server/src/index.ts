@@ -1,2 +1,2 @@
-export { TideDelegation } from './delegation'
-export type { DelegationConfig, DelegationRequest, PackedDelegationRequest, DelegationResult } from './delegation'
+export { TideDelegation } from './delegation.js'
+export type { DelegationConfig, DelegationRequest, PackedDelegationRequest, DelegationResult } from './delegation.js'

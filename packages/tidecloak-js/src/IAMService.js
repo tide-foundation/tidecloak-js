@@ -2054,10 +2054,24 @@ class IAMService {
    * @throws {Error} If DPoP is not initialized
    */
   async signDelegationRequest(claims) {
-    if (!this._dpopProvider) {
+    const dpop = this._dpopProvider || (this._tc && this._tc.getDpopProvider());
+    if (!dpop) {
       throw new Error('DPoP is not initialized. Ensure useDPoP is configured and initialization is complete.');
     }
-    return await this._dpopProvider.signDelegationRequest(claims);
+    return await dpop.signDelegationRequest(claims);
+  }
+
+  /**
+   * Sign a DPoP approval for a server's DPoP key using the Tide Session Key.
+   * This tells the ORK network to accept the server's key for token signing.
+   * @param {string} serverJkt - The JWK thumbprint of the server's DPoP key
+   * @returns {Promise<string>} Base64-encoded DPoP approval signature
+   */
+  async signDpopApproval(serverJkt) {
+    if (!this._tc) {
+      throw new Error('TideCloak not initialized');
+    }
+    return await this._tc.signDpopApproval(serverJkt);
   }
 
 }

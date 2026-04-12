@@ -5,6 +5,8 @@ export interface DelegationConfig {
   tidecloakUrl: string
   /** TideCloak realm name */
   realm: string
+  /** Client ID registered in TideCloak */
+  clientId: string
   /** Custom fetch implementation */
   fetch?: typeof globalThis.fetch
 }
@@ -45,33 +47,26 @@ export class TideDelegation {
   }
 
   /**
-   * Lazily generate an Ed25519 keypair on first use.
-   * Reused for the lifetime of the instance.
+   * Generate a fresh Ed25519 keypair for this delegation cycle.
    */
-  private ensureServerKey(): void {
-    if (this.serverKeyPair) return
-
+  private rotateServerKey(): void {
     const { publicKey, privateKey } = generateKeyPairSync('ed25519')
     this.serverKeyPair = { publicKey, privateKey }
 
-    // Export public key as JWK
     const jwk = publicKey.export({ format: 'jwk' })
     this.serverJwk = { kty: 'OKP', crv: 'Ed25519', x: jwk.x! }
 
-    // Compute JWK thumbprint (SHA-256 of canonical JSON per RFC 7638)
-    // For OKP key type, canonical members in lexicographic order: crv, kty, x
     const canonical = JSON.stringify({ crv: 'Ed25519', kty: 'OKP', x: jwk.x })
     this.serverJkt = createHash('sha256').update(canonical).digest('base64url')
   }
 
   /**
    * Pack a delegation request with server-side context.
+   * Generates a fresh DPoP keypair for this delegation cycle.
    * Returns an object for the browser to sign with its DPoP key.
-   * Includes cnf.jkt (server's key thumbprint) so the browser's signature
-   * binds the delegation to this specific server.
    */
   packRequest(request: DelegationRequest): PackedDelegationRequest {
-    this.ensureServerKey()
+    this.rotateServerKey()
     const now = Math.floor(Date.now() / 1000)
     return {
       payload: {
@@ -91,15 +86,23 @@ export class TideDelegation {
    * @param url - The target URL for the request
    * @returns A DPoP proof JWT string
    */
-  generateDpopProof(method: string, url: string): string {
-    this.ensureServerKey()
+  generateDpopProof(method: string, url: string, accessToken?: string): string {
+    if (!this.serverKeyPair) throw new Error('No server key — call packRequest() first')
 
     const header = { typ: 'dpop+jwt', alg: 'EdDSA', jwk: this.serverJwk }
-    const payload = {
+    // RFC 9449: htu must be the URL without query and fragment
+    const htu = new URL(url)
+    htu.search = ''
+    htu.hash = ''
+    const payload: Record<string, unknown> = {
       htm: method,
-      htu: url,
+      htu: htu.toString(),
       iat: Math.floor(Date.now() / 1000),
       jti: randomUUID(),
+    }
+    // RFC 9449 Section 4.2: ath (access token hash) required when DPoP proof accompanies an access token
+    if (accessToken) {
+      payload.ath = createHash('sha256').update(accessToken).digest('base64url')
     }
 
     const encodedHeader = Buffer.from(JSON.stringify(header)).toString('base64url')
@@ -123,21 +126,24 @@ export class TideDelegation {
   async exchange(params: {
     subjectToken: string
     delegationRequest: string
+    dpopApproval: string
   }): Promise<DelegationResult> {
     const fetchFn = this.config.fetch ?? globalThis.fetch
     const tokenEndpoint = `${this.config.tidecloakUrl.replace(/\/+$/, '')}/realms/${this.config.realm}/protocol/openid-connect/token`
 
     // Server generates its own DPoP proof for the token endpoint
-    const serverDpopProof = this.generateDpopProof('POST', tokenEndpoint)
-
     const body = new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+      client_id: this.config.clientId,
       subject_token: params.subjectToken,
       subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
       actor_token: params.delegationRequest,
       actor_token_type: 'urn:ietf:params:oauth:token-type:jwt',
+      dpop_approval: params.dpopApproval,
     })
 
+    // Send DPoP proof so the delegation token gets cnf.jkt binding
+    const serverDpopProof = this.generateDpopProof('POST', tokenEndpoint)
     const response = await fetchFn(tokenEndpoint, {
       method: 'POST',
       headers: {
