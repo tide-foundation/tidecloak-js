@@ -78,7 +78,10 @@ export class TideDelegation {
    * Returns an object for the browser to sign with its DPoP key.
    */
   packRequest(request: DelegationRequest): PackedDelegationRequest {
-    this.rotateServerKey()
+    // Only rotate if no key exists — concurrent 419s should reuse the same key
+    if (!this.serverKeyPair) {
+      this.rotateServerKey()
+    }
     const now = Math.floor(Date.now() / 1000)
     return {
       payload: {
@@ -185,6 +188,10 @@ export class TideDelegation {
     if (!cached) return null
     if (Date.now() > cached.expiresAt) {
       this.cache.delete(sessionId)
+      // Clear server key so next challenge generates a fresh one
+      this.serverKeyPair = null
+      this.serverJwk = null
+      this.serverJkt = null
       return null
     }
     return cached
@@ -309,8 +316,11 @@ export class TideDelegation {
         }
         next()
       } else {
-        // No delegation token — generate fresh key and send challenge
-        this.rotateServerKey()
+        // No delegation token — generate key if none exists, send challenge
+        // Don't rotate if a key already exists (concurrent 419s should use same key)
+        if (!this.serverKeyPair) {
+          this.rotateServerKey()
+        }
         const packed = this.packRequest({})
         res.status(419).json({
           needsDelegation: true,
