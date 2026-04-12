@@ -274,23 +274,37 @@ export class TideDelegation {
         // Delegation token is cached — attach helpers to req
         req.delegation = {
           token: cached.token,
-          fetch: async (url: string, method: string = 'GET') => {
+          fetch: async (url: string, options?: { method?: string; body?: any; formData?: any }) => {
+            const method = options?.method || 'GET'
             const proof = this.generateDpopProofWithKey(
               method, url, cached.token,
               cached.serverKeyPair, cached.serverJwk
             )
+            const headers: Record<string, string> = {
+              accept: 'application/json',
+              Authorization: `DPoP ${cached.token}`,
+              DPoP: proof,
+            }
+            let bodyPayload: any = undefined
+            if (options?.formData) {
+              // FormData — let fetch set Content-Type with boundary
+              bodyPayload = options.formData
+            } else if (options?.body !== undefined) {
+              headers['Content-Type'] = 'application/json'
+              bodyPayload = JSON.stringify(options.body)
+            }
             const response = await (this.config.fetch ?? globalThis.fetch)(url, {
               method,
-              headers: {
-                accept: 'application/json',
-                Authorization: `DPoP ${cached.token}`,
-                DPoP: proof,
-              },
+              headers,
+              ...(bodyPayload !== undefined ? { body: bodyPayload } : {}),
             })
             if (!response.ok) {
               throw new Error(`Admin API call failed: ${response.status} ${await response.text()}`)
             }
-            return response.json()
+            // Handle 204 No Content (DELETE responses)
+            if (response.status === 204) return undefined
+            const text = await response.text()
+            return text ? JSON.parse(text) : undefined
           },
         }
         next()
