@@ -54,9 +54,21 @@ export function createTideFetch (baseFetch, options = {}) {
       const dpopApproval = await IAMService.signDpopApproval(challenge.serverJkt)
 
       // POST delegation signatures to server
-      const delegationResponse = await baseFetch(delegationEndpoint, {
+      // Use the same auth headers as the original request
+      let absoluteEndpoint = delegationEndpoint
+      if (!delegationEndpoint.startsWith('http')) {
+        absoluteEndpoint = new URL(delegationEndpoint, window.location.origin).toString()
+      }
+      const token = await IAMService.getToken()
+      const delegationHeaders = {
+        'Content-Type': 'application/json',
+      }
+      if (token) {
+        delegationHeaders['Authorization'] = `Bearer ${token}`
+      }
+      const delegationResponse = await baseFetch(absoluteEndpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: delegationHeaders,
         body: JSON.stringify({
           signedDelegationRequest,
           dpopApproval
