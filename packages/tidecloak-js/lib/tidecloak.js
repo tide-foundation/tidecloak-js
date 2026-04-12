@@ -53,6 +53,7 @@ const CONTENT_TYPE_JSON = 'application/json'
 
 export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, PolicySignRequest } from "heimdall-tide";
 export { Tools, Models } from "@tideorg/js";
+export { createTideFetch } from "../src/createTideFetch.js";
 export default class TideCloak {
   /** @type {Pick<PromiseWithResolvers<boolean>, 'resolve' | 'reject'>[]} */
   #refreshQueue = []
