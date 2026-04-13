@@ -142,19 +142,15 @@ export class TideDelegation {
     const keyPath = join(dir, 'server.key')
     let pubB64url: string
     if (existsSync(keyPath)) {
-      // Reload existing key
-      const { createPrivateKey } = await import('node:crypto')
-      const existingKey = createPrivateKey({ key: readFileSync(keyPath), format: 'pem', type: 'pkcs8' })
-      const pubDer = existingKey.export({ format: 'der', type: 'spki' }) as unknown as Buffer
-      // Actually need the public key from private
-      const { createPublicKey } = await import('node:crypto')
-      const pub = createPublicKey(existingKey)
-      const pubDerBuf = pub.export({ format: 'der', type: 'spki' }) as unknown as Buffer
-      pubB64url = Buffer.from(pubDerBuf).subarray(-32).toString('base64url')
+      const { createPrivateKey, createPublicKey } = await import('node:crypto')
+      const privKey = createPrivateKey({ key: readFileSync(keyPath), format: 'pem', type: 'pkcs8' })
+      const pubKey = createPublicKey(privKey)
+      const pubDer = pubKey.export({ format: 'der', type: 'spki' })
+      pubB64url = Buffer.from(pubDer).subarray(-32).toString('base64url')
     } else {
       const { publicKey, privateKey } = generateKeyPairSync('ed25519')
       writeFileSync(keyPath, privateKey.export({ format: 'pem', type: 'pkcs8' }) as string)
-      const pubDer = publicKey.export({ format: 'der', type: 'spki' }) as unknown as Buffer
+      const pubDer = publicKey.export({ format: 'der', type: 'spki' })
       pubB64url = Buffer.from(pubDer).subarray(-32).toString('base64url')
     }
 
