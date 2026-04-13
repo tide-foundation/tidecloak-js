@@ -1,7 +1,7 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomUUID, generateKeyPairSync } from 'node:crypto'
 import { Agent } from 'node:https'
-import { readFileSync } from 'node:fs'
-import { X509Certificate } from 'node:crypto'
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 
 export interface ServerIdentity {
   /** SPIFFE ID */
@@ -105,6 +105,90 @@ export class TideDelegation {
           rejectUnauthorized: true,
         })
       }
+    }
+  }
+
+  /**
+   * Request a server identity certificate from TideCloak.
+   * Generates an Ed25519 keypair, submits the public key, and saves the private key.
+   * The cert must be approved by admin quorum in TideCloak before mTLS works.
+   *
+   * Call this once on server startup. If a cert already exists in the adapter JSON,
+   * this is a no-op.
+   *
+   * @param keyDir - Directory to store the private key and instance ID (default: same dir as adapter JSON)
+   */
+  async requestServerCert(keyDir?: string): Promise<void> {
+    // Already have a cert - nothing to do
+    if (this.serverIdentity?.certificate) {
+      console.log('[tide-server] Server certificate already present')
+      return
+    }
+
+    const dir = keyDir ?? (this.config.adapterJsonPath ? dirname(this.config.adapterJsonPath) : join(process.cwd(), 'data'))
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+
+    // Load or generate instance ID
+    const instanceIdPath = join(dir, 'server-instance-id')
+    let instanceId: string
+    try {
+      instanceId = readFileSync(instanceIdPath, 'utf-8').trim()
+    } catch {
+      instanceId = randomUUID()
+      writeFileSync(instanceIdPath, instanceId)
+    }
+
+    // Load existing key or generate new one
+    const keyPath = join(dir, 'server.key')
+    let pubB64url: string
+    if (existsSync(keyPath)) {
+      // Reload existing key
+      const { createPrivateKey } = await import('node:crypto')
+      const existingKey = createPrivateKey({ key: readFileSync(keyPath), format: 'pem', type: 'pkcs8' })
+      const pubDer = existingKey.export({ format: 'der', type: 'spki' }) as unknown as Buffer
+      // Actually need the public key from private
+      const { createPublicKey } = await import('node:crypto')
+      const pub = createPublicKey(existingKey)
+      const pubDerBuf = pub.export({ format: 'der', type: 'spki' }) as unknown as Buffer
+      pubB64url = Buffer.from(pubDerBuf).subarray(-32).toString('base64url')
+    } else {
+      const { publicKey, privateKey } = generateKeyPairSync('ed25519')
+      writeFileSync(keyPath, privateKey.export({ format: 'pem', type: 'pkcs8' }) as string)
+      const pubDer = publicKey.export({ format: 'der', type: 'spki' }) as unknown as Buffer
+      pubB64url = Buffer.from(pubDer).subarray(-32).toString('base64url')
+    }
+
+    // Submit cert request (public endpoint, no auth)
+    const fetchFn = this.config.fetch ?? globalThis.fetch
+    const requestUrl = `${this.config.tidecloakUrl.replace(/\/+$/, '')}/realms/${this.config.realm}/tide-server-identity/request`
+
+    console.log(`[tide-server] Requesting certificate for client=${this.config.clientId} instance=${instanceId}`)
+
+    try {
+      const response = await fetchFn(requestUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: this.config.clientId,
+          publicKey: pubB64url,
+          instanceId,
+          requestedLifetime: 86400,
+        }),
+      })
+
+      if (response.ok) {
+        const result = await response.json() as any
+        console.log(`[tide-server] Certificate request submitted (changeSetId: ${result.changeSetId})`)
+        console.log(`[tide-server] Approve in TideCloak Admin > Realm Settings > Server Certs`)
+        console.log(`[tide-server] Then re-export adapter JSON to include the signed certificate`)
+      } else if (response.status === 409) {
+        console.log('[tide-server] Certificate request already pending - approve in TideCloak Admin')
+      } else {
+        const err = await response.text()
+        console.warn(`[tide-server] Certificate request failed (${response.status}): ${err}`)
+      }
+    } catch (err) {
+      console.warn(`[tide-server] Could not reach TideCloak: ${(err as Error).message}`)
     }
   }
 
