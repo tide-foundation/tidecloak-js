@@ -30,6 +30,7 @@ export class KeyStore {
   private tableName: string
   private memoryStore = new Map<string, StoredKey>()
   private _isHardwareBacked = false
+  private _tpm: any = null
 
   constructor(config: KeyStoreConfig = {}) {
     this.mode = config.mode ?? 'memory'
@@ -41,11 +42,19 @@ export class KeyStore {
     }
 
     if (this.mode === 'tpm') {
-      // TPM support placeholder - falls back to db with a warning
-      // When @tidecloak/tpm native binding is available, this will
-      // generate keys inside the TPM and store encrypted blobs in db
-      console.warn('[KeyStore] TPM mode requested but native binding not available. Falling back to db mode.')
-      this.mode = 'db'
+      try {
+        const tpm = require('@tidecloak/tpm')
+        if (tpm.isAvailable() && tpm.supportsEd25519()) {
+          this._tpm = tpm
+          this._isHardwareBacked = true
+        } else {
+          console.warn('[KeyStore] TPM available but Ed25519 not supported. Falling back to db mode.')
+          this.mode = 'db'
+        }
+      } catch {
+        console.warn('[KeyStore] @tidecloak/tpm not installed. Falling back to db mode.')
+        this.mode = 'db'
+      }
     }
   }
 
@@ -53,6 +62,45 @@ export class KeyStore {
    * Generate a new Ed25519 keypair for a session.
    */
   async generate(sessionId: string): Promise<StoredKey> {
+    if (this._tpm) {
+      // TPM mode: key generated inside hardware, never extractable
+      const tpmKey = this._tpm.generateKey()
+      const x = tpmKey.publicKey.toString('base64url')
+      const serverJwk = { kty: 'OKP', crv: 'Ed25519', x }
+      const canonical = JSON.stringify({ crv: 'Ed25519', kty: 'OKP', x })
+      const jkt = createHash('sha256').update(canonical).digest('base64url')
+
+      // Create a pseudo-KeyObject for compatibility (signing goes through TPM)
+      const { createPublicKey } = await import('node:crypto')
+      const publicKey = createPublicKey({
+        key: Buffer.concat([
+          // Ed25519 SPKI prefix
+          Buffer.from('302a300506032b6570032100', 'hex'),
+          tpmKey.publicKey,
+        ]),
+        format: 'der',
+        type: 'spki',
+      })
+
+      const stored: StoredKey = {
+        sessionId,
+        publicKey,
+        privateKey: null as any, // Private key is inside TPM
+        jwk: serverJwk,
+        jkt,
+        createdAt: Date.now(),
+      }
+
+      // Store TPM blobs in DB for reload across restarts
+      if (this.db) {
+        await this.saveTpmToDb(sessionId, tpmKey, stored)
+      }
+      // Keep TPM handle in memory for signing
+      this.memoryStore.set(sessionId, { ...stored, _tpmHandle: tpmKey.handle } as any)
+
+      return stored
+    }
+
     const { publicKey, privateKey } = generateKeyPairSync('ed25519')
     const jwk = publicKey.export({ format: 'jwk' })
     const serverJwk = { kty: 'OKP', crv: 'Ed25519', x: jwk.x! }
@@ -104,6 +152,12 @@ export class KeyStore {
    * Sign data with a session's key.
    */
   async sign(sessionId: string, data: Buffer): Promise<Buffer> {
+    if (this._tpm) {
+      // TPM signing: data goes in, signature comes out. Key stays in hardware.
+      const cached = this.memoryStore.get(sessionId) as any
+      if (!cached?._tpmHandle) throw new Error(`No TPM handle for session ${sessionId}`)
+      return this._tpm.sign(cached._tpmHandle, data)
+    }
     const key = await this.load(sessionId)
     if (!key) throw new Error(`No key found for session ${sessionId}`)
     return sign(null, data, key.privateKey)
@@ -142,6 +196,24 @@ export class KeyStore {
     }
 
     return removed
+  }
+
+  // --- TPM + Database operations ---
+
+  private async saveTpmToDb(sessionId: string, tpmKey: any, stored: StoredKey): Promise<void> {
+    await this.db.query(
+      `INSERT INTO ${this.tableName} (session_id, public_key, private_key, jwk_x, jkt, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (session_id) DO UPDATE SET public_key = $2, private_key = $3, jwk_x = $4, jkt = $5, created_at = $6`,
+      [
+        sessionId,
+        tpmKey.publicArea.toString('base64'),   // TPM2B_PUBLIC serialized
+        tpmKey.privateBlob.toString('base64'),  // TPM-encrypted private blob
+        stored.jwk.x,
+        stored.jkt,
+        stored.createdAt,
+      ]
+    )
   }
 
   // --- Database operations ---
