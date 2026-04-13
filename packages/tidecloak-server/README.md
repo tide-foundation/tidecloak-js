@@ -220,9 +220,9 @@ delegation.requireDelegation({
 
 This is expected. The 419 is the delegation challenge - `createTideFetch` handles it automatically. If you see repeated 419s, check that `/api/delegation` is wired up correctly.
 
-**"No pending delegation challenge"**
+**"No pending delegation challenge for this session"**
 
-The server received a delegation POST but has no server key. This happens if the server restarted between the 419 and the delegation POST. The browser will retry automatically.
+The server received a delegation POST but has no pending key for this user's session. This happens if the server restarted between the 419 and the delegation POST, or if the pending key expired (60s timeout). The browser will retry automatically.
 
 **"Delegation exchange failed"**
 
