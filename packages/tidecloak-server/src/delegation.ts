@@ -36,6 +36,14 @@ export interface DelegationResult {
   issued_token_type: string
 }
 
+/** Per-session server key (pending exchange, not yet cached) */
+interface PendingKey {
+  keyPair: { publicKey: KeyObject; privateKey: KeyObject }
+  jwk: { kty: string; crv: string; x: string }
+  jkt: string
+  createdAt: number
+}
+
 /** Cached delegation token + key for a user session */
 interface DelegationCache {
   token: string
@@ -47,46 +55,68 @@ interface DelegationCache {
 
 export class TideDelegation {
   private config: DelegationConfig
-  private serverKeyPair: { publicKey: KeyObject; privateKey: KeyObject } | null = null
-  private serverJwk: { kty: string; crv: string; x: string } | null = null
-  private serverJkt: string | null = null
 
-  /** Per-user delegation token cache */
+  /** Per-session pending keys (between 419 and delegation POST) */
+  private pendingKeys = new Map<string, PendingKey>()
+
+  /** Per-session delegation token cache */
   private cache = new Map<string, DelegationCache>()
+
+  /** Max age for pending keys before cleanup (60s) */
+  private static PENDING_KEY_TTL = 60_000
 
   constructor(config: DelegationConfig) {
     this.config = config
   }
 
   /**
-   * Generate a fresh Ed25519 keypair for this delegation cycle.
+   * Generate a fresh Ed25519 keypair for a specific session.
    */
-  private rotateServerKey(): void {
+  private generateSessionKey(sessionId: string): PendingKey {
     const { publicKey, privateKey } = generateKeyPairSync('ed25519')
-    this.serverKeyPair = { publicKey, privateKey }
-
     const jwk = publicKey.export({ format: 'jwk' })
-    this.serverJwk = { kty: 'OKP', crv: 'Ed25519', x: jwk.x! }
-
+    const serverJwk = { kty: 'OKP', crv: 'Ed25519', x: jwk.x! }
     const canonical = JSON.stringify({ crv: 'Ed25519', kty: 'OKP', x: jwk.x })
-    this.serverJkt = createHash('sha256').update(canonical).digest('base64url')
+    const jkt = createHash('sha256').update(canonical).digest('base64url')
+
+    const pending: PendingKey = {
+      keyPair: { publicKey, privateKey },
+      jwk: serverJwk,
+      jkt,
+      createdAt: Date.now(),
+    }
+    this.pendingKeys.set(sessionId, pending)
+    this.cleanupStalePendingKeys()
+    return pending
   }
 
   /**
-   * Pack a delegation request with server-side context.
-   * Generates a fresh DPoP keypair for this delegation cycle.
+   * Remove pending keys older than PENDING_KEY_TTL.
+   */
+  private cleanupStalePendingKeys(): void {
+    const now = Date.now()
+    for (const [sid, pending] of this.pendingKeys) {
+      if (now - pending.createdAt > TideDelegation.PENDING_KEY_TTL) {
+        this.pendingKeys.delete(sid)
+      }
+    }
+  }
+
+  /**
+   * Pack a delegation request for a specific session.
    * Returns an object for the browser to sign with its DPoP key.
    */
-  packRequest(request: DelegationRequest): PackedDelegationRequest {
-    // Only rotate if no key exists — concurrent 419s should reuse the same key
-    if (!this.serverKeyPair) {
-      this.rotateServerKey()
+  packRequest(sessionId: string, request: DelegationRequest): PackedDelegationRequest {
+    // Reuse pending key if one exists for this session (concurrent 419s)
+    let pending = this.pendingKeys.get(sessionId)
+    if (!pending) {
+      pending = this.generateSessionKey(sessionId)
     }
     const now = Math.floor(Date.now() / 1000)
     return {
       payload: {
         ...request,
-        cnf: { jkt: this.serverJkt! },
+        cnf: { jkt: pending.jkt },
         iat: now,
         exp: now + 300,
         jti: randomUUID(),
@@ -95,17 +125,30 @@ export class TideDelegation {
   }
 
   /**
-   * Generate a DPoP proof JWT signed by the server's Ed25519 key.
-   *
-   * @param method - HTTP method (e.g. "POST", "GET")
-   * @param url - The target URL for the request
-   * @returns A DPoP proof JWT string
+   * Generate a DPoP proof JWT signed by a session's pending key.
    */
-  generateDpopProof(method: string, url: string, accessToken?: string): string {
-    if (!this.serverKeyPair) throw new Error('No server key — call packRequest() first')
+  private generateDpopProofForSession(
+    sessionId: string,
+    method: string,
+    url: string,
+    accessToken?: string
+  ): string {
+    const pending = this.pendingKeys.get(sessionId)
+    if (!pending) throw new Error('No pending key for session — call a delegated endpoint first')
+    return this.buildDpopProof(method, url, pending.keyPair, pending.jwk, accessToken)
+  }
 
-    const header = { typ: 'dpop+jwt', alg: 'EdDSA', jwk: this.serverJwk }
-    // RFC 9449: htu must be the URL without query and fragment
+  /**
+   * Generate a DPoP proof JWT signed by a specific key pair.
+   */
+  private buildDpopProof(
+    method: string,
+    url: string,
+    keyPair: { publicKey: KeyObject; privateKey: KeyObject },
+    jwk: { kty: string; crv: string; x: string },
+    accessToken?: string
+  ): string {
+    const header = { typ: 'dpop+jwt', alg: 'EdDSA', jwk }
     const htu = new URL(url)
     htu.search = ''
     htu.hash = ''
@@ -115,7 +158,6 @@ export class TideDelegation {
       iat: Math.floor(Date.now() / 1000),
       jti: randomUUID(),
     }
-    // RFC 9449 Section 4.2: ath (access token hash) required when DPoP proof accompanies an access token
     if (accessToken) {
       payload.ath = createHash('sha256').update(accessToken).digest('base64url')
     }
@@ -123,22 +165,14 @@ export class TideDelegation {
     const encodedHeader = Buffer.from(JSON.stringify(header)).toString('base64url')
     const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url')
     const signingInput = `${encodedHeader}.${encodedPayload}`
-
-    // Ed25519 uses sign(null, data, key) — no separate digest algorithm
-    const signature = sign(null, Buffer.from(signingInput), this.serverKeyPair!.privateKey)
-
+    const signature = sign(null, Buffer.from(signingInput), keyPair.privateKey)
     return `${signingInput}.${signature.toString('base64url')}`
   }
 
   /**
-   * Exchange artifacts for a delegation token.
-   * The server generates its own DPoP proof for the token endpoint.
-   *
-   * @param subjectToken - The user's access token (from browser)
-   * @param delegationRequest - The signed delegation request JWT (signed by browser's DPoP key)
-   * @returns The signed delegation token from TideCloak
+   * Exchange artifacts for a delegation token using a session's pending key.
    */
-  async exchange(params: {
+  async exchange(sessionId: string, params: {
     subjectToken: string
     delegationRequest: string
     dpopApproval: string
@@ -146,7 +180,6 @@ export class TideDelegation {
     const fetchFn = this.config.fetch ?? globalThis.fetch
     const tokenEndpoint = `${this.config.tidecloakUrl.replace(/\/+$/, '')}/realms/${this.config.realm}/protocol/openid-connect/token`
 
-    // Server generates its own DPoP proof for the token endpoint
     const body = new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
       client_id: this.config.clientId,
@@ -157,8 +190,7 @@ export class TideDelegation {
       dpop_approval: params.dpopApproval,
     })
 
-    // Send DPoP proof so the delegation token gets cnf.jkt binding
-    const serverDpopProof = this.generateDpopProof('POST', tokenEndpoint)
+    const serverDpopProof = this.generateDpopProofForSession(sessionId, 'POST', tokenEndpoint)
     const response = await fetchFn(tokenEndpoint, {
       method: 'POST',
       headers: {
@@ -188,10 +220,6 @@ export class TideDelegation {
     if (!cached) return null
     if (Date.now() > cached.expiresAt) {
       this.cache.delete(sessionId)
-      // Clear server key so next challenge generates a fresh one
-      this.serverKeyPair = null
-      this.serverJwk = null
-      this.serverJkt = null
       return null
     }
     return cached
@@ -219,26 +247,31 @@ export class TideDelegation {
           return
         }
 
-        if (!this.serverKeyPair) {
-          res.status(400).json({ error: 'No pending delegation challenge — call a delegated endpoint first' })
+        const sessionId = this.extractSessionId(subjectToken)
+        const pending = this.pendingKeys.get(sessionId)
+
+        if (!pending) {
+          res.status(400).json({ error: 'No pending delegation challenge for this session' })
           return
         }
 
-        const result = await this.exchange({
+        const result = await this.exchange(sessionId, {
           subjectToken,
           delegationRequest: signedDelegationRequest,
           dpopApproval,
         })
 
-        // Cache the delegation token with the current server key
-        const sessionId = this.extractSessionId(subjectToken)
+        // Cache the delegation token with this session's key
         this.cache.set(sessionId, {
           token: result.access_token,
-          serverKeyPair: this.serverKeyPair!,
-          serverJwk: this.serverJwk!,
-          serverJkt: this.serverJkt!,
-          expiresAt: Date.now() + (result.expires_in * 1000) - 5000, // 5s buffer
+          serverKeyPair: pending.keyPair,
+          serverJwk: pending.jwk,
+          serverJkt: pending.jkt,
+          expiresAt: Date.now() + (result.expires_in * 1000) - 5000,
         })
+
+        // Remove pending key — it's now in the cache
+        this.pendingKeys.delete(sessionId)
 
         res.json({ delegated: true })
       } catch (err: any) {
@@ -281,11 +314,10 @@ export class TideDelegation {
         // Delegation token is cached — attach helpers to req
         req.delegation = {
           token: cached.token,
-          fetch: async (url: string, options?: { method?: string; body?: any; formData?: any }) => {
-            const method = options?.method || 'GET'
-            const proof = this.generateDpopProofWithKey(
-              method, url, cached.token,
-              cached.serverKeyPair, cached.serverJwk
+          fetch: async (url: string, fetchOpts?: { method?: string; body?: any; formData?: any }) => {
+            const method = fetchOpts?.method || 'GET'
+            const proof = this.buildDpopProof(
+              method, url, cached.serverKeyPair, cached.serverJwk, cached.token
             )
             const headers: Record<string, string> = {
               accept: 'application/json',
@@ -293,12 +325,11 @@ export class TideDelegation {
               DPoP: proof,
             }
             let bodyPayload: any = undefined
-            if (options?.formData) {
-              // FormData — let fetch set Content-Type with boundary
-              bodyPayload = options.formData
-            } else if (options?.body !== undefined) {
+            if (fetchOpts?.formData) {
+              bodyPayload = fetchOpts.formData
+            } else if (fetchOpts?.body !== undefined) {
               headers['Content-Type'] = 'application/json'
-              bodyPayload = JSON.stringify(options.body)
+              bodyPayload = JSON.stringify(fetchOpts.body)
             }
             const response = await (this.config.fetch ?? globalThis.fetch)(url, {
               method,
@@ -308,7 +339,6 @@ export class TideDelegation {
             if (!response.ok) {
               throw new Error(`Admin API call failed: ${response.status} ${await response.text()}`)
             }
-            // Handle 204 No Content (DELETE responses)
             if (response.status === 204) return undefined
             const text = await response.text()
             return text ? JSON.parse(text) : undefined
@@ -316,50 +346,19 @@ export class TideDelegation {
         }
         next()
       } else {
-        // No delegation token — generate key if none exists, send challenge
-        // Don't rotate if a key already exists (concurrent 419s should use same key)
-        if (!this.serverKeyPair) {
-          this.rotateServerKey()
-        }
-        const packed = this.packRequest({
+        // No delegation token — generate per-session key, send challenge
+        const packed = this.packRequest(sessionId, {
           ...(options?.roles ? { requested_roles: options.roles } : {}),
         })
+        const pending = this.pendingKeys.get(sessionId)!
 
         res.status(419).json({
           needsDelegation: true,
           payload: packed.payload,
-          serverJkt: this.serverJkt,
+          serverJkt: pending.jkt,
         })
       }
     }
-  }
-
-  /**
-   * Generate a DPoP proof using a specific key pair (for cached delegation tokens).
-   */
-  private generateDpopProofWithKey(
-    method: string,
-    url: string,
-    accessToken: string,
-    keyPair: { publicKey: KeyObject; privateKey: KeyObject },
-    jwk: { kty: string; crv: string; x: string }
-  ): string {
-    const header = { typ: 'dpop+jwt', alg: 'EdDSA', jwk }
-    const htu = new URL(url)
-    htu.search = ''
-    htu.hash = ''
-    const payload: Record<string, unknown> = {
-      htm: method,
-      htu: htu.toString(),
-      iat: Math.floor(Date.now() / 1000),
-      jti: randomUUID(),
-      ath: createHash('sha256').update(accessToken).digest('base64url'),
-    }
-    const encodedHeader = Buffer.from(JSON.stringify(header)).toString('base64url')
-    const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url')
-    const signingInput = `${encodedHeader}.${encodedPayload}`
-    const signature = sign(null, Buffer.from(signingInput), keyPair.privateKey)
-    return `${signingInput}.${signature.toString('base64url')}`
   }
 
   /**
