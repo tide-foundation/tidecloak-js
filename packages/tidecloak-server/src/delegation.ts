@@ -266,7 +266,7 @@ export class TideDelegation {
    *   }
    * )
    */
-  requireDelegation() {
+  requireDelegation(options?: { roles?: { realm?: string[]; clients?: Record<string, string[]> } }) {
     return (req: any, res: any, next: any) => {
       const subjectToken = req.accessToken
       if (!subjectToken) {
@@ -321,7 +321,10 @@ export class TideDelegation {
         if (!this.serverKeyPair) {
           this.rotateServerKey()
         }
-        const packed = this.packRequest({})
+        const packed = this.packRequest({
+          ...(options?.roles ? { requested_roles: options.roles } : {}),
+        })
+
         res.status(419).json({
           needsDelegation: true,
           payload: packed.payload,
