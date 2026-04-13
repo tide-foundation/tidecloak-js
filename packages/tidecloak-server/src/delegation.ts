@@ -1,4 +1,17 @@
 import { generateKeyPairSync, createHash, randomUUID, sign, type KeyObject } from 'node:crypto'
+import { Agent } from 'node:https'
+import { readFileSync } from 'node:fs'
+
+export interface ServerIdentity {
+  /** SPIFFE ID */
+  spiffeId: string
+  /** PEM-encoded X.509 certificate (VVK-signed SVID) */
+  certificate: string
+  /** PEM-encoded trust bundle (VVK CA cert) */
+  trustBundle: string
+  /** Instance ID */
+  instanceId?: string
+}
 
 export interface DelegationConfig {
   /** TideCloak server URL */
@@ -9,6 +22,10 @@ export interface DelegationConfig {
   clientId: string
   /** Custom fetch implementation */
   fetch?: typeof globalThis.fetch
+  /** Server identity for mTLS (loaded from tidecloak.json serverIdentity) */
+  serverIdentity?: ServerIdentity
+  /** Path to tidecloak.json (auto-loads serverIdentity if present) */
+  adapterJsonPath?: string
 }
 
 export interface DelegationRequest {
@@ -65,8 +82,81 @@ export class TideDelegation {
   /** Max age for pending keys before cleanup (60s) */
   private static PENDING_KEY_TTL = 60_000
 
+  /** HTTPS agent for mTLS (if serverIdentity is configured) */
+  private mtlsAgent: Agent | null = null
+
+  /** Server identity (SPIFFE SVID) */
+  private serverIdentity: ServerIdentity | null = null
+
   constructor(config: DelegationConfig) {
     this.config = config
+
+    // Load server identity from adapter JSON if path provided
+    if (config.adapterJsonPath && !config.serverIdentity) {
+      try {
+        const adapterJson = JSON.parse(readFileSync(config.adapterJsonPath, 'utf-8'))
+        if (adapterJson.serverIdentity) {
+          config.serverIdentity = adapterJson.serverIdentity
+        }
+      } catch {
+        // Adapter JSON not found or no serverIdentity - mTLS disabled
+      }
+    }
+
+    // Configure mTLS agent if server identity is available
+    if (config.serverIdentity) {
+      this.serverIdentity = config.serverIdentity
+      this.mtlsAgent = new Agent({
+        cert: config.serverIdentity.certificate,
+        // Private key is not in the adapter JSON - it's in memory/db/TPM
+        // The key must be set separately via setMtlsKey()
+        ca: config.serverIdentity.trustBundle,
+        rejectUnauthorized: true,
+      })
+    }
+  }
+
+  /**
+   * Set the private key for mTLS. Call this after loading the key from KeyStore.
+   * The private key is NOT in the adapter JSON (it's in TPM/DB/memory).
+   */
+  setMtlsKey(privateKey: KeyObject): void {
+    if (!this.serverIdentity) {
+      throw new Error('No serverIdentity configured - cannot set mTLS key')
+    }
+    this.mtlsAgent = new Agent({
+      cert: this.serverIdentity.certificate,
+      key: privateKey.export({ format: 'pem', type: 'pkcs8' }) as string,
+      ca: this.serverIdentity.trustBundle,
+      rejectUnauthorized: true,
+    })
+  }
+
+  /**
+   * Check if mTLS is configured and ready.
+   */
+  isMtlsEnabled(): boolean {
+    return this.mtlsAgent !== null && this.serverIdentity !== null
+  }
+
+  /**
+   * Get the SPIFFE ID if server identity is configured.
+   */
+  getSpiffeId(): string | null {
+    return this.serverIdentity?.spiffeId ?? null
+  }
+
+  /**
+   * Fetch with mTLS agent if configured, otherwise plain fetch.
+   */
+  private async mtlsFetch(url: string, init: RequestInit): Promise<Response> {
+    const fetchFn = this.config.fetch ?? globalThis.fetch
+    if (this.mtlsAgent && url.startsWith('https://')) {
+      // Pass the agent for mTLS. Node.js undici uses 'dispatcher', node-fetch uses 'agent'.
+      // For maximum compatibility, try both.
+      return fetchFn(url, { ...init, ...(({ agent: this.mtlsAgent, dispatcher: undefined }) as any) })
+    }
+    return fetchFn(url, init)
   }
 
   /**
@@ -177,7 +267,6 @@ export class TideDelegation {
     delegationRequest: string
     dpopApproval: string
   }): Promise<DelegationResult> {
-    const fetchFn = this.config.fetch ?? globalThis.fetch
     const tokenEndpoint = `${this.config.tidecloakUrl.replace(/\/+$/, '')}/realms/${this.config.realm}/protocol/openid-connect/token`
 
     const body = new URLSearchParams({
@@ -191,7 +280,7 @@ export class TideDelegation {
     })
 
     const serverDpopProof = this.generateDpopProofForSession(sessionId, 'POST', tokenEndpoint)
-    const response = await fetchFn(tokenEndpoint, {
+    const response = await this.mtlsFetch(tokenEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -331,7 +420,7 @@ export class TideDelegation {
               headers['Content-Type'] = 'application/json'
               bodyPayload = JSON.stringify(fetchOpts.body)
             }
-            const response = await (this.config.fetch ?? globalThis.fetch)(url, {
+            const response = await this.mtlsFetch(url, {
               method,
               headers,
               ...(bodyPayload !== undefined ? { body: bodyPayload } : {}),
