@@ -3,30 +3,23 @@ import { IAMService } from './IAMService.js'
 /**
  * Create a delegation-aware fetch wrapper.
  *
- * Wraps an existing fetch function (typically appFetch/secureFetch) and
- * transparently handles 419 Delegation Required challenges from the server.
+ * Wraps an existing fetch function and transparently handles
+ * 419 Delegation Required challenges from the server.
  *
  * When the server returns 419:
- * 1. Browser signs the delegation request with DPoP key
- * 2. Browser signs the DPoP approval with Tide Session Key (via ORK enclave)
- * 3. Browser POSTs signatures to the delegation endpoint
- * 4. Browser retries the original request from scratch
+ * 1. Browser signs the delegation request with its DPoP key
+ *    (binds to the server's cert thumbprint via cnf.x5t#S256)
+ * 2. Browser POSTs the signed delegation request to the server
+ * 3. Server exchanges via mTLS with TideCloak (no DPoP approval needed)
+ * 4. Browser retries the original request
  *
- * The app developer sees a single fetch call that just works.
+ * No DPoP approval step - the server cert is admin-quorum-approved.
  *
- * @param {typeof fetch} baseFetch - The app's existing fetch (e.g., appFetch with DPoP)
+ * @param {typeof fetch} baseFetch - The app's existing fetch
  * @param {Object} [options]
  * @param {string} [options.delegationEndpoint='/api/delegation'] - Server endpoint for delegation
  * @param {number} [options.maxRetries=1] - Max delegation retries per request
  * @returns {typeof fetch} A fetch function that handles delegation transparently
- *
- * @example
- * import { createTideFetch } from '@tidecloak/js'
- * import { appFetch } from './appFetch'
- *
- * const tideFetch = createTideFetch(appFetch)
- * const response = await tideFetch('/api/admin/roles')
- * const data = await response.json()
  */
 export function createTideFetch (baseFetch, options = {}) {
   const delegationEndpoint = options.delegationEndpoint || '/api/delegation'
@@ -40,21 +33,18 @@ export function createTideFetch (baseFetch, options = {}) {
       try {
         challenge = await response.json()
       } catch {
-        return response // not a delegation challenge, return as-is
+        return response
       }
 
-      if (!challenge.needsDelegation || !challenge.payload || !challenge.serverJkt) {
-        return response // not a valid challenge
+      if (!challenge.needsDelegation || !challenge.payload || !challenge.certThumbprint) {
+        return response
       }
 
       // Sign delegation request with browser DPoP key
+      // The payload contains cnf.x5t#S256 = server cert thumbprint
       const signedDelegationRequest = await IAMService.signDelegationRequest(challenge.payload)
 
-      // Sign DPoP approval with Tide Session Key (via ORK enclave)
-      const dpopApproval = await IAMService.signDpopApproval(challenge.serverJkt)
-
-      // POST delegation signatures to server
-      // Use the same auth headers as the original request
+      // POST delegation signature to server (no DPoP approval needed)
       let absoluteEndpoint = delegationEndpoint
       if (!delegationEndpoint.startsWith('http')) {
         absoluteEndpoint = new URL(delegationEndpoint, window.location.origin).toString()
@@ -71,15 +61,14 @@ export function createTideFetch (baseFetch, options = {}) {
         headers: delegationHeaders,
         body: JSON.stringify({
           signedDelegationRequest,
-          dpopApproval
         })
       })
 
       if (!delegationResponse.ok) {
-        return delegationResponse // delegation failed, return the error
+        return delegationResponse
       }
 
-      // Retry the original request from scratch
+      // Retry the original request
       response = await baseFetch(url, init)
     }
 

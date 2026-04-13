@@ -1,6 +1,7 @@
-import { generateKeyPairSync, createHash, randomUUID, sign, type KeyObject } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { Agent } from 'node:https'
 import { readFileSync } from 'node:fs'
+import { X509Certificate } from 'node:crypto'
 
 export interface ServerIdentity {
   /** SPIFFE ID */
@@ -24,6 +25,8 @@ export interface DelegationConfig {
   fetch?: typeof globalThis.fetch
   /** Server identity for mTLS (loaded from tidecloak.json serverIdentity) */
   serverIdentity?: ServerIdentity
+  /** PEM-encoded private key for mTLS (from KeyStore or file) */
+  privateKey?: string
   /** Path to tidecloak.json (auto-loads serverIdentity if present) */
   adapterJsonPath?: string
 }
@@ -45,7 +48,7 @@ export interface PackedDelegationRequest {
 export interface DelegationResult {
   /** The signed delegation token */
   access_token: string
-  /** Token type (Bearer) */
+  /** Token type */
   token_type: string
   /** Seconds until expiry */
   expires_in: number
@@ -53,40 +56,26 @@ export interface DelegationResult {
   issued_token_type: string
 }
 
-/** Per-session server key (pending exchange, not yet cached) */
-interface PendingKey {
-  keyPair: { publicKey: KeyObject; privateKey: KeyObject }
-  jwk: { kty: string; crv: string; x: string }
-  jkt: string
-  createdAt: number
-}
-
-/** Cached delegation token + key for a user session */
+/** Cached delegation token for a user session */
 interface DelegationCache {
   token: string
-  serverKeyPair: { publicKey: KeyObject; privateKey: KeyObject }
-  serverJwk: { kty: string; crv: string; x: string }
-  serverJkt: string
   expiresAt: number
 }
 
 export class TideDelegation {
   private config: DelegationConfig
 
-  /** Per-session pending keys (between 419 and delegation POST) */
-  private pendingKeys = new Map<string, PendingKey>()
-
   /** Per-session delegation token cache */
   private cache = new Map<string, DelegationCache>()
 
-  /** Max age for pending keys before cleanup (60s) */
-  private static PENDING_KEY_TTL = 60_000
-
-  /** HTTPS agent for mTLS (if serverIdentity is configured) */
+  /** HTTPS agent for mTLS */
   private mtlsAgent: Agent | null = null
 
   /** Server identity (SPIFFE SVID) */
   private serverIdentity: ServerIdentity | null = null
+
+  /** SHA-256 thumbprint of the server cert (for cnf.x5t#S256 binding) */
+  private certThumbprint: string | null = null
 
   constructor(config: DelegationConfig) {
     this.config = config
@@ -99,34 +88,36 @@ export class TideDelegation {
           config.serverIdentity = adapterJson.serverIdentity
         }
       } catch {
-        // Adapter JSON not found or no serverIdentity - mTLS disabled
+        // Adapter JSON not found or no serverIdentity
       }
     }
 
-    // Configure mTLS agent if server identity is available
+    // Configure mTLS if server identity + key are available
     if (config.serverIdentity) {
       this.serverIdentity = config.serverIdentity
-      this.mtlsAgent = new Agent({
-        cert: config.serverIdentity.certificate,
-        // Private key is not in the adapter JSON - it's in memory/db/TPM
-        // The key must be set separately via setMtlsKey()
-        ca: config.serverIdentity.trustBundle,
-        rejectUnauthorized: true,
-      })
+      this.certThumbprint = this.computeCertThumbprint(config.serverIdentity.certificate)
+
+      if (config.privateKey) {
+        this.mtlsAgent = new Agent({
+          cert: config.serverIdentity.certificate,
+          key: config.privateKey,
+          ca: config.serverIdentity.trustBundle,
+          rejectUnauthorized: true,
+        })
+      }
     }
   }
 
   /**
    * Set the private key for mTLS. Call this after loading the key from KeyStore.
-   * The private key is NOT in the adapter JSON (it's in TPM/DB/memory).
    */
-  setMtlsKey(privateKey: KeyObject): void {
+  setMtlsKey(privateKeyPem: string): void {
     if (!this.serverIdentity) {
       throw new Error('No serverIdentity configured - cannot set mTLS key')
     }
     this.mtlsAgent = new Agent({
       cert: this.serverIdentity.certificate,
-      key: privateKey.export({ format: 'pem', type: 'pkcs8' }) as string,
+      key: privateKeyPem,
       ca: this.serverIdentity.trustBundle,
       rejectUnauthorized: true,
     })
@@ -136,14 +127,34 @@ export class TideDelegation {
    * Check if mTLS is configured and ready.
    */
   isMtlsEnabled(): boolean {
-    return this.mtlsAgent !== null && this.serverIdentity !== null
+    return this.mtlsAgent !== null && this.certThumbprint !== null
   }
 
   /**
-   * Get the SPIFFE ID if server identity is configured.
+   * Get the SPIFFE ID.
    */
   getSpiffeId(): string | null {
     return this.serverIdentity?.spiffeId ?? null
+  }
+
+  /**
+   * Get the cert thumbprint (cnf.x5t#S256).
+   */
+  getCertThumbprint(): string | null {
+    return this.certThumbprint
+  }
+
+  /**
+   * Compute SHA-256 thumbprint of a PEM certificate (RFC 8705 cnf.x5t#S256).
+   */
+  private computeCertThumbprint(certPem: string): string {
+    // Extract DER bytes from PEM
+    const b64 = certPem
+      .replace(/-----BEGIN CERTIFICATE-----/g, '')
+      .replace(/-----END CERTIFICATE-----/g, '')
+      .replace(/\s/g, '')
+    const derBytes = Buffer.from(b64, 'base64')
+    return createHash('sha256').update(derBytes).digest('base64url')
   }
 
   /**
@@ -152,61 +163,24 @@ export class TideDelegation {
   private async mtlsFetch(url: string, init: RequestInit): Promise<Response> {
     const fetchFn = this.config.fetch ?? globalThis.fetch
     if (this.mtlsAgent && url.startsWith('https://')) {
-      // Pass the agent for mTLS. Node.js undici uses 'dispatcher', node-fetch uses 'agent'.
-      // For maximum compatibility, try both.
-      return fetchFn(url, { ...init, ...(({ agent: this.mtlsAgent, dispatcher: undefined }) as any) })
+      return fetchFn(url, { ...init, ...(({ agent: this.mtlsAgent }) as any) })
     }
     return fetchFn(url, init)
   }
 
   /**
-   * Generate a fresh Ed25519 keypair for a specific session.
+   * Pack a delegation request with the server's cert thumbprint.
+   * The browser signs this to authorize this specific server.
    */
-  private generateSessionKey(sessionId: string): PendingKey {
-    const { publicKey, privateKey } = generateKeyPairSync('ed25519')
-    const jwk = publicKey.export({ format: 'jwk' })
-    const serverJwk = { kty: 'OKP', crv: 'Ed25519', x: jwk.x! }
-    const canonical = JSON.stringify({ crv: 'Ed25519', kty: 'OKP', x: jwk.x })
-    const jkt = createHash('sha256').update(canonical).digest('base64url')
-
-    const pending: PendingKey = {
-      keyPair: { publicKey, privateKey },
-      jwk: serverJwk,
-      jkt,
-      createdAt: Date.now(),
-    }
-    this.pendingKeys.set(sessionId, pending)
-    this.cleanupStalePendingKeys()
-    return pending
-  }
-
-  /**
-   * Remove pending keys older than PENDING_KEY_TTL.
-   */
-  private cleanupStalePendingKeys(): void {
-    const now = Date.now()
-    for (const [sid, pending] of this.pendingKeys) {
-      if (now - pending.createdAt > TideDelegation.PENDING_KEY_TTL) {
-        this.pendingKeys.delete(sid)
-      }
-    }
-  }
-
-  /**
-   * Pack a delegation request for a specific session.
-   * Returns an object for the browser to sign with its DPoP key.
-   */
-  packRequest(sessionId: string, request: DelegationRequest): PackedDelegationRequest {
-    // Reuse pending key if one exists for this session (concurrent 419s)
-    let pending = this.pendingKeys.get(sessionId)
-    if (!pending) {
-      pending = this.generateSessionKey(sessionId)
+  packRequest(request: DelegationRequest): PackedDelegationRequest {
+    if (!this.certThumbprint) {
+      throw new Error('No server certificate configured - cannot pack delegation request')
     }
     const now = Math.floor(Date.now() / 1000)
     return {
       payload: {
         ...request,
-        cnf: { jkt: pending.jkt },
+        cnf: { 'x5t#S256': this.certThumbprint },
         iat: now,
         exp: now + 300,
         jti: randomUUID(),
@@ -215,58 +189,17 @@ export class TideDelegation {
   }
 
   /**
-   * Generate a DPoP proof JWT signed by a session's pending key.
+   * Exchange artifacts for a delegation token via mTLS.
+   * No DPoP proof needed - mTLS authenticates the server.
    */
-  private generateDpopProofForSession(
-    sessionId: string,
-    method: string,
-    url: string,
-    accessToken?: string
-  ): string {
-    const pending = this.pendingKeys.get(sessionId)
-    if (!pending) throw new Error('No pending key for session — call a delegated endpoint first')
-    return this.buildDpopProof(method, url, pending.keyPair, pending.jwk, accessToken)
-  }
-
-  /**
-   * Generate a DPoP proof JWT signed by a specific key pair.
-   */
-  private buildDpopProof(
-    method: string,
-    url: string,
-    keyPair: { publicKey: KeyObject; privateKey: KeyObject },
-    jwk: { kty: string; crv: string; x: string },
-    accessToken?: string
-  ): string {
-    const header = { typ: 'dpop+jwt', alg: 'EdDSA', jwk }
-    const htu = new URL(url)
-    htu.search = ''
-    htu.hash = ''
-    const payload: Record<string, unknown> = {
-      htm: method,
-      htu: htu.toString(),
-      iat: Math.floor(Date.now() / 1000),
-      jti: randomUUID(),
-    }
-    if (accessToken) {
-      payload.ath = createHash('sha256').update(accessToken).digest('base64url')
-    }
-
-    const encodedHeader = Buffer.from(JSON.stringify(header)).toString('base64url')
-    const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url')
-    const signingInput = `${encodedHeader}.${encodedPayload}`
-    const signature = sign(null, Buffer.from(signingInput), keyPair.privateKey)
-    return `${signingInput}.${signature.toString('base64url')}`
-  }
-
-  /**
-   * Exchange artifacts for a delegation token using a session's pending key.
-   */
-  async exchange(sessionId: string, params: {
+  async exchange(params: {
     subjectToken: string
     delegationRequest: string
-    dpopApproval: string
   }): Promise<DelegationResult> {
+    if (!this.isMtlsEnabled()) {
+      throw new Error('mTLS not configured - set serverIdentity and privateKey')
+    }
+
     const tokenEndpoint = `${this.config.tidecloakUrl.replace(/\/+$/, '')}/realms/${this.config.realm}/protocol/openid-connect/token`
 
     const body = new URLSearchParams({
@@ -276,15 +209,13 @@ export class TideDelegation {
       subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
       actor_token: params.delegationRequest,
       actor_token_type: 'urn:ietf:params:oauth:token-type:jwt',
-      dpop_approval: params.dpopApproval,
     })
 
-    const serverDpopProof = this.generateDpopProofForSession(sessionId, 'POST', tokenEndpoint)
+    // mTLS handles server authentication - no DPoP header needed
     const response = await this.mtlsFetch(tokenEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'DPoP': serverDpopProof,
       },
       body,
     })
@@ -317,10 +248,10 @@ export class TideDelegation {
   /**
    * Express middleware: handles POST /api/delegation
    *
-   * Receives signed delegation request + DPoP approval from the browser,
-   * exchanges for a delegation token, and caches it.
+   * Receives signed delegation request from the browser,
+   * exchanges for a delegation token via mTLS, and caches it.
    *
-   * Expects req.accessToken (the user's subject token) from auth middleware.
+   * No DPoP approval needed - server cert is already admin-quorum-approved.
    *
    * @example
    * app.post('/api/delegation', authenticate, delegation.handleDelegation())
@@ -328,39 +259,25 @@ export class TideDelegation {
   handleDelegation() {
     return async (req: any, res: any) => {
       try {
-        const { signedDelegationRequest, dpopApproval } = req.body
+        const { signedDelegationRequest } = req.body
         const subjectToken = req.accessToken
 
-        if (!signedDelegationRequest || !dpopApproval || !subjectToken) {
-          res.status(400).json({ error: 'Missing signedDelegationRequest, dpopApproval, or access token' })
+        if (!signedDelegationRequest || !subjectToken) {
+          res.status(400).json({ error: 'Missing signedDelegationRequest or access token' })
           return
         }
 
-        const sessionId = this.extractSessionId(subjectToken)
-        const pending = this.pendingKeys.get(sessionId)
-
-        if (!pending) {
-          res.status(400).json({ error: 'No pending delegation challenge for this session' })
-          return
-        }
-
-        const result = await this.exchange(sessionId, {
+        const result = await this.exchange({
           subjectToken,
           delegationRequest: signedDelegationRequest,
-          dpopApproval,
         })
 
-        // Cache the delegation token with this session's key
+        // Cache the delegation token
+        const sessionId = this.extractSessionId(subjectToken)
         this.cache.set(sessionId, {
           token: result.access_token,
-          serverKeyPair: pending.keyPair,
-          serverJwk: pending.jwk,
-          serverJkt: pending.jkt,
           expiresAt: Date.now() + (result.expires_in * 1000) - 5000,
         })
-
-        // Remove pending key — it's now in the cache
-        this.pendingKeys.delete(sessionId)
 
         res.json({ delegated: true })
       } catch (err: any) {
@@ -374,9 +291,9 @@ export class TideDelegation {
    *
    * If a valid cached delegation token exists for the user, attaches
    * req.delegation with a fetch helper. If not, sends a 419 challenge
-   * with a packed delegation request for the browser to sign.
+   * with the server's cert thumbprint for the browser to sign.
    *
-   * Expects req.accessToken from auth middleware.
+   * No DPoP proofs on admin API calls - mTLS authenticates the server.
    *
    * @example
    * app.get('/api/admin/roles',
@@ -400,18 +317,14 @@ export class TideDelegation {
       const cached = this.getCached(sessionId)
 
       if (cached) {
-        // Delegation token is cached — attach helpers to req
+        // Delegation token is cached - attach helpers
         req.delegation = {
           token: cached.token,
           fetch: async (url: string, fetchOpts?: { method?: string; body?: any; formData?: any }) => {
             const method = fetchOpts?.method || 'GET'
-            const proof = this.buildDpopProof(
-              method, url, cached.serverKeyPair, cached.serverJwk, cached.token
-            )
             const headers: Record<string, string> = {
               accept: 'application/json',
-              Authorization: `DPoP ${cached.token}`,
-              DPoP: proof,
+              Authorization: `Bearer ${cached.token}`,
             }
             let bodyPayload: any = undefined
             if (fetchOpts?.formData) {
@@ -420,6 +333,7 @@ export class TideDelegation {
               headers['Content-Type'] = 'application/json'
               bodyPayload = JSON.stringify(fetchOpts.body)
             }
+            // mTLS handles proof-of-possession - no DPoP proof needed
             const response = await this.mtlsFetch(url, {
               method,
               headers,
@@ -435,16 +349,19 @@ export class TideDelegation {
         }
         next()
       } else {
-        // No delegation token — generate per-session key, send challenge
-        const packed = this.packRequest(sessionId, {
+        // No delegation token - send challenge with cert thumbprint
+        if (!this.certThumbprint) {
+          res.status(500).json({ error: 'Server certificate not configured' })
+          return
+        }
+        const packed = this.packRequest({
           ...(options?.roles ? { requested_roles: options.roles } : {}),
         })
-        const pending = this.pendingKeys.get(sessionId)!
 
         res.status(419).json({
           needsDelegation: true,
           payload: packed.payload,
-          serverJkt: pending.jkt,
+          certThumbprint: this.certThumbprint,
         })
       }
     }
