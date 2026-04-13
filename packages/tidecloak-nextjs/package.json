@@ -51,7 +51,6 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@tidecloak/dpop-server": "file:../tidecloak-dpop-server",
     "@tidecloak/react": "^0.13.11",
     "@tidecloak/verify": "^0.13.11"
   },
