@@ -109,6 +109,116 @@ export class TideDelegation {
   }
 
   /**
+   * Initialize the delegation system with vault-backed key management.
+   *
+   * On first run: generates mTLS key, encrypts with VVK via Tide Vault, saves blob.
+   * On restart: loads blob, decrypts via Tide Vault, configures mTLS.
+   * The plaintext private key only exists in memory while the process runs.
+   *
+   * @param doken - Server's doken for vault authentication
+   * @param keyDir - Directory to store encrypted key blob
+   */
+  async init(doken?: string, keyDir?: string): Promise<void> {
+    const dir = keyDir ?? (this.config.adapterJsonPath ? dirname(this.config.adapterJsonPath) : join(process.cwd(), 'data'))
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+
+    const blobPath = join(dir, 'server-key.vault')
+    const vaultUrl = `${this.config.tidecloakUrl.replace(/\/+$/, '')}/realms/${this.config.realm}/tide-vault`
+
+    // Already have mTLS configured (key was passed directly)
+    if (this.isMtlsEnabled()) {
+      console.log('[tide-vault] mTLS already configured')
+      return
+    }
+
+    // Check if we have an encrypted blob
+    if (existsSync(blobPath)) {
+      // Decrypt the key from vault
+      console.log('[tide-vault] Decrypting mTLS key from vault...')
+      try {
+        const blob = readFileSync(blobPath, 'utf-8')
+        const fetchFn = this.config.fetch ?? globalThis.fetch
+        const response = await fetchFn(`${vaultUrl}/decrypt`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ encrypted: blob, doken: doken ?? '' }),
+        })
+
+        if (!response.ok) {
+          const err = await response.text()
+          console.warn(`[tide-vault] Decrypt failed (${response.status}): ${err}`)
+          return
+        }
+
+        const result = await response.json() as any
+        const privateKeyPem = result.data
+
+        // Configure mTLS with decrypted key
+        this.setMtlsKey(privateKeyPem)
+        console.log('[tide-vault] mTLS key decrypted and loaded')
+      } catch (err) {
+        console.warn(`[tide-vault] Could not decrypt key: ${(err as Error).message}`)
+      }
+      return
+    }
+
+    // No blob - generate new key, encrypt with vault, save
+    console.log('[tide-vault] Generating new mTLS key...')
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519')
+    const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }) as string
+
+    // Encrypt with VVK via Tide Vault
+    try {
+      const fetchFn = this.config.fetch ?? globalThis.fetch
+      const response = await fetchFn(`${vaultUrl}/encrypt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: privateKeyPem, doken: doken ?? '' }),
+      })
+
+      if (!response.ok) {
+        const err = await response.text()
+        console.warn(`[tide-vault] Encrypt failed (${response.status}): ${err}`)
+        // Fall back to saving raw key
+        writeFileSync(join(dir, 'server.key'), privateKeyPem)
+        console.warn('[tide-vault] Saved raw key as fallback (vault unavailable)')
+      } else {
+        const result = await response.json() as any
+        writeFileSync(blobPath, result.encrypted)
+        console.log('[tide-vault] Key encrypted and saved to vault blob')
+      }
+    } catch (err) {
+      console.warn(`[tide-vault] Vault unavailable: ${(err as Error).message}`)
+      writeFileSync(join(dir, 'server.key'), privateKeyPem)
+      console.warn('[tide-vault] Saved raw key as fallback')
+    }
+
+    // Configure mTLS with the key (still in memory)
+    if (this.serverIdentity) {
+      this.setMtlsKey(privateKeyPem)
+    }
+
+    // Save public key for cert request
+    const pubDer = publicKey.export({ format: 'der', type: 'spki' })
+    const pubB64url = Buffer.from(pubDer).subarray(-32).toString('base64url')
+
+    // Save instance ID
+    const instanceIdPath = join(dir, 'server-instance-id')
+    let instanceId: string
+    try {
+      instanceId = readFileSync(instanceIdPath, 'utf-8').trim()
+    } catch {
+      instanceId = randomUUID()
+      writeFileSync(instanceIdPath, instanceId)
+    }
+
+    // Request cert if not already present
+    if (!this.serverIdentity?.certificate) {
+      await this.requestServerCert(dir)
+    }
+  }
+
+  /**
    * Request a server identity certificate from TideCloak.
    * Generates an Ed25519 keypair, submits the public key, and saves the private key.
    * The cert must be approved by admin quorum in TideCloak before mTLS works.
@@ -351,6 +461,9 @@ export class TideDelegation {
           subjectToken,
           delegationRequest: signedDelegationRequest,
         })
+
+        // Log the full delegation token
+        console.log('[delegation] Token:', result.access_token)
 
         // Cache the delegation token
         const sessionId = this.extractSessionId(subjectToken)
