@@ -6,7 +6,7 @@ For apps where your backend needs to call TideCloak's admin API on behalf of aut
 
 ## What You'll Build
 
-User logs in normally via front-channel. When your server needs to make admin calls (manage users, roles, etc.), it can't use the user's token — it's DPoP-bound to the browser's key. Instead, the browser authorizes your server's ephemeral key, TideCloak issues a delegation token bound to that key, and your server uses it. All of this happens automatically via `createTideFetch`.
+User logs in normally via front-channel. When your server needs to make admin calls (manage users, roles, etc.), it can't use the user's token - it's DPoP-bound to the browser's key. Instead, the browser authorizes your server's ephemeral key, TideCloak issues a delegation token bound to that key, and your server uses it. All of this happens automatically via `createTideFetch`.
 
 ---
 
@@ -32,7 +32,7 @@ npm install @tidecloak/server    # Server-side
 ```js
 import { createTideFetch } from '@tidecloak/js';
 
-// Wrap your app's fetch — delegation is handled automatically
+// Wrap your app's fetch - delegation is handled automatically
 const appFetch = createTideFetch(window.fetch);
 
 // Use it for any server call that might need delegation
@@ -40,7 +40,7 @@ const users = await appFetch('/api/admin/users');
 const roles = await appFetch('/api/admin/roles');
 ```
 
-`createTideFetch` intercepts 419 responses, signs the delegation request with the browser's DPoP key, gets a DPoP approval from the ORK enclave, and retries — all invisible to your code.
+`createTideFetch` intercepts 419 responses, signs the delegation request with the browser's DPoP key, gets a DPoP approval from the ORK enclave, and retries - all invisible to your code.
 
 ### 3. Server-Side: Set Up Delegation
 
@@ -104,7 +104,7 @@ The browser sees: request → response. The 419 interrupt is handled by `createT
 Limit what roles appear in the delegation token:
 
 ```js
-// Only "read" role for my-app client — no realm roles, no other clients
+// Only "read" role for my-app client - no realm roles, no other clients
 delegation.requireDelegation({
   roles: {
     clients: { 'my-app': ['read'] }
@@ -123,7 +123,7 @@ delegation.requireDelegation({
 })
 ```
 
-If `roles` is omitted, the delegation token gets all of the user's roles. Once `roles` is specified, only what's listed is included — everything else is stripped.
+If `roles` is omitted, the delegation token gets all of the user's roles. Once `roles` is specified, only what's listed is included - everything else is stripped.
 
 ---
 
@@ -150,7 +150,7 @@ const appFetch = createTideFetch(baseFetch, {
 | Where are admin calls made? | Browser (direct to TideCloak) | Server (via delegation token) |
 | Token exposure | Browser has full token | Browser has user token, server gets scoped delegation token |
 | DPoP binding | Browser key only | Browser key + server key (two-hop chain of trust) |
-| Role scoping | No | Yes — server can request subset of user's roles |
+| Role scoping | No | Yes - server can request subset of user's roles |
 | Best for | Simple apps, client-side encryption | Admin operations, role management, server-side API calls |
 
 ---
