@@ -307,6 +307,8 @@ export class DPoPSignatureProvider {
   #serverAllowedAlgorithms;
   /** @type {Map<string, string>} Resource server nonces keyed by origin */
   #resourceNonces = new Map();
+  /** @type {(() => number)|undefined} */
+  #getTimeSkew;
   /**
    * @param {DPoPSignatureProviderOptions} options
    */
@@ -316,8 +318,10 @@ export class DPoPSignatureProvider {
       clientId,
       serverSupportedAlgorithms,
       requestedAlgorithm,
-      strictStorage = false
+      strictStorage = false,
+      getTimeSkew
     } = options;
+    this.#getTimeSkew = getTimeSkew;
 
     // Check for Web Crypto API availability
     if (typeof crypto === 'undefined' || !crypto.subtle) {
@@ -478,7 +482,7 @@ export class DPoPSignatureProvider {
             const urlObj = new URL(url);
             return urlObj.origin + urlObj.pathname;
         })(),
-        iat: Math.floor(Date.now() / 1000), // TODO - Get server time here instead of local time
+        iat: Math.floor(Date.now() / 1000) - (this.#getTimeSkew?.() ?? 0),
 
         ...(accessToken !== undefined && {
             ath: base64UrlEncodeBuffer(await sha256Digest(accessToken))
@@ -505,6 +509,35 @@ export class DPoPSignatureProvider {
 
     const te = new TextEncoder();
     const unsignedToken = `${base64UrlEncodeBuffer(te.encode(JSON.stringify(header)))}.${base64UrlEncodeBuffer(te.encode(JSON.stringify(payload)))}`
+    const signature = await this.#sign(te.encode(unsignedToken), state.keys.privateKey);
+    return `${unsignedToken}.${base64UrlEncodeBuffer(signature)}`
+  }
+
+  /**
+   * Sign a delegation request as a JWT using the DPoP private key.
+   * The resulting JWT proves the user authorizes the delegation described by the claims.
+   *
+   * @param {Record<string, unknown>} claims - The delegation request claims (aud, scope, iat, exp, jti, etc.)
+   * @returns {Promise<string>} Compact JWT string (header.payload.signature)
+   */
+  async signDelegationRequest(claims) {
+    const state = await this.#store.get()
+    if (state === undefined) throw new Error('DPoP not initialized')
+
+    const exportedJwk = await crypto.subtle.exportKey("jwk", state.keys.publicKey);
+    const header = {
+      alg: this.#alg,
+      typ: "delegation+jwt",
+      jwk: {
+        crv: exportedJwk.crv,
+        kty: exportedJwk.kty,
+        x: exportedJwk.x,
+        y: exportedJwk.y
+      }
+    };
+
+    const te = new TextEncoder();
+    const unsignedToken = `${base64UrlEncodeBuffer(te.encode(JSON.stringify(header)))}.${base64UrlEncodeBuffer(te.encode(JSON.stringify(claims)))}`
     const signature = await this.#sign(te.encode(unsignedToken), state.keys.privateKey);
     return `${unsignedToken}.${base64UrlEncodeBuffer(signature)}`
   }
