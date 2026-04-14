@@ -285,14 +285,15 @@ export class TideDelegation {
     const fetchFn = this.config.fetch ?? globalThis.fetch
     const requestUrl = `${this.config.tidecloakUrl.replace(/\/+$/, '')}/realms/${this.config.realm}/tide-server-identity/request`
 
-    console.log(`[tide-server] Requesting certificate for client=${this.config.clientId} instance=${instanceId}`)
+    const effectiveClientId = this.config.serverClientId ?? this.config.clientId
+    console.log(`[tide-server] Requesting certificate for client=${effectiveClientId} instance=${instanceId}`)
 
     try {
       const response = await fetchFn(requestUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clientId: this.config.clientId,
+          clientId: effectiveClientId,
           publicKey: pubB64url,
           instanceId,
           requestedLifetime: 86400,
