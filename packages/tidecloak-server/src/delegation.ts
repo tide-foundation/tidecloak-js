@@ -19,8 +19,10 @@ export interface DelegationConfig {
   tidecloakUrl: string
   /** TideCloak realm name */
   realm: string
-  /** Client ID registered in TideCloak */
+  /** Client ID registered in TideCloak (public, browser auth) */
   clientId: string
+  /** Server client ID for token exchange (confidential, mTLS auth) */
+  serverClientId?: string
   /** Custom fetch implementation */
   fetch?: typeof globalThis.fetch
   /** Server identity for mTLS (loaded from tidecloak.json serverIdentity) */
@@ -409,7 +411,7 @@ export class TideDelegation {
 
     const body = new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
-      client_id: this.config.clientId,
+      client_id: this.config.serverClientId ?? this.config.clientId,
       subject_token: params.subjectToken,
       subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
       actor_token: params.delegationRequest,
