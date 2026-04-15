@@ -285,7 +285,11 @@ export class TideDelegation {
     const fetchFn = this.config.fetch ?? globalThis.fetch
     const requestUrl = `${this.config.tidecloakUrl.replace(/\/+$/, '')}/realms/${this.config.realm}/tide-server-identity/request`
 
-    const effectiveClientId = this.config.serverClientId ?? this.config.clientId
+    if (!this.config.serverClientId) {
+      console.warn('[tide-server] No serverClientId configured (missing serverResource in adapter JSON). Skipping cert request.')
+      return
+    }
+    const effectiveClientId = this.config.serverClientId
     console.log(`[tide-server] Requesting certificate for client=${effectiveClientId} instance=${instanceId}`)
 
     try {
