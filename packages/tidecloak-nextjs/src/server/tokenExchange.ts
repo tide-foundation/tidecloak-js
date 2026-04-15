@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getDpopProof } from '@tidecloak/dpop-server'
 
 /**
  * Token exchange configuration for hybrid mode
@@ -12,6 +13,10 @@ export interface TokenExchangeConfig {
   clientId: string
   /** Client secret (for confidential clients) */
   clientSecret?: string
+  /** Enable DPoP (Demonstrating Proof-of-Possession) token binding */
+  dpop?: boolean
+  /** User session ID for DPoP proof authentication */
+  sessionId?: string
 }
 
 /**
@@ -85,6 +90,9 @@ export async function exchangeCodeForTokens(
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' }
 
+    if (config.dpop) {
+      headers['DPoP'] = await getDpopProof(config.authServerUrl, config.realm, 'POST', tokenEndpoint, { sessionId: config.sessionId })
+    }
 
     const response = await fetch(tokenEndpoint, {
       method: 'POST',
@@ -141,6 +149,9 @@ export async function refreshAccessToken(
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' }
 
+    if (config.dpop) {
+      headers['DPoP'] = await getDpopProof(config.authServerUrl, config.realm, 'POST', tokenEndpoint, { sessionId: config.sessionId })
+    }
 
     const response = await fetch(tokenEndpoint, {
       method: 'POST',

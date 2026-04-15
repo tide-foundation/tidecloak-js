@@ -40,36 +40,41 @@ export function createTideFetch (baseFetch, options = {}) {
         return response
       }
 
-      // Sign delegation request with browser DPoP key
-      // The payload contains cnf.x5t#S256 = server cert thumbprint
-      const signedDelegationRequest = await IAMService.signDelegationRequest(challenge.payload)
+      try {
+        // Sign delegation request with browser DPoP key
+        const signedDelegationRequest = await IAMService.signDelegationRequest(challenge.payload)
 
-      // POST delegation signature to server (no DPoP approval needed)
-      let absoluteEndpoint = delegationEndpoint
-      if (!delegationEndpoint.startsWith('http')) {
-        absoluteEndpoint = new URL(delegationEndpoint, window.location.origin).toString()
-      }
-      const token = await IAMService.getToken()
-      const delegationHeaders = {
-        'Content-Type': 'application/json',
-      }
-      if (token) {
-        delegationHeaders['Authorization'] = `Bearer ${token}`
-      }
-      const delegationResponse = await baseFetch(absoluteEndpoint, {
-        method: 'POST',
-        headers: delegationHeaders,
-        body: JSON.stringify({
-          signedDelegationRequest,
+        // POST delegation signature to server
+        let absoluteEndpoint = delegationEndpoint
+        if (!delegationEndpoint.startsWith('http')) {
+          absoluteEndpoint = new URL(delegationEndpoint, window.location.origin).toString()
+        }
+        const token = await IAMService.getToken()
+        const delegationHeaders = {
+          'Content-Type': 'application/json',
+        }
+        if (token) {
+          delegationHeaders['Authorization'] = `Bearer ${token}`
+        }
+        const delegationResponse = await baseFetch(absoluteEndpoint, {
+          method: 'POST',
+          headers: delegationHeaders,
+          body: JSON.stringify({
+            signedDelegationRequest,
+          })
         })
-      })
 
-      if (!delegationResponse.ok) {
-        return delegationResponse
+        if (!delegationResponse.ok) {
+          console.error('[createTideFetch] Delegation POST failed:', delegationResponse.status, await delegationResponse.text().catch(() => ''))
+          return delegationResponse
+        }
+
+        // Retry the original request
+        response = await baseFetch(url, init)
+      } catch (err) {
+        console.error('[createTideFetch] Delegation error:', err)
+        return response
       }
-
-      // Retry the original request
-      response = await baseFetch(url, init)
     }
 
     return response

@@ -19,8 +19,10 @@ export interface DelegationConfig {
   tidecloakUrl: string
   /** TideCloak realm name */
   realm: string
-  /** Client ID registered in TideCloak */
+  /** Client ID registered in TideCloak (public, browser auth) */
   clientId: string
+  /** Server client ID for token exchange (confidential, mTLS auth) */
+  serverClientId?: string
   /** Custom fetch implementation */
   fetch?: typeof globalThis.fetch
   /** Server identity for mTLS (loaded from tidecloak.json serverIdentity) */
@@ -162,7 +164,22 @@ export class TideDelegation {
       return
     }
 
-    // No blob - generate new key, encrypt with vault, save
+    // Check for raw key fallback (saved when vault was unavailable)
+    const rawKeyPath = join(dir, 'server.key')
+    if (existsSync(rawKeyPath)) {
+      console.log('[tide-vault] Loading existing key from fallback file')
+      const privateKeyPem = readFileSync(rawKeyPath, 'utf-8')
+      if (this.serverIdentity) {
+        this.setMtlsKey(privateKeyPem)
+      }
+      // Still request cert if needed
+      if (!this.serverIdentity?.certificate) {
+        await this.requestServerCert(dir)
+      }
+      return
+    }
+
+    // No blob and no fallback - generate new key, encrypt with vault, save
     console.log('[tide-vault] Generating new mTLS key...')
     const { publicKey, privateKey } = generateKeyPairSync('ed25519')
     const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }) as string
@@ -268,14 +285,15 @@ export class TideDelegation {
     const fetchFn = this.config.fetch ?? globalThis.fetch
     const requestUrl = `${this.config.tidecloakUrl.replace(/\/+$/, '')}/realms/${this.config.realm}/tide-server-identity/request`
 
-    console.log(`[tide-server] Requesting certificate for client=${this.config.clientId} instance=${instanceId}`)
+    const effectiveClientId = this.config.serverClientId ?? this.config.clientId
+    console.log(`[tide-server] Requesting certificate for client=${effectiveClientId} instance=${instanceId}`)
 
     try {
       const response = await fetchFn(requestUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clientId: this.config.clientId,
+          clientId: effectiveClientId,
           publicKey: pubB64url,
           instanceId,
           requestedLifetime: 86400,
@@ -394,7 +412,7 @@ export class TideDelegation {
 
     const body = new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
-      client_id: this.config.clientId,
+      client_id: this.config.serverClientId ?? this.config.clientId,
       subject_token: params.subjectToken,
       subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
       actor_token: params.delegationRequest,
