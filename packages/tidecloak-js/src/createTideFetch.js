@@ -1,5 +1,26 @@
 import { IAMService } from './IAMService.js'
 
+/**
+ * Create a delegation-aware fetch wrapper.
+ *
+ * Wraps an existing fetch function and transparently handles
+ * 419 Delegation Required challenges from the server.
+ *
+ * When the server returns 419:
+ * 1. Browser signs the delegation request with its DPoP key
+ *    (binds to the server's cert thumbprint via cnf.x5t#S256)
+ * 2. Browser POSTs the signed delegation request to the server
+ * 3. Server exchanges via mTLS with TideCloak (no DPoP approval needed)
+ * 4. Browser retries the original request
+ *
+ * No DPoP approval step - the server cert is admin-quorum-approved.
+ *
+ * @param {typeof fetch} baseFetch - The app's existing fetch
+ * @param {Object} [options]
+ * @param {string} [options.delegationEndpoint='/api/delegation'] - Server endpoint for delegation
+ * @param {number} [options.maxRetries=1] - Max delegation retries per request
+ * @returns {typeof fetch} A fetch function that handles delegation transparently
+ */
 export function createTideFetch (baseFetch, options = {}) {
   const delegationEndpoint = options.delegationEndpoint || '/api/delegation'
   const maxRetries = options.maxRetries || 1

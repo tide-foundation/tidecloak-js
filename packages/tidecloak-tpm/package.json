@@ -1,0 +1,37 @@
+{
+  "name": "@tidecloak/tpm",
+  "version": "0.1.0",
+  "description": "TPM 2.0 native binding for non-extractable Ed25519 key operations",
+  "main": "build/Release/tidecloak_tpm.node",
+  "types": "src/index.d.ts",
+  "scripts": {
+    "install": "node-gyp rebuild",
+    "build": "node-gyp rebuild",
+    "clean": "node-gyp clean"
+  },
+  "files": [
+    "src",
+    "binding.gyp",
+    "build"
+  ],
+  "dependencies": {
+    "node-addon-api": "^8.0.0"
+  },
+  "devDependencies": {
+    "node-gyp": "^10.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "os": ["linux"],
+  "cpu": ["x64", "arm64"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tide-foundation/tidecloak-js.git"
+  },
+  "license": "https://tide.org/licenses_tcoc2-0-0-en",
+  "keywords": ["tpm", "ed25519", "tidecloak", "security", "hardware-security"]
+}
