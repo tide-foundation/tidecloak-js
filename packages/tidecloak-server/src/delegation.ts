@@ -375,7 +375,14 @@ export class TideDelegation {
   private async mtlsFetch(url: string, init: RequestInit): Promise<Response> {
     const fetchFn = this.config.fetch ?? globalThis.fetch
     if (this.mtlsAgent && url.startsWith('https://')) {
+      // HTTPS: attach mTLS agent (cert sent via TLS handshake)
       return fetchFn(url, { ...init, ...(({ agent: this.mtlsAgent }) as any) })
+    }
+    if (this.serverIdentity?.certificate && url.startsWith('http://')) {
+      // HTTP (local dev): send cert as header for TideMtlsAuthenticator fallback
+      const headers = new Headers(init.headers)
+      headers.set('X-SSL-Client-Cert', encodeURIComponent(this.serverIdentity.certificate))
+      return fetchFn(url, { ...init, headers })
     }
     return fetchFn(url, init)
   }
