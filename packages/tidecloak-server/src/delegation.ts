@@ -509,13 +509,16 @@ export class TideDelegation {
   }
 
   /**
-   * Express middleware: requires a delegation token for the route.
+   * Express middleware: requires delegation for the route.
    *
-   * If a valid cached delegation token exists for the user, attaches
-   * req.delegation with a fetch helper. If not, sends a 419 challenge
-   * with the server's cert thumbprint for the browser to sign.
+   * Reads a signed delegation request from the X-Delegation-Request header.
+   * If a cached delegation token exists, uses it. Otherwise exchanges the
+   * signed request for a delegation token via mTLS, caches it, and attaches
+   * req.delegation with a fetch helper.
    *
-   * No DPoP proofs on admin API calls - mTLS authenticates the server.
+   * The client signs the delegation request proactively using
+   * IAMService.signDelegationRequest({ cnf: { "x5t#S256": certThumbprint } })
+   * and includes the result as an X-Delegation-Request header.
    *
    * @example
    * app.get('/api/admin/roles',
@@ -527,8 +530,8 @@ export class TideDelegation {
    *   }
    * )
    */
-  requireDelegation(options?: { roles?: { realm?: string[]; clients?: Record<string, string[]> } }) {
-    return (req: any, res: any, next: any) => {
+  requireDelegation() {
+    return async (req: any, res: any, next: any) => {
       const subjectToken = req.accessToken
       if (!subjectToken) {
         res.status(401).json({ error: 'No access token' })
@@ -539,53 +542,69 @@ export class TideDelegation {
       const cached = this.getCached(sessionId)
 
       if (cached) {
-        // Delegation token is cached - attach helpers
-        req.delegation = {
-          token: cached.token,
-          fetch: async (url: string, fetchOpts?: { method?: string; body?: any; formData?: any }) => {
-            const method = fetchOpts?.method || 'GET'
-            const headers: Record<string, string> = {
-              accept: 'application/json',
-              Authorization: `Bearer ${cached.token}`,
-            }
-            let bodyPayload: any = undefined
-            if (fetchOpts?.formData) {
-              bodyPayload = fetchOpts.formData
-            } else if (fetchOpts?.body !== undefined) {
-              headers['Content-Type'] = 'application/json'
-              bodyPayload = JSON.stringify(fetchOpts.body)
-            }
-            // mTLS handles proof-of-possession - no DPoP proof needed
-            const response = await this.mtlsFetch(url, {
-              method,
-              headers,
-              ...(bodyPayload !== undefined ? { body: bodyPayload } : {}),
-            })
-            if (!response.ok) {
-              throw new Error(`Admin API call failed: ${response.status} ${await response.text()}`)
-            }
-            if (response.status === 204) return undefined
-            const text = await response.text()
-            return text ? JSON.parse(text) : undefined
-          },
-        }
+        req.delegation = this.buildDelegationHelper(cached.token)
         next()
-      } else {
-        // No delegation token - send challenge with cert thumbprint
-        if (!this.certThumbprint) {
-          res.status(500).json({ error: 'Server certificate not configured' })
-          return
-        }
-        const packed = this.packRequest({
-          ...(options?.roles ? { requested_roles: options.roles } : {}),
+        return
+      }
+
+      // No cache — exchange the signed delegation request from header
+      const signedRequest = req.headers['x-delegation-request']
+      if (!signedRequest) {
+        res.status(401).json({ error: 'Delegation required — include X-Delegation-Request header' })
+        return
+      }
+
+      try {
+        const result = await this.exchange({
+          subjectToken,
+          delegationRequest: signedRequest,
         })
 
-        res.status(419).json({
-          needsDelegation: true,
-          payload: packed.payload,
-          certThumbprint: this.certThumbprint,
+        this.cache.set(sessionId, {
+          token: result.access_token,
+          expiresAt: Date.now() + (result.expires_in * 1000) - 5000,
         })
+
+        req.delegation = this.buildDelegationHelper(result.access_token)
+        next()
+      } catch (err: any) {
+        console.error(`[delegation] Inline exchange failed: ${err.message}`)
+        res.status(500).json({ error: 'Delegation exchange failed: ' + err.message })
       }
+    }
+  }
+
+  /**
+   * Build the req.delegation helper object with a fetch method.
+   */
+  private buildDelegationHelper(token: string) {
+    return {
+      token,
+      fetch: async (url: string, fetchOpts?: { method?: string; body?: any; formData?: any }) => {
+        const method = fetchOpts?.method || 'GET'
+        const headers: Record<string, string> = {
+          accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        }
+        let bodyPayload: any = undefined
+        if (fetchOpts?.formData) {
+          bodyPayload = fetchOpts.formData
+        } else if (fetchOpts?.body !== undefined) {
+          headers['Content-Type'] = 'application/json'
+          bodyPayload = JSON.stringify(fetchOpts.body)
+        }
+        const response = await this.mtlsFetch(url, {
+          method,
+          headers,
+          ...(bodyPayload !== undefined ? { body: bodyPayload } : {}),
+        })
+        if (!response.ok) {
+          throw new Error(`Admin API call failed: ${response.status} ${await response.text()}`)
+        }
+        if (response.status === 204) return undefined
+        const text = await response.text()
+        return text ? JSON.parse(text) : undefined
+      },
     }
   }
 

@@ -1,6 +1,6 @@
 # TideCloak Server SDK
 
-Server-side SDK for TideCloak backend operations. Currently provides delegation exchange for making TideCloak API calls on behalf of authenticated users without exposing tokens to the browser.
+Server-side SDK for TideCloak backend operations. Provides delegation exchange for making TideCloak API calls on behalf of authenticated users, using mTLS with VVK-signed server certificates for proof of possession.
 
 ```bash
 npm install @tidecloak/server
@@ -10,31 +10,62 @@ npm install @tidecloak/server
 
 ## What This Does
 
-Your app server needs to call TideCloak's admin API (manage users, roles, etc.), but the user's token is DPoP-bound to the browser's key - your server can't use it directly. This package handles the delegation exchange: the browser authorizes your server's key, TideCloak issues a delegation token bound to your server, and your server uses it for admin calls.
+Your app server needs to call TideCloak's admin API (manage users, roles, etc.), but the user's token is DPoP-bound to the browser's key — your server can't use it directly. This package handles the delegation exchange: the browser signs a delegation request authorizing your server's certificate, the server exchanges it with TideCloak via mTLS, and TideCloak issues a delegation token bound to your server.
 
 ---
 
-## Quick Start
+## Setup
 
-### 1. Set Up Delegation
+### 1. Configure TideCloak Adapter JSON
+
+Your `tidecloak.json` needs a `serverResource` field pointing to a confidential client for server-to-server communication:
+
+```json
+{
+  "realm": "myrealm",
+  "auth-server-url": "https://auth.example.com",
+  "resource": "my-app",
+  "serverResource": "my-app-server"
+}
+```
+
+### 2. Initialize Delegation
 
 ```js
 import { TideDelegation } from '@tidecloak/server';
+import { readFileSync } from 'fs';
+
+const adapterJson = JSON.parse(readFileSync('./data/tidecloak.json', 'utf-8'));
 
 const delegation = new TideDelegation({
-  tidecloakUrl: 'https://auth.example.com',
-  realm: 'myrealm',
-  clientId: 'my-app',
+  tidecloakUrl: adapterJson['auth-server-url'],
+  realm: adapterJson.realm,
+  clientId: adapterJson.resource,
+  serverClientId: adapterJson.serverResource,
+  adapterJsonPath: './data/tidecloak.json',
 });
 ```
 
-### 2. Wire Up Express Routes
+### 3. Initialize Server Identity (on startup)
 
 ```js
-// Delegation exchange endpoint - browser POSTs signed artifacts here
-app.post('/api/delegation', authenticate, delegation.handleDelegation());
+await delegation.init();
+```
 
-// Protected admin routes - delegation happens automatically
+On first run, `init()`:
+1. Generates an Ed25519 keypair
+2. Encrypts the private key via Tide Vault → saves to `data/server-key.vault`
+3. Submits a cert request to `POST /realms/{realm}/tide-server-identity/request`
+4. The cert enters the IGA approval flow — admin quorum must approve it
+
+On subsequent runs, it decrypts the existing key from the vault blob.
+
+**After approval:** Re-export the adapter JSON from TideCloak Admin. It will include a `serverIdentity` section with the VVK-signed certificate. The SDK loads it automatically.
+
+### 4. Wire Up Express Routes
+
+```js
+// Protect admin routes with requireDelegation()
 app.get('/api/admin/users',
   authenticate,
   delegation.requireDelegation(),
@@ -42,40 +73,143 @@ app.get('/api/admin/users',
     const users = await req.delegation.fetch(
       `${tidecloakUrl}/admin/realms/${realm}/users`
     );
-    res.json(users);
+    res.json({ users });
   }
 );
 ```
 
-### 3. Set Up the Browser
+That's it on the server side.
+
+---
+
+## Client-Side: Sending the Delegation Request
+
+The browser must send a signed delegation request as an `X-Delegation-Request` header on admin calls. `IAMService.adminFetch()` handles this automatically — signing, caching, and re-signing on expiry.
+
+### Setup (once, during init)
 
 ```js
-import { createTideFetch } from '@tidecloak/js';
+import { IAMService } from '@tidecloak/js';
 
-// Wrap your fetch - handles delegation automatically
-const fetch = createTideFetch(window.fetch);
-
-// Just use it - the 419 interrupt is invisible to your code
-const users = await fetch('/api/admin/users');
+// After loading auth config from server:
+IAMService.setDelegationThumbprint(authConfig.delegationCertThumbprint);
 ```
 
-That's it. The SDK handles the rest.
+### Usage
+
+```js
+// Any endpoint protected by requireDelegation() — one call:
+const response = await IAMService.adminFetch('/api/admin/users');
+const users = await response.json();
+
+const rolesResponse = await IAMService.adminFetch('/api/admin/roles');
+const roles = await rolesResponse.json();
+
+// POST, PUT, DELETE work too:
+await IAMService.adminFetch('/api/admin/roles', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ name: 'new-role' }),
+});
+
+// Endpoints without requireDelegation() use regular fetch
+const servers = await fetch('/api/servers');
+```
+
+That's it. The SDK handles: get thumbprint → check cache → sign if needed → attach `X-Delegation-Request` header → fetch with auth.
+
+### What the `X-Delegation-Request` header contains
+
+A JWT signed by the browser's DPoP key:
+
+```
+Header:  { alg: "EdDSA", jwk: { kty: "OKP", crv: "Ed25519", x: "<browser pub>" } }
+Payload: {
+  cnf: { "x5t#S256": "<server cert thumbprint>" },
+  iat: 1713283200,
+  exp: 1713283500,
+  jti: "uuid"
+}
+Signature: Ed25519 by browser's DPoP key
+```
+
+This proves:
+- **HOP 1**: The browser owns the user's token (same DPoP key)
+- **HOP 2**: The browser authorized THIS specific server (by cert thumbprint)
+
+---
+
+## Which Endpoints Need Delegation?
+
+**Needs `requireDelegation()`:**
+Any server route where the handler calls `req.delegation.fetch()` to reach TideCloak's admin API.
+
+```js
+// User management
+app.get('/api/admin/users', authenticate, delegation.requireDelegation(), handler);
+app.post('/api/admin/users', authenticate, delegation.requireDelegation(), handler);
+app.delete('/api/admin/users/:id', authenticate, delegation.requireDelegation(), handler);
+
+// Role management
+app.get('/api/admin/roles', authenticate, delegation.requireDelegation(), handler);
+app.post('/api/admin/roles', authenticate, delegation.requireDelegation(), handler);
+
+// Approval workflows
+app.get('/api/admin/approvals', authenticate, delegation.requireDelegation(), handler);
+app.post('/api/admin/approvals/approve', authenticate, delegation.requireDelegation(), handler);
+
+// Logs
+app.get('/api/admin/logs', authenticate, delegation.requireDelegation(), handler);
+```
+
+**Does NOT need `requireDelegation()`:**
+- Public endpoints (no auth)
+- Endpoints that only read from your own database
+- Authentication endpoints (`/api/auth/*`)
+
+**Rule of thumb:** If the handler calls `req.delegation.fetch()`, add `requireDelegation()`. The client must then use `adminFetch` (with the `X-Delegation-Request` header) for that endpoint.
+
+**What happens if the header is missing:** The server returns `401 { error: "Delegation required — include X-Delegation-Request header" }`.
 
 ---
 
 ## How It Works
 
-1. Browser calls your admin endpoint
-2. Server has no delegation token → responds with **419** and a challenge
-3. `createTideFetch` intercepts the 419, asks the browser to sign the challenge
-4. Browser signs a delegation request with its DPoP key and gets a DPoP approval from the ORK enclave
-5. Browser POSTs the signed artifacts to `/api/delegation`
-6. Server exchanges them with TideCloak for a delegation token
-7. Server caches the delegation token and responds
-8. `createTideFetch` retries the original request - this time it succeeds
-9. Subsequent requests use the cached token (no more 419s until it expires)
+```
+Browser                     App Server                  TideCloak
+  │                            │                            │
+  ├─ GET /api/admin/users ────►│                            │
+  │  Authorization: Bearer     │                            │
+  │  X-Delegation-Request: JWT │                            │
+  │                            │ requireDelegation()        │
+  │                            │ no cache → exchange        │
+  │                            ├─ exchange() via mTLS ─────►│
+  │                            │  grant_type=token-exchange │
+  │                            │  subject_token=userToken   │
+  │                            │  actor_token=delegReqJWT   │
+  │                            │◄── delegation token ───────┤
+  │                            │  cache by sessionId        │
+  │                            │                            │
+  │                            ├─ GET /admin/.../users ────►│
+  │                            │  mTLS + Bearer deleg token │
+  │                            │◄── [users] ────────────────┤
+  │◄── [users] ────────────────┤                            │
+  │                            │                            │
+  │  (subsequent requests)     │                            │
+  ├─ GET /api/admin/roles ────►│                            │
+  │  X-Delegation-Request: JWT │                            │
+  │                            │ cache hit → skip exchange  │
+  │                            ├─ GET /admin/.../roles ────►│
+  │                            │◄── [roles] ────────────────┤
+  │◄── [roles] ────────────────┤                            │
+```
 
-All of this is invisible to your application code.
+1. Browser signs a delegation request (authorizing the server's cert) and sends it as `X-Delegation-Request` header
+2. Server receives the request — if no cached delegation token, exchanges artifacts with TideCloak via mTLS
+3. TideCloak validates the chain of trust (HOP 1 + HOP 2), issues a delegation token
+4. Server caches the delegation token by session ID
+5. Server uses the delegation token to call TideCloak admin API via mTLS
+6. Subsequent requests from the same session use the cached token (no exchange needed)
 
 ---
 
@@ -84,84 +218,57 @@ All of this is invisible to your application code.
 By default, the delegation token gets all of the user's roles. You can restrict it:
 
 ```js
-// Only realm:admin role, only "read" for my-app client
-app.get('/api/admin/users',
-  authenticate,
-  delegation.requireDelegation({
-    roles: {
-      realm: ['admin'],
-      clients: { 'my-app': ['read'] }
-    }
-  }),
-  handler
-);
-```
-
-**Rules:**
-- If `roles` is omitted → all user roles included
-- If `roles` is specified → only listed roles/clients appear in the token
-- Unlisted realms or clients are stripped entirely
-- You can never escalate - requesting a role the user doesn't have silently drops it
-
-### Examples
-
-```js
-// All roles (default)
-delegation.requireDelegation()
-
-// Only client roles for my-app
-delegation.requireDelegation({
-  roles: { clients: { 'my-app': ['read', 'write'] } }
-})
-
-// Only realm roles, no client roles
-delegation.requireDelegation({
-  roles: { realm: ['admin', 'user'] }
-})
-
-// Multiple clients
 delegation.requireDelegation({
   roles: {
     realm: ['admin'],
-    clients: {
-      'my-app': ['read'],
-      'other-app': ['view', 'edit']
-    }
+    clients: { 'my-app': ['read'] }
   }
 })
 ```
+
+**Rules:**
+- `roles` omitted → all user roles included
+- `roles` specified → only listed roles appear in the token
+- You can never escalate — requesting a role the user doesn't have silently drops it
 
 ---
 
 ## Using `req.delegation.fetch()`
 
-Once delegation succeeds, `req.delegation.fetch()` is available on the request. It handles DPoP proof generation and authorization headers automatically.
+Once delegation succeeds, `req.delegation.fetch()` sends requests via mTLS with the delegation token.
 
 ```js
-// GET
 const users = await req.delegation.fetch(url);
-
-// POST with JSON body
-const result = await req.delegation.fetch(url, {
-  method: 'POST',
-  body: { name: 'New Role' }
-});
-
-// PUT
-await req.delegation.fetch(url, {
-  method: 'PUT',
-  body: { enabled: true }
-});
-
-// DELETE
+const result = await req.delegation.fetch(url, { method: 'POST', body: { name: 'New Role' } });
 await req.delegation.fetch(url, { method: 'DELETE' });
-
-// POST with FormData
-await req.delegation.fetch(url, {
-  method: 'POST',
-  formData: myFormData
-});
+await req.delegation.fetch(url, { method: 'POST', formData: myFormData });
 ```
+
+---
+
+## Server Identity Lifecycle
+
+### First Run
+
+```
+init()  →  generate keypair  →  encrypt via Vault  →  request cert from TideCloak
+```
+
+Admin approves in TideCloak Admin > Realm Settings > Server Certs.
+
+### After Approval
+
+Re-export adapter JSON. The `serverIdentity` section will contain the VVK-signed certificate. The SDK loads it and configures mTLS automatically.
+
+### Subsequent Restarts
+
+```
+init()  →  load vault blob  →  decrypt via Vault  →  configure mTLS
+```
+
+### Local Development (HTTP)
+
+Over HTTP, mTLS isn't possible. The SDK falls back to `X-SSL-Client-Cert` header with the PEM cert. TideCloak's `TideMtlsAuthenticator` accepts this for HTTP connections.
 
 ---
 
@@ -173,61 +280,76 @@ await req.delegation.fetch(url, {
 new TideDelegation(config: DelegationConfig)
 ```
 
-| Config | Type | Description |
-|--------|------|-------------|
-| `tidecloakUrl` | `string` | TideCloak server URL |
-| `realm` | `string` | Realm name |
-| `clientId` | `string` | Client ID registered in TideCloak |
-| `fetch` | `typeof fetch` | Optional custom fetch implementation |
+| Config | Type | Required | Description |
+|--------|------|----------|-------------|
+| `tidecloakUrl` | `string` | Yes | TideCloak server URL |
+| `realm` | `string` | Yes | Realm name |
+| `clientId` | `string` | Yes | Browser client ID (public) |
+| `serverClientId` | `string` | No | Server client ID (for token exchange) |
+| `adapterJsonPath` | `string` | No | Path to tidecloak.json |
+| `serverIdentity` | `ServerIdentity` | No | Manual server identity |
+| `privateKey` | `string` | No | PEM private key (if not using vault) |
+| `fetch` | `typeof fetch` | No | Custom fetch implementation |
 
 ### Methods
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `requireDelegation(options?)` | Express middleware | Returns 419 challenge or attaches `req.delegation` |
-| `handleDelegation()` | Express middleware | Handles POST with signed delegation artifacts |
-| `exchange(params)` | `Promise<DelegationResult>` | Low-level: exchange artifacts for a delegation token |
-| `generateDpopProof(method, url, accessToken?)` | `string` | Low-level: generate a DPoP proof JWT |
-| `packRequest(request)` | `PackedDelegationRequest` | Low-level: create a delegation challenge |
+| `init(doken?, keyDir?)` | `Promise<void>` | Initialize vault-backed keys and request cert |
+| `requireDelegation()` | Express middleware | Exchanges delegation or uses cache, attaches `req.delegation` |
+| `exchange(params)` | `Promise<DelegationResult>` | Low-level: exchange artifacts via mTLS |
+| `isMtlsEnabled()` | `boolean` | Check if mTLS is ready |
+| `getCertThumbprint()` | `string \| null` | Server cert SHA-256 thumbprint |
 
-### `requireDelegation` Options
+---
 
-```ts
-delegation.requireDelegation({
-  roles: {
-    realm: ['role1', 'role2'],        // Optional: filter realm roles
-    clients: {                         // Optional: filter per-client roles
-      'client-id': ['role1', 'role2']
-    }
-  }
-})
+## Chain of Trust
+
 ```
+VVK (root of trust, threshold-shared on ORK network)
+ ├─ signs server X.509 certificate (admin quorum approved)
+ └─ signs delegation token (T-of-N EdDSA via DelegationToken:1)
+
+Browser DPoP Key
+ ├─ bound to user token via cnf.jkt
+ └─ signs delegation request (authorizing server cert via cnf.x5t#S256)
+
+Server Certificate
+ ├─ proves server identity via mTLS
+ └─ bound to delegation token via cnf.x5t#S256
+```
+
+Validated at three layers:
+1. **TideMtlsAuthenticator** (TideCloak) — verifies VVK-signed cert, maps SPIFFE ID to client
+2. **TideChainOfTrustExchangeProvider** (TideCloak) — validates HOP 1 + HOP 2
+3. **DelegationTokenSignRequest** (ORK) — re-validates chain, checks VRK auth, signs token
 
 ---
 
 ## Requirements
 
-- Node.js 18+ (uses native `crypto` for Ed25519)
-- A TideCloak server with the Tide chain-of-trust authenticator enabled
-- `@tidecloak/js` on the client side with `createTideFetch`
-- An `authenticate` middleware that sets `req.accessToken` from the Authorization header
+- Node.js 18+
+- TideCloak with `TideMtlsAuthenticator` and `TideChainOfTrustExchangeProvider` enabled
+- `tide-vendor-key` component with `DelegationToken:1` in the VRK model list
+- `@tidecloak/js` on the client with `IAMService.signDelegationRequest()`
+- An `authenticate` middleware that sets `req.accessToken`
 
 ---
 
 ## Troubleshooting
 
-**419 responses in the browser console**
+**"Delegation required — include X-Delegation-Request header"**
 
-This is expected. The 419 is the delegation challenge - `createTideFetch` handles it automatically. If you see repeated 419s, check that `/api/delegation` is wired up correctly.
+The client is calling a `requireDelegation()` endpoint without the `X-Delegation-Request` header. Use `adminFetch` (or equivalent) that calls `IAMService.signDelegationRequest()` and attaches the header.
 
-**"No pending delegation challenge for this session"**
+**"No server certificate configured"**
 
-The server received a delegation POST but has no pending key for this user's session. This happens if the server restarted between the 419 and the delegation POST, or if the pending key expired (60s timeout). The browser will retry automatically.
+`init()` wasn't called, or the cert hasn't been approved, or the adapter JSON doesn't contain `serverIdentity`.
+
+**"mTLS not configured"**
+
+The vault blob couldn't be decrypted or the adapter JSON has no `serverIdentity`. Check Tide Vault connectivity and cert approval status.
 
 **"Delegation exchange failed"**
 
-Check that your TideCloak server has the `tide-chain-of-trust` client authenticator in the client authentication flow, and that the realm has a `tide-vendor-key` component with `DelegationToken:1` in the VRK model list.
-
-**Token has wrong roles**
-
-If using scoped delegation, remember that once `roles` is specified, everything not listed is excluded. Omit `roles` entirely for full permissions.
+Check that TideCloak has `TideMtlsAuthenticator` in the client auth flow and `DelegationToken:1` in the VRK model list.
