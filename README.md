@@ -33,3 +33,7 @@ Next.js SDK for client-side auth, middleware, and hooks.
 **@tidecloak/js**
 Vanilla JavaScript/browser SDK with `IAMService` singleton and low-level client.
 [Documentation](packages/tidecloak-js/README.md)
+
+**@tidecloak/server**
+Server-side SDK for backend operations. Currently provides delegation exchange for making TideCloak API calls on behalf of users.
+[Documentation](packages/tidecloak-server/README.md)

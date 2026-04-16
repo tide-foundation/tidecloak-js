@@ -53,6 +53,7 @@ const CONTENT_TYPE_JSON = 'application/json'
 
 export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, PolicySignRequest } from "heimdall-tide";
 export { Tools, Models } from "@tideorg/js";
+export { createTideFetch } from "../src/createTideFetch.js";
 export default class TideCloak {
   /** @type {Pick<PromiseWithResolvers<boolean>, 'resolve' | 'reject'>[]} */
   #refreshQueue = []
@@ -2110,6 +2111,50 @@ export default class TideCloak {
 
     const decrypted = await this.requestEnclave.decrypt(dataToSend, decryption_policy)
     return decrypted.map((d, i) => (dataToSend[i].isRaw ? d : StringFromUint8Array(d)))
+  }
+
+  /**
+   * Returns the DPoP signature provider, if initialized.
+   * @returns {import('./tidecloak-dpop.js').DPoPSignatureProvider|null}
+   */
+  getDpopProvider () {
+    return this.#dpopProvider || null
+  }
+
+  /**
+   * Sign a DPoP approval for a server's DPoP key using the Tide Session Key.
+   * The ORK enclave signs "tide_sesskeyapproved_dpop_key:<serverJkt>" with t.ssk.
+   * @param {string} serverJkt - The JWK thumbprint of the server's DPoP key
+   * @returns {Promise<string>} Base64-encoded DPoP approval signature
+   */
+  async signDpopApproval (serverJkt) {
+    if (!this.requestEnclave) throw new Error('RequestEnclave not initialized')
+    // Send directly via the enclave's send/receive mechanism
+    // bypassing heimdall's signDpopApproval which may not be in compiled dist
+    await this.requestEnclave.initDone
+    const responsePromise = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('DPoP approval timed out')), 10000)
+      const handler = (event) => {
+        if (event.data && event.data.type === 'dpop approval completed') {
+          clearTimeout(timeout)
+          window.removeEventListener('message', handler)
+          resolve(event.data)
+        }
+      }
+      window.addEventListener('message', handler, false)
+    })
+    this.requestEnclave.send({
+      type: 'dpop approval',
+      message: { dpop_jkt: serverJkt }
+    })
+    const resp = await responsePromise
+    if (typeof resp.error === 'string') {
+      throw new Error('DPoP approval failed: ' + resp.error)
+    }
+    if (typeof resp.dpopApproval !== 'string') {
+      throw new Error('Invalid DPoP approval response')
+    }
+    return resp.dpopApproval
   }
 
   /**

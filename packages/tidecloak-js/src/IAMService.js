@@ -2045,6 +2045,152 @@ class IAMService {
     }
   }
 
+  /**
+   * Sign a delegation request with the DPoP private key.
+   * Returns a compact JWT proving the user authorizes the delegation.
+   *
+   * @param {Record<string, unknown>} claims - The delegation request claims (aud, scope, iat, exp, jti, etc.)
+   * @returns {Promise<string>} Compact JWT string (header.payload.signature)
+   * @throws {Error} If DPoP is not initialized
+   */
+  async signDelegationRequest(claims) {
+    const dpop = this._dpopProvider || (this._tc && this._tc.getDpopProvider());
+    if (!dpop) {
+      throw new Error('DPoP is not initialized. Ensure useDPoP is configured and initialization is complete.');
+    }
+    return await dpop.signDelegationRequest(claims);
+  }
+
+  // --- Admin fetch with automatic delegation ---
+
+  /** @private */ _delegationCache = null;
+  /** @private */ _delegationThumbprint = null;
+  /** @private */ _delegationExpiresAt = 0;
+
+  /**
+   * Set the server's delegation cert thumbprint.
+   * Typically called once after loading the auth config from the server.
+   *
+   * @param {string} thumbprint - SHA-256 thumbprint of the server's mTLS cert (base64url)
+   */
+  setDelegationThumbprint(thumbprint) {
+    this._delegationThumbprint = thumbprint;
+  }
+
+  /**
+   * Get or create a signed delegation request for the current session.
+   * Caches the signed JWT and re-signs when expired or thumbprint changes.
+   * @private
+   */
+  async _getSignedDelegationRequest() {
+    const thumbprint = this._delegationThumbprint;
+    if (!thumbprint) return null;
+
+    const now = Math.floor(Date.now() / 1000);
+    if (this._delegationCache && now < this._delegationExpiresAt - 30) {
+      return this._delegationCache;
+    }
+
+    const exp = now + 300;
+    this._delegationCache = await this.signDelegationRequest({
+      cnf: { 'x5t#S256': thumbprint },
+      iat: now,
+      exp,
+      jti: crypto.randomUUID(),
+    });
+    this._delegationExpiresAt = exp;
+    return this._delegationCache;
+  }
+
+  /**
+   * Universal authenticated fetch. Automatically handles:
+   * - Bearer token (if authenticated)
+   * - DPoP proof + scheme upgrade (if DPoP is enabled)
+   * - X-Delegation-Request header (if delegation thumbprint is set)
+   * - Plain fetch (if none of the above apply)
+   *
+   * Use this as your default fetch for all API calls. It figures out
+   * what auth is needed based on the current configuration.
+   *
+   * @param {string|URL|RequestInfo} url - The endpoint URL
+   * @param {RequestInit} [init] - Optional fetch init options
+   * @returns {Promise<Response>} The fetch response
+   *
+   * @example
+   * ```js
+   * // Works for everything:
+   * const users = await IAMService.fetch('/api/admin/users');
+   * const servers = await IAMService.fetch('/api/servers');
+   * await IAMService.fetch('/api/admin/roles', {
+   *   method: 'POST',
+   *   headers: { 'Content-Type': 'application/json' },
+   *   body: JSON.stringify({ name: 'new-role' }),
+   * });
+   * ```
+   */
+  async fetch(url, init = {}) {
+    const token = await this.getToken();
+    const headers = new Headers(init.headers || {});
+
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+
+    // Attach delegation request if thumbprint is configured
+    const signedRequest = await this._getSignedDelegationRequest();
+    if (signedRequest) {
+      headers.set('X-Delegation-Request', signedRequest);
+    }
+
+    const opts = { ...init, headers };
+
+    // DPoP: upgrade Bearer → DPoP scheme + attach proof
+    if (this._dpopProvider && token) {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      const method = (init.method || 'GET').toUpperCase();
+      const origin = new URL(urlStr).origin;
+      const nonce = this._dpopProvider.getResourceServerNonce(origin);
+      const proof = await this._dpopProvider.generateDPoPProof(urlStr, method, token, nonce);
+
+      headers.set('Authorization', `DPoP ${token}`);
+      headers.set('DPoP', proof);
+
+      let response = await globalThis.fetch(url, opts);
+
+      // Handle DPoP-Nonce
+      const dpopNonce = response.headers.get('DPoP-Nonce');
+      if (dpopNonce) {
+        this._dpopProvider.updateResourceServerNonce(origin, dpopNonce);
+      }
+      if (response.status === 401 && dpopNonce) {
+        const retryProof = await this._dpopProvider.generateDPoPProof(urlStr, method, token, dpopNonce);
+        headers.set('DPoP', retryProof);
+        response = await globalThis.fetch(url, opts);
+        const retryNonce = response.headers.get('DPoP-Nonce');
+        if (retryNonce) {
+          this._dpopProvider.updateResourceServerNonce(origin, retryNonce);
+        }
+      }
+      return response;
+    }
+
+    // No DPoP — plain fetch with Bearer + delegation (if any)
+    return globalThis.fetch(url, opts);
+  }
+
+  /**
+   * Sign a DPoP approval for a server's DPoP key using the Tide Session Key.
+   * This tells the ORK network to accept the server's key for token signing.
+   * @param {string} serverJkt - The JWK thumbprint of the server's DPoP key
+   * @returns {Promise<string>} Base64-encoded DPoP approval signature
+   */
+  async signDpopApproval(serverJkt) {
+    if (!this._tc) {
+      throw new Error('TideCloak not initialized');
+    }
+    return await this._tc.signDpopApproval(serverJkt);
+  }
+
 }
 
 const IAMServiceInstance = new IAMService();
