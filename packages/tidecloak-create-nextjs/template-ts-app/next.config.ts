@@ -1,5 +1,6 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
   // The Tide crypto packages (@tidecloak/js, @tideorg/js, heimdall-tide) re-export
   // a few symbols from each other that aren't always present in every build.
   // Webpack treats missing re-exports as hard errors by default, which would fail
@@ -20,4 +21,4 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+export default nextConfig;

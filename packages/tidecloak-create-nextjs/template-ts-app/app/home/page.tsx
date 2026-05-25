@@ -70,6 +70,11 @@ export default function HomePage() {
           {verifying ? 'Verifying…' : 'Verify Token'}
         </button>
 
+        {/* Demo: policy-governed (Forseti) encryption & decryption */}
+        <a href="/encrypt" style={{ ...buttonStyle, marginTop: '0.5rem', display: 'block', textDecoration: 'none' }}>
+          Try policy encryption
+        </a>
+
         {verifyResult && (
           <p style={{ marginTop: '1rem', color: verifyResult.startsWith('✅') ? 'green' : 'red' }}>
             {verifyResult}
