@@ -20,14 +20,6 @@
                 "description": "Tide E2EE self-decrypt DoB data"
             },
             {
-                "name": "_tide_x.selfencrypt",
-                "description": "Voucher gate for policy-governed encryption (generic tag)"
-            },
-            {
-                "name": "_tide_x.selfdecrypt",
-                "description": "Voucher gate for policy-governed decryption (generic tag)"
-            },
-            {
                 "name": "default-roles-nextjs-test",
                 "description": "${role_default-roles}",
                 "composite": true,
@@ -35,8 +27,6 @@
                     "realm": [
                         "_tide_dob.selfencrypt",
                         "_tide_dob.selfdecrypt",
-                        "_tide_x.selfencrypt",
-                        "_tide_x.selfdecrypt",
                         "appUser"
                     ]
                 }

@@ -40,33 +40,22 @@ npm init @tidecloak/nextjs@latest my-app
 my-app/
 ├── app/
 |   ├── api/
-|   │   ├── protected/
-|   │   │   └── route.js            <- A protected API on your NextJS server that verifies the user's access token
-|   │   └── policies/
-|   │       └── route.js            <- Stores Forseti policy sign-requests + committed signed policies (policy-encryption demo)
+|   │   └── protected/
+|   │       └── route.js            <- A protected API on your NextJS server that verifies the user's access token
 |   ├── auth/
 |   │   └── redirect/
 |   │       └── page.jsx            <- A dedicated page to redirect the user back to once authentication is complete
-|   ├── encrypt/
-|   |   └── page.jsx                <- Policy-governed (Forseti) encryption demo: create -> approve -> commit -> encrypt/decrypt
 |   ├── home/
 |   |   └── page.jsx                <- Your home page the user goes to once authenticated
 |   ├── layout.jsx                  <- Entry point of your app before the user sees any actual pages
 |   └── page.jsx                    <- Your login page the user is brought to when they need to authenticate
-├── lib/
-|   ├── forsetiContract.js          <- The C# Forseti contract source + its SHA-512 contract id
-|   ├── policyStore.js              <- Server-side (demo: in-memory) store for pending/committed policies
-|   └── tideSerialization.js        <- byte <-> base64 helpers for the signing payloads
 ├── public/
 │   └── silent-check-sso.html       <- Silent SSO check page served at the site root
 ├── tidecloak.json                  <- Where your Tidecloak configuration sits
-├── next.config.js                  <- Includes the webpack workaround required by the Tide crypto packages
+├── next.config.js
 ├── middleware.js                   <- Run on each page navigation - this is where the Tidecloak token is verified
 └── package.json
 ```
-
-> [!NOTE]
-> `package.json` runs `next dev --webpack` / `next build --webpack`. Next.js 16 defaults to Turbopack, but the `@tidecloak/*` packages need the webpack config in `next.config.js`, so the `--webpack` flag is required.
 
 ### 3. Test your app!
 
@@ -109,49 +98,7 @@ const decryptedArray = await doDecrypt([
 
 * **Encryption** requires access token roles `_tide_<tag>.selfencrypt` for each tag.
 * **Decryption** requires access token roles `_tide_<tag>.selfdecrypt` for each tag.
-
-### Policy-governed (Forseti) encryption
-
-The self-encryption above binds each ciphertext to the **encrypting user's own identity** — nobody else can ever decrypt it. When you need access decided by a rule instead (a role, an owner, a time lock, …), use **policy-governed encryption**: a small C# **Forseti contract** runs on every ORK node and decides — cryptographically, with no single party able to override it — whether each encrypt/decrypt is allowed.
-
-The template ships a working demo at **`/encrypt`** (linked from the home page). Log in as the admin created during init, then walk the lifecycle:
-
-1. **Create** a policy (binds the contract + optional parameters).
-2. **Approve** it in the Tide enclave popup (admin only).
-3. **Commit** it — the ORK network produces the VVK signature; the signed policy bytes are stored server-side.
-4. **Encrypt / decrypt** with that signed policy.
-
-Encrypt/decrypt then go through `IAMService` with the signed policy as the second argument — this is what switches `doEncrypt`/`doDecrypt` from self-encryption to policy-governed encryption:
-
-```ts
-import { IAMService } from '@tidecloak/js';
-
-const [ciphertext] = await IAMService.doEncrypt(
-  [{ data: 'secret', tags: ['note'] }],
-  signedPolicyBytes,            // <- omit this and it falls back to self-encryption
-);
-const [plaintext] = await IAMService.doDecrypt(
-  [{ encrypted: ciphertext, tags: ['note'] }],
-  signedPolicyBytes,
-);
-```
-
-> Get `IAMService` (and the `initializeTideRequest` / `approveTideRequests` / `getVendorId` helpers) from `useTideCloak()` so you reuse the one instance the provider initialized. `Policy` comes from `@tideorg/js` and `PolicySignRequest` from `heimdall-tide` — **not** from `@tidecloak/nextjs`.
-
-#### Two access models (the contract picks based on the data tags)
-
-The demo's contract (`lib/forsetiContract.js`) supports both, toggled per request:
-
-* **Owner-bound ("private to me")** — the client adds an `owner:<vuid>` tag (the **vendor user id** claim from the token). The contract requires the caller's network-asserted identity (`executor.UserId`) to equal that `vuid`, so **only that account can decrypt** — even other holders of the same policy cannot. The tag is just a label and could be faked, but the doken identity cannot, so the guarantee holds.
-* **Role-shared** — no owner tag; the optional `EncryptionRealmRole` / `DecryptionRealmRole` policy params gate access by realm role, so **anyone holding the role** can decrypt.
-
-#### Roles required
-
-Policy-governed encrypt/decrypt still needs a generic `_tide_*` **voucher gate** role on the user. The init template grants `_tide_x.selfencrypt` / `_tide_x.selfdecrypt` to every user via the default role for this purpose. (For role-shared mode, also assign whatever realm role you named in the policy params.)
-
-> [!NOTE]
-> The demo stores signed policies **in memory**, so they reset when the dev server restarts — re-run the create/approve/commit steps (or use "Start again"). Swap `lib/policyStore.js` for your database in a real app.
-
+  
 ---
 # References
 

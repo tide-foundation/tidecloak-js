@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
-    "build": "next build --webpack",
+    "dev": "next dev",
+    "build": "next build",
     "start": "next start",
     "init": "bash init/tcinit.sh"
   },
@@ -12,9 +12,6 @@
     "next": "16.x",
     "react": "19.x",
     "react-dom": "19.x",
-    "@tidecloak/nextjs": "^0.13.21",
-    "@tideorg/js": "^0.13.21",
-    "heimdall-tide": "^0.13.21",
-    "asgard-tide": "^0.12.47"
+    "@tidecloak/nextjs": "^0.13.11"
   }
 }

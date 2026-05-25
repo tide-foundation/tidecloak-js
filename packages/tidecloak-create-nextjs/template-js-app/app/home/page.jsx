@@ -5,12 +5,22 @@ import { useTideCloak } from '@tidecloak/nextjs'
 import tcConfig from "../../tidecloak.json"
 
 export default function HomePage() {
-  const { logout, getValueFromIdToken, hasRealmRole, token } = useTideCloak()
+  const { logout, getValueFromIdToken, hasRealmRole, token, doEncrypt, doDecrypt } = useTideCloak()
 
   const [username, setUsername] = useState("")
   const [hasDefaultRole, setHasDefaultRole] = useState(false)
   const [verifyResult, setVerifyResult] = useState(null)
   const [verifying, setVerifying] = useState(false)
+
+  // Self encrypt/decrypt: data is bound to THIS user's identity — only they can
+  // decrypt it. The "dob" tag matches the _tide_dob.selfencrypt/.selfdecrypt roles
+  // granted to every user in init/realm.json.
+  const TAG = "dob"
+  const [plaintext, setPlaintext] = useState("")
+  const [ciphertext, setCiphertext] = useState("")
+  const [decrypted, setDecrypted] = useState("")
+  const [busy, setBusy] = useState(null)
+  const [cryptoErr, setCryptoErr] = useState("")
 
   useEffect(() => {
     if (token) {
@@ -48,6 +58,33 @@ export default function HomePage() {
     }
   }, [token])
 
+  const onEncrypt = useCallback(async () => {
+    if (!plaintext.trim()) return
+    setBusy("enc"); setCryptoErr("")
+    try {
+      // doEncrypt takes an array of { data, tags } and returns ciphertext strings.
+      const [c] = await doEncrypt([{ data: plaintext, tags: [TAG] }])
+      setCiphertext(c); setDecrypted("")
+    } catch (err) {
+      setCryptoErr(err.message || "Encrypt failed")
+    } finally {
+      setBusy(null)
+    }
+  }, [plaintext, doEncrypt])
+
+  const onDecrypt = useCallback(async () => {
+    if (!ciphertext) return
+    setBusy("dec"); setCryptoErr("")
+    try {
+      const [p] = await doDecrypt([{ encrypted: ciphertext, tags: [TAG] }])
+      setDecrypted(String(p))
+    } catch (err) {
+      setCryptoErr(err.message || "Decrypt failed")
+    } finally {
+      setBusy(null)
+    }
+  }, [ciphertext, doDecrypt])
+
   return (
     <div style={containerStyle}>
       <div style={cardStyle}>
@@ -65,10 +102,6 @@ export default function HomePage() {
         >
           {verifying ? 'Verifying…' : 'Verify Token'}
         </button>
-        {/* Demo: policy-governed (Forseti) encryption & decryption */}
-        <a href="/encrypt" style={{ ...buttonStyle, marginTop: '0.5rem', display: 'block', textDecoration: 'none' }}>
-          Try policy encryption
-        </a>
         {verifyResult && (
           <p
             style={{
@@ -79,9 +112,74 @@ export default function HomePage() {
             {verifyResult}
           </p>
         )}
+
+        {/* ── Self encrypt / decrypt ─────────────────────────────────────── */}
+        <div style={{ marginTop: '1.5rem', borderTop: '1px solid #eee', paddingTop: '1rem', textAlign: 'left' }}>
+          <h2 style={{ fontSize: '1.1rem', margin: '0 0 0.25rem' }}>Encrypt / decrypt</h2>
+          <p style={{ margin: '0 0 0.5rem', color: '#777', fontSize: '0.85rem' }}>
+            Encrypted under your own identity — only you can decrypt it.
+          </p>
+
+          <textarea
+            value={plaintext}
+            onChange={(e) => setPlaintext(e.target.value)}
+            placeholder="Type something to encrypt…"
+            style={textareaStyle}
+          />
+          <button onClick={onEncrypt} style={buttonStyle} disabled={!!busy}>
+            {busy === 'enc' ? 'Encrypting…' : 'Encrypt'}
+          </button>
+
+          {ciphertext && (
+            <>
+              <p style={fieldLabel}>Ciphertext</p>
+              <pre style={preStyle}>{ciphertext}</pre>
+              <button onClick={onDecrypt} style={{ ...buttonStyle, marginTop: '0.5rem' }} disabled={!!busy}>
+                {busy === 'dec' ? 'Decrypting…' : 'Decrypt'}
+              </button>
+            </>
+          )}
+
+          {decrypted && (
+            <>
+              <p style={fieldLabel}>Decrypted</p>
+              <pre style={{ ...preStyle, background: '#e9f7ef' }}>{decrypted}</pre>
+            </>
+          )}
+
+          {cryptoErr && <p style={{ color: 'red', marginTop: '0.5rem' }}>{cryptoErr}</p>}
+        </div>
       </div>
     </div>
   )
+}
+
+const textareaStyle = {
+  width: '100%',
+  minHeight: '64px',
+  padding: '0.5rem',
+  borderRadius: '4px',
+  border: '1px solid #ccc',
+  boxSizing: 'border-box',
+  fontFamily: 'inherit',
+  fontSize: '0.9rem',
+}
+
+const fieldLabel = {
+  margin: '0.75rem 0 0.25rem',
+  fontSize: '0.8rem',
+  color: '#555',
+  fontWeight: 600,
+}
+
+const preStyle = {
+  margin: 0,
+  padding: '0.6rem',
+  background: '#f4f4f4',
+  borderRadius: '4px',
+  fontSize: '0.8rem',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-all',
 }
 
 const containerStyle = {
