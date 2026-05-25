@@ -17,18 +17,29 @@ export default function HomePage() {
   // decrypt it. The "message" tag matches the _tide_message.selfencrypt/.selfdecrypt
   // roles granted to every user in init/realm.json.
   const TAG = "message"
-  const [plaintext, setPlaintext] = useState("")
-  const [ciphertext, setCiphertext] = useState("")
-  const [decrypted, setDecrypted] = useState("")
-  const [busy, setBusy] = useState<null | "enc" | "dec">(null)
+  const [text, setText] = useState("")        // always the decrypted value, editable
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState("")
   const [cryptoErr, setCryptoErr] = useState("")
 
-    useEffect(() => {
+  // localStorage key for the saved note, namespaced per user (vuid).
+  const storageKey = () => `tide-note:${getValueFromIdToken("vuid")}`
+
+  useEffect(() => {
     if (token) {
       const name = getValueFromIdToken("preferred_username")
       const defaultRole = hasRealmRole(`default-roles-${tcConfig["realm"]}`)
       setUsername(name);
       setHasDefaultRole(defaultRole)
+
+      // Restore the saved note. Only the CIPHERTEXT is persisted; we decrypt it
+      // client-side here so the field shows plaintext when you log back in.
+      const stored = typeof window !== "undefined" ? localStorage.getItem(storageKey()) : null
+      if (stored) {
+        doDecrypt([{ encrypted: stored, tags: [TAG] }])
+          .then((res) => setText(String(res[0])))
+          .catch(() => {})
+      }
     }
 
   }, [token])
@@ -60,32 +71,24 @@ export default function HomePage() {
     }
   }, [token])
 
-  const onEncrypt = useCallback(async () => {
-    if (!plaintext.trim()) return
-    setBusy("enc"); setCryptoErr("")
+  // Submit = encrypt the current value, persist the ciphertext, then decrypt it
+  // straight back so the field keeps showing plaintext. We store only the
+  // ciphertext (here in localStorage; in a real app, on your server) — it's
+  // decrypted again when you log back in.
+  const onSubmit = useCallback(async () => {
+    setBusy(true); setCryptoErr(""); setStatus("")
     try {
-      // doEncrypt takes an array of { data, tags } and returns ciphertext strings.
-      const [c] = await doEncrypt([{ data: plaintext, tags: [TAG] }])
-      setCiphertext(c); setDecrypted("")
+      const [ct] = await doEncrypt([{ data: text, tags: [TAG] }])
+      if (typeof window !== "undefined") localStorage.setItem(storageKey(), ct)
+      const [pt] = await doDecrypt([{ encrypted: ct, tags: [TAG] }])
+      setText(String(pt))
+      setStatus("Message successfully stored")
     } catch (err: any) {
-      setCryptoErr(err.message || "Encrypt failed")
+      setCryptoErr(err.message || "Failed")
     } finally {
-      setBusy(null)
+      setBusy(false)
     }
-  }, [plaintext, doEncrypt])
-
-  const onDecrypt = useCallback(async () => {
-    if (!ciphertext) return
-    setBusy("dec"); setCryptoErr("")
-    try {
-      const [p] = await doDecrypt([{ encrypted: ciphertext, tags: [TAG] }])
-      setDecrypted(String(p))
-    } catch (err: any) {
-      setCryptoErr(err.message || "Decrypt failed")
-    } finally {
-      setBusy(null)
-    }
-  }, [ciphertext, doDecrypt])
+  }, [text, doEncrypt, doDecrypt])
 
   return (
     <div style={containerStyle}>
@@ -113,39 +116,24 @@ export default function HomePage() {
           </p>
         )}
 
-        {/* ── Self encrypt / decrypt ─────────────────────────────────────── */}
+        {/* ── Encrypted note: always shown decrypted; Submit re-encrypts then decrypts ── */}
         <div style={{ marginTop: '1.5rem', borderTop: '1px solid #eee', paddingTop: '1rem', textAlign: 'left' }}>
-          <h2 style={{ fontSize: '1.1rem', margin: '0 0 0.25rem' }}>Encrypt / decrypt</h2>
+          <h2 style={{ fontSize: '1.1rem', margin: '0 0 0.25rem' }}>Your encrypted note</h2>
           <p style={{ margin: '0 0 0.5rem', color: '#777', fontSize: '0.85rem' }}>
-            Encrypted under your own identity — only you can decrypt it.
+            This is an encrypted textbox under your own identity — only you can decrypt it.
           </p>
 
           <textarea
-            value={plaintext}
-            onChange={(e) => setPlaintext(e.target.value)}
-            placeholder="Type something to encrypt…"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Type your note…"
             style={textareaStyle}
           />
-          <button onClick={onEncrypt} style={buttonStyle} disabled={!!busy}>
-            {busy === 'enc' ? 'Encrypting…' : 'Encrypt'}
+          <button onClick={onSubmit} style={buttonStyle} disabled={busy}>
+            {busy ? 'Submitting…' : 'Submit'}
           </button>
 
-          {ciphertext && (
-            <>
-              <p style={fieldLabel}>Ciphertext</p>
-              <pre style={preStyle}>{ciphertext}</pre>
-              <button onClick={onDecrypt} style={{ ...buttonStyle, marginTop: '0.5rem' }} disabled={!!busy}>
-                {busy === 'dec' ? 'Decrypting…' : 'Decrypt'}
-              </button>
-            </>
-          )}
-
-          {decrypted && (
-            <>
-              <p style={fieldLabel}>Decrypted</p>
-              <pre style={{ ...preStyle, background: '#e9f7ef' }}>{decrypted}</pre>
-            </>
-          )}
+          {status && <p style={{ color: 'green', marginTop: '0.5rem', fontSize: '0.85rem' }}>{status}</p>}
 
           {cryptoErr && <p style={{ color: 'red', marginTop: '0.5rem' }}>{cryptoErr}</p>}
         </div>
@@ -165,22 +153,6 @@ const textareaStyle: React.CSSProperties = {
   fontSize: '0.9rem',
 }
 
-const fieldLabel: React.CSSProperties = {
-  margin: '0.75rem 0 0.25rem',
-  fontSize: '0.8rem',
-  color: '#555',
-  fontWeight: 600,
-}
-
-const preStyle: React.CSSProperties = {
-  margin: 0,
-  padding: '0.6rem',
-  background: '#f4f4f4',
-  borderRadius: '4px',
-  fontSize: '0.8rem',
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-all',
-}
 
 const containerStyle: React.CSSProperties = {
   minHeight: '100vh',
