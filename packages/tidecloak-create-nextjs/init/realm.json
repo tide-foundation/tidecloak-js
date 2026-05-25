@@ -12,12 +12,12 @@
                 "description": "Standard application user"
             },
             {
-                "name": "_tide_dob.selfencrypt",
-                "description": "Tide E2EE self-encrypt DoB data"
+                "name": "_tide_message.selfencrypt",
+                "description": "Tide E2EE self-encrypt message data"
             },
             {
-                "name": "_tide_dob.selfdecrypt",
-                "description": "Tide E2EE self-decrypt DoB data"
+                "name": "_tide_message.selfdecrypt",
+                "description": "Tide E2EE self-decrypt message data"
             },
             {
                 "name": "default-roles-nextjs-test",
@@ -25,8 +25,8 @@
                 "composite": true,
                 "composites": {
                     "realm": [
-                        "_tide_dob.selfencrypt",
-                        "_tide_dob.selfdecrypt",
+                        "_tide_message.selfencrypt",
+                        "_tide_message.selfdecrypt",
                         "appUser"
                     ]
                 }

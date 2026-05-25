@@ -13,9 +13,9 @@ export default function HomePage() {
   const [verifying, setVerifying] = useState(false)
 
   // Self encrypt/decrypt: data is bound to THIS user's identity — only they can
-  // decrypt it. The "dob" tag matches the _tide_dob.selfencrypt/.selfdecrypt roles
-  // granted to every user in init/realm.json.
-  const TAG = "dob"
+  // decrypt it. The "message" tag matches the _tide_message.selfencrypt/.selfdecrypt
+  // roles granted to every user in init/realm.json.
+  const TAG = "message"
   const [plaintext, setPlaintext] = useState("")
   const [ciphertext, setCiphertext] = useState("")
   const [decrypted, setDecrypted] = useState("")
