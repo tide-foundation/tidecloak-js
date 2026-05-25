@@ -35,7 +35,7 @@ const buttonStyle: CSSProperties = {
   cursor: 'pointer',
 }
 
-export default function LoginPage(): JSX.Element {
+export default function LoginPage() {
   const { login, authenticated } = useTideCloak()
   const router = useRouter()
 

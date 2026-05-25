@@ -1,17 +1,23 @@
 {
   "name": "@tidecloak/js",
-  "version": "0.13.30",
+  "version": "0.13.31",
+  "description": "Vanilla JavaScript/browser SDK for TideCloak with an IAMService singleton and low-level client.",
   "type": "module",
   "main": "dist/cjs/src/index.js",
   "module": "dist/esm/src/index.js",
   "types": "dist/types/src/index.d.ts",
+  "sideEffects": [
+    "*.css"
+  ],
   "exports": {
     ".": {
       "types": "./dist/types/src/index.d.ts",
       "import": "./dist/esm/src/index.js",
-      "require": "./dist/cjs/src/index.js"
+      "require": "./dist/cjs/src/index.js",
+      "default": "./dist/esm/src/index.js"
     },
     "./policy-react": {
+      "types": "./dist/types/src/policy-react.d.ts",
       "import": "./dist/esm/src/policy-react.js",
       "require": "./dist/cjs/src/policy-react.js"
     },
@@ -23,7 +29,7 @@
     "build:esm": "tsc -p tsconfig.esm.json",
     "build:types": "tsc -p tsconfig.types.json",
     "build:copy-css": "node scripts/copy-css.cjs",
-    "build": "npm run build:cjs && npm run build:esm && npm run build:types && npm run build:copy-css && cp ./silent-check-sso.html dist/",
+    "build": "npm run build:cjs && npm run build:esm && npm run build:types && npm run build:copy-css && cp ./silent-check-sso.html dist/ && node scripts/postbuild.cjs",
     "prepare": "npm run build"
   },
   "files": [
@@ -31,9 +37,34 @@
     "scripts/postinstall.cjs",
     "silent-check-sso.html"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tide-foundation/tidecloak-js.git"
+  },
+  "author": "Tide",
+  "license": "https://tide.org/licenses_tcoc2-0-0-en",
+  "keywords": [
+    "security",
+    "tidecloak",
+    "tide",
+    "authentication",
+    "oidc",
+    "oauth2",
+    "authorization"
+  ],
   "dependencies": {
-    "heimdall-tide": "^0.13.30",
-    "@tideorg/js": "^0.13.30"
-
+    "heimdall-tide": "^0.13.31",
+    "@tideorg/js": "^0.13.31"
+  },
+  "peerDependencies": {
+    "@tidecloak/policy": "^0.13.31"
+  },
+  "peerDependenciesMeta": {
+    "@tidecloak/policy": {
+      "optional": true
+    }
   }
 }

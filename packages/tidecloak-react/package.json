@@ -1,15 +1,16 @@
 {
   "name": "@tidecloak/react",
-  "version": "0.13.30",
+  "version": "0.13.31",
   "description": "TideCloak client-side React SDK",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/esm/index.js",
       "types": "./dist/types/index.d.ts",
-      "require": "./dist/cjs/src/index.js"
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
     }
   },
   "files": [
@@ -40,7 +41,7 @@
   "scripts": {
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "build:esm": "tsc -p tsconfig.esm.json",
-    "build": "npm run build:cjs && npm run build:esm",
+    "build": "npm run build:cjs && npm run build:esm && node scripts/postbuild.cjs",
     "prepare": "npm run build"
   },
   "devDependencies": {
@@ -48,6 +49,6 @@
     "@types/react-dom": "^19.1.6"
   },
   "dependencies": {
-    "@tidecloak/js": "^0.13.30"
+    "@tidecloak/js": "^0.13.31"
   }
 }

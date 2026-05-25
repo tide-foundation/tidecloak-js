@@ -16,7 +16,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const token = authHeader.split(' ')[1]
 
   try {
-    const user = await verifyTideCloakToken(tcConfig, token, [ALLOWED_ROLE])
+    const user = await verifyTideCloakToken(tcConfig, token, [ALLOWED_ROLE]) as Record<string, any>
 
     if (!user) {
       return NextResponse.json(

@@ -34,3 +34,9 @@ npm install @tidecloak/react
 - React 18+
 - A TideCloak server ([setup guide](https://github.com/tide-foundation/tidecloak-gettingstarted))
 - A registered client in your TideCloak realm
+
+---
+
+## Security defaults
+
+**DPoP (sender-constrained tokens) is enabled and enforced by default.** No configuration is required. To relax it, pass `useDPoP` in the provider `config`: `{ mode: "auto" }` (use DPoP only when the realm supports it) or `false` (disable). See the [`@tidecloak/js` DPoP docs](../tidecloak-js/docs/FRONT_CHANNEL.md#dpop-on-by-default).

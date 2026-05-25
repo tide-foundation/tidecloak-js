@@ -135,7 +135,7 @@ echo "🔐 Initializing Tide realm + IGA..."
 curl -s -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/vendorResources/setUpTideRealm" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  --data-urlencode "email=email@tide.org" >/dev/null
+  --data-urlencode "email=${SUBSCRIPTION_EMAIL:-test@demo.org}" >/dev/null
 
 curl -s -X POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/tide-admin/toggle-iga" \
      -H "Authorization: Bearer ${TOKEN}" \

@@ -46,8 +46,11 @@ npm install @tidecloak/nextjs
 - `useTideCloak()` - Hook for auth state and actions
 - `<Authenticated>` / `<Unauthenticated>` - UI guards
 - `createTideCloakMiddleware()` - Edge middleware for route protection
+- `createTideCloakProxy()` - Node.js proxy for route protection (recommended on Next.js 16+)
 - `verifyTideCloakToken()` - Server-side JWT verification
 - `doEncrypt()` / `doDecrypt()` - Tag-based encryption
+
+> **DPoP is enabled and enforced by default** (sender-constrained tokens). Pass `useDPoP: false` or `useDPoP: { mode: "auto" }` in your provider config to relax it — see the [`@tidecloak/js` DPoP docs](../tidecloak-js/docs/FRONT_CHANNEL.md#dpop-on-by-default).
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "name": "@tidecloak/nextjs",
-  "version": "0.13.30",
+  "version": "0.13.31",
   "description": "TideCloak nextjs SDK",
   "exports": {
     ".": {
@@ -41,18 +41,19 @@
     "nextjs"
   ],
   "peerDependencies": {
-    "next": "^16.0.1",
-    "react": "^19.2.0"
+    "next": ">=13.5.0",
+    "react": ">=18.0.0"
   },
   "scripts": {
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "build:esm": "tsc -p tsconfig.esm.json",
-    "build": "npm run build:cjs && npm run build:esm",
+    "build": "npm run build:cjs && npm run build:esm && node scripts/postbuild.cjs",
+    "test": "npm run build && node --test test/*.test.mjs",
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@tidecloak/react": "^0.13.30",
-    "@tidecloak/verify": "^0.13.30"
+    "@tidecloak/react": "^0.13.31",
+    "@tidecloak/verify": "^0.13.31"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import type { SetStateAction } from 'react';
 import { IAMService } from '@tidecloak/js';
 
 export interface AuthCallbackState {
@@ -63,6 +64,19 @@ function parseCallback(): {
   errorDescription: string | null;
   isCallback: boolean;
 } {
+  // Runs inside a useState initializer (first render, including SSR). Guard
+  // window/sessionStorage access so server rendering doesn't throw.
+  if (typeof window === 'undefined') {
+    return {
+      code: null,
+      state: null,
+      verifier: null,
+      returnUrl: null,
+      error: null,
+      errorDescription: null,
+      isCallback: false,
+    };
+  }
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
   const state = params.get('state') || '';
@@ -142,6 +156,21 @@ export function useAuthCallback(options: UseAuthCallbackOptions = {}): AuthCallb
   const onSuccessRef = useRef(onSuccess);
   const onErrorRef = useRef(onError);
 
+  // Avoid state updates / navigation after the component unmounts (e.g. the user
+  // routes away mid token-exchange). Re-set to true on each mount so StrictMode's
+  // setup/cleanup/setup cycle doesn't leave it stuck false.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const safeSetState = useCallback((updater: SetStateAction<AuthCallbackState>) => {
+    if (mountedRef.current) setState(updater);
+  }, []);
+
   // Keep refs updated
   useEffect(() => {
     onSuccessRef.current = onSuccess;
@@ -153,7 +182,7 @@ export function useAuthCallback(options: UseAuthCallbackOptions = {}): AuthCallb
     if (processedRef.current) return;
     processedRef.current = true;
 
-    setState(s => ({ ...s, isProcessing: true }));
+    safeSetState(s => ({ ...s, isProcessing: true }));
 
     try {
       const parsed = parseCallback();
@@ -161,31 +190,31 @@ export function useAuthCallback(options: UseAuthCallbackOptions = {}): AuthCallb
       // Check for IdP error first
       if (parsed.error) {
         const error = new Error(parsed.errorDescription || parsed.error);
-        setState(s => ({
+        safeSetState(s => ({
           ...s,
           isProcessing: false,
           error,
           idpError: parsed.error,
           idpErrorDescription: parsed.errorDescription,
         }));
-        onErrorRef.current?.(error);
+        if (mountedRef.current) onErrorRef.current?.(error);
         return;
       }
 
       if (!parsed.code) {
-        setState(s => ({ ...s, isProcessing: false }));
+        safeSetState(s => ({ ...s, isProcessing: false }));
         return;
       }
 
       // Check for missing verifier (page was refreshed)
       if (!parsed.verifier) {
         if (onMissingVerifierRedirectTo) {
-          window.location.assign(onMissingVerifierRedirectTo);
+          if (mountedRef.current) window.location.assign(onMissingVerifierRedirectTo);
           return;
         }
         const error = new Error('Session expired. Please try logging in again.');
-        setState(s => ({ ...s, isProcessing: false, error }));
-        onErrorRef.current?.(error);
+        safeSetState(s => ({ ...s, isProcessing: false, error }));
+        if (mountedRef.current) onErrorRef.current?.(error);
         return;
       }
 
@@ -193,19 +222,22 @@ export function useAuthCallback(options: UseAuthCallbackOptions = {}): AuthCallb
       const config = IAMService.getConfig();
       if (!config) {
         const error = new Error('IAMService not configured. Call loadConfig() first.');
-        setState(s => ({ ...s, isProcessing: false, error }));
-        onErrorRef.current?.(error);
+        safeSetState(s => ({ ...s, isProcessing: false, error }));
+        if (mountedRef.current) onErrorRef.current?.(error);
         return;
       }
 
       // Initialize IAMService which will handle the token exchange
       const authenticated = await IAMService.initIAM(config);
 
+      // Bail out if the component unmounted during the async token exchange.
+      if (!mountedRef.current) return;
+
       if (authenticated) {
         // Try to get return URL from sessionStorage since we can't access internal state
         const returnUrl = sessionStorage.getItem('kc_return_url') || parsed.returnUrl;
 
-        setState(s => ({
+        safeSetState(s => ({
           ...s,
           isProcessing: false,
           isSuccess: true,
@@ -214,15 +246,15 @@ export function useAuthCallback(options: UseAuthCallbackOptions = {}): AuthCallb
         onSuccessRef.current?.(returnUrl);
       } else {
         const error = new Error('Authentication failed');
-        setState(s => ({ ...s, isProcessing: false, error }));
+        safeSetState(s => ({ ...s, isProcessing: false, error }));
         onErrorRef.current?.(error);
       }
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      setState(s => ({ ...s, isProcessing: false, error }));
-      onErrorRef.current?.(error);
+      safeSetState(s => ({ ...s, isProcessing: false, error }));
+      if (mountedRef.current) onErrorRef.current?.(error);
     }
-  }, [onMissingVerifierRedirectTo]);
+  }, [onMissingVerifierRedirectTo, safeSetState]);
 
   // Auto-process on mount if enabled and this is a callback
   useEffect(() => {
