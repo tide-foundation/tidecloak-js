@@ -14,10 +14,9 @@ export type { TidecloakConfig, TideMiddlewareOptions }
  */
 export type TideProxyOptions = TideMiddlewareOptions
 
-const DEFAULTS: Omit<TideProxyOptions, 'config'> & { protectedRoutes: ProtectedRoutesMap } = {
+const DEFAULTS: { protectedRoutes: ProtectedRoutesMap; cookieName: string } = {
   protectedRoutes: {},
-  onRequest: undefined,
-  onSuccess: undefined,
+  cookieName: 'kcToken',
 }
 
 /**
@@ -57,7 +56,7 @@ export function createTideCloakProxy(opts: TideProxyOptions) {
 
     try {
       // Extract the raw JWT from the specified cookie
-      const token = req.cookies.get("kcToken")?.value || null
+      const token = req.cookies.get(settings.cookieName)?.value || null
 
       // Allow custom logic before auth checks
       if (settings.onRequest) {

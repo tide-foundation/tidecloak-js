@@ -38,23 +38,22 @@ npm init @tidecloak/nextjs@latest my-app
 
 ```
 my-app/
-├── app
-|   └── api/
+├── app/
+|   ├── api/
 |   │   └── protected/
 |   │       └── route.js            <- A protected API on your NextJS server that verifies the user's access token
 |   ├── auth/
 |   │   └── redirect/
 |   │       └── page.jsx            <- A dedicated page to redirect the user back to once authentication is complete
 |   ├── home/
-|   |   └── page.jsx                <- Your home page the user goes to once autenticated
-|   ├── public/
-│   |   └── silent-check-sso.html
+|   |   └── page.jsx                <- Your home page the user goes to once authenticated
 |   ├── layout.jsx                  <- Entry point of your app before the user sees any actual pages
 |   └── page.jsx                    <- Your login page the user is brought to when they need to authenticate
-|
+├── public/
+│   └── silent-check-sso.html       <- Silent SSO check page served at the site root
 ├── tidecloak.json                  <- Where your Tidecloak configuration sits
-├── next.config.json
-├── middleware.js                   <- Run on each page navigation - this is where the Tideccloak token is verified
+├── next.config.js
+├── middleware.js                   <- Run on each page navigation - this is where the Tidecloak token is verified
 └── package.json
 ```
 
@@ -204,7 +203,8 @@ TideCloak provides server-side route protection for both the **Pages Router** an
 #### Options
 
 * **`config`** (`TidecloakConfig`): Your Tidecloak adapter JSON (downloaded from your TideCloak client settings).
-* **`protectedRoutes`** (`ProtectedRoutesMap`): Map of path patterns to arrays of required roles.
+* **`protectedRoutes`** (`ProtectedRoutesMap`): Map of path patterns to arrays of required roles. A trailing `/*` glob (e.g. `"/admin/*"`) also matches the bare base path (`/admin`).
+* **`cookieName`** (`string`, default `"kcToken"`): Name of the cookie that holds the access token.
 * **`onRequest`**<br>`(ctx: { token: string | null }, req: NextRequest) => NextResponse | void`<br>Hook before auth logic; can short-circuit by returning a `NextResponse`.
 * **`onSuccess`**<br>`(ctx: { payload: Record<string, any> }, req: NextRequest) => NextResponse | void`<br>Hook after successful auth & role checks; override the response by returning one.
 * **`onFailure`**<br>`(ctx: { token: string | null }, req: NextRequest) => NextResponse | void`<br>Hook when auth or role check fails; return a `NextResponse` to override.

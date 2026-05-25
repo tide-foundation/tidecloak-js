@@ -1,19 +1,18 @@
 // an example nextJS middleware router that does server-side validation on all traffic to secure pages
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import {
-  createTideCloakMiddleware,
-  type TideCloakContext,
-} from "@tidecloak/nextjs/server";
+import { createTideCloakMiddleware } from "@tidecloak/nextjs/server";
 import tcConfig from "./tidecloak.json";
 
 export default createTideCloakMiddleware({
   config: tcConfig,
   protectedRoutes: {
-    // list each protected route and the roles allowed to access it
+    // "offline_access" is granted to every authenticated user, so this protects
+    // the route for "any logged-in user". Swap it for a real realm/client role
+    // (e.g. "appUser") to demonstrate role-based access control.
     "/protected": ["offline_access"],
   },
-  onFailure: (ctx: TideCloakContext, req: NextRequest) => {
+  onFailure: (ctx: { token: string | null }, req: NextRequest) => {
     console.debug("Token verification failed", {
       path: req.nextUrl.pathname,
       ctx,
@@ -23,14 +22,11 @@ export default createTideCloakMiddleware({
       { status: 403 }
     );
   },
-  onSuccess: (ctx: TideCloakContext, req: NextRequest) => {
+  onSuccess: (ctx: { payload: Record<string, any> }, req: NextRequest) => {
     return NextResponse.next();
   },
-  onError: (
-    ctx: TideCloakContext,
-    req: NextRequest,
-    err: unknown
-  ) => {
+  // Note: onError receives (err, req) - the error is the first argument.
+  onError: (err: unknown, req: NextRequest) => {
     console.error("[Middleware] error verifying token for", req.nextUrl.pathname, err);
     // if something unexpected happens, redirect to your auth flow
     const redirectUrl = new URL("/auth/redirect", req.url);
@@ -38,7 +34,7 @@ export default createTideCloakMiddleware({
   },
 });
 
-// Tell Next.js which paths to apply this middleware to
+// Tell Next.js which paths to apply this middleware to (bare path and subpaths)
 export const config = {
-  matcher: ["/protected/:path*"],
+  matcher: ["/protected", "/protected/:path*"],
 };

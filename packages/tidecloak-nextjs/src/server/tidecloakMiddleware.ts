@@ -8,10 +8,17 @@ import {
 interface JWK {
     kid: string;
     kty: string;
-    alg: string;
-    use: string;
-    crv: string;
-    x: string;
+    alg?: string;
+    use?: string;
+    // EC keys
+    crv?: string;
+    x?: string;
+    y?: string;
+    // RSA keys
+    n?: string;
+    e?: string;
+    // allow any other JWK members
+    [key: string]: unknown;
 }
 
 export interface TidecloakConfig {
@@ -40,6 +47,8 @@ export interface TideMiddlewareOptions {
   config: TidecloakConfig
   /** Routes requiring a verified token and specific roles */
   protectedRoutes?: ProtectedRoutesMap
+  /** Name of the cookie that holds the access token (defaults to `"kcToken"`) */
+  cookieName?: string
   /** Called before any auth logic; return a Response to short‑circuit */
   onRequest?: (ctx: { token: string | null }, req: NextRequest) => NextResponse | void
   /** Called after successful auth and role checks; return a Response to override */
@@ -50,10 +59,9 @@ export interface TideMiddlewareOptions {
   onError?: (err: any, req: NextRequest) => NextResponse
 }
 
-const DEFAULTS: Omit<TideMiddlewareOptions, 'config'> & { protectedRoutes: ProtectedRoutesMap } = {
+const DEFAULTS: { protectedRoutes: ProtectedRoutesMap; cookieName: string } = {
   protectedRoutes: {},
-  onRequest: undefined,
-  onSuccess: undefined,
+  cookieName: 'kcToken',
 }
 
 /**
@@ -63,9 +71,9 @@ const DEFAULTS: Omit<TideMiddlewareOptions, 'config'> & { protectedRoutes: Prote
  *
  * ```ts
  * import tidecloakConfig from './tidecloakAdapter.json'
- * import { createTideMiddleware } from 'tidecloak-nextjs/server/tidecloakMiddleware'
+ * import { createTideCloakMiddleware } from '@tidecloak/nextjs/server'
  *
- * export default createTideMiddleware({
+ * export default createTideCloakMiddleware({
  *   config: tidecloakConfig,
  *   protectedRoutes: {
  *     '/admin/*': ['admin'],
@@ -93,7 +101,7 @@ export function createTideCloakMiddleware(opts: TideMiddlewareOptions) {
 
     try {
       // Extract the raw JWT from the specified cookie
-      const token = req.cookies.get("kcToken")?.value || null
+      const token = req.cookies.get(settings.cookieName)?.value || null
 
       // Allow custom logic before auth checks
       if (settings.onRequest) {
@@ -107,10 +115,14 @@ export function createTideCloakMiddleware(opts: TideMiddlewareOptions) {
           // Verify signature, issuer, and presence of at least one allowed role
           const payload = await verifyTideCloakToken(settings.config, token!, roles)
           if (!payload) {
-            // Custom onFailure hook or default redirect
-            const result = settings.onFailure!({ token }, req)
-            if (result) return result
-             return NextResponse.json(
+            // Custom onFailure hook if provided; otherwise fall through to the
+            // default 403. (onFailure is optional, so it must be guarded — calling
+            // it unconditionally would throw on the common no-hook configuration.)
+            if (settings.onFailure) {
+              const result = settings.onFailure({ token }, req)
+              if (result) return result
+            }
+            return NextResponse.json(
               { error: '[TideCloak Middleware] Access forbidden: invalid token' },
               { status: 403 }
             );

@@ -2,7 +2,7 @@
 
 A lightweight utility for server‑side verification of TideCloak‑issued JSON Web Tokens (JWTs).
 
-This package exports a single function, `verifyTideCloakToken`, which you can use in your Next.js API routes, Node.js servers, or any backend to verify the authenticity, issuer, audience, and roles of a JWT issued by your TideCloak realm.
+This package exports a single function, `verifyTideCloakToken`, which you can use in your Next.js API routes, Node.js servers, or any backend to verify the signature, issuer, authorized party (`azp`), and roles of a JWT issued by your TideCloak realm.
 
 ---
 
@@ -47,11 +47,23 @@ Internally, `verifyTideCloakToken` uses the [jose](https://github.com/panva/jose
 1. Ensure a token is present.
 2. Construct the correct issuer URL from `config['auth-server-url']` and `config.realm`.
 3. Choose between a local JWK Set (`config.jwk.keys`) or fetch the JWK Set remotely from Tidecloak.
-4. Verify the token's signature, issuer, and `azp` (authorized party) against `config.resource`.
-5. Extract realm (`payload.realm_access.roles`) and client (`payload.resource_access[resource].roles`) roles.
-6. Check for at least one matching role if `allowedRoles` is specified.
+4. Verify the token's signature against a **pinned algorithm allowlist** (`ES256`, `ES384`, `ES512`, `EdDSA` by default), the `issuer`, and the standard time claims (`exp`/`nbf`) with a small `clockTolerance`.
+5. Verify the `azp` (authorized party) against `config.resource` — **only when `resource` is configured**.
+6. Extract realm (`payload.realm_access.roles`) and client (`payload.resource_access[resource].roles`) roles.
+7. Check for at least one matching role if `allowedRoles` is specified.
 
-On any failure, it logs an error to the console and returns `null`.
+On any failure, it logs the error message to the console and returns `null`.
+
+> **Note:** the algorithm allowlist closes algorithm-confusion attacks — without it, `jose` would accept any algorithm a key in the set can validate. A `null` result collapses both invalid tokens and infrastructure failures (e.g. an unreachable remote JWKS endpoint), so treat `null` as "not authorized" and monitor your JWKS reachability separately.
+
+### Optional config fields
+
+You can tune verification by adding these optional fields to the `config` object:
+
+| Field                       | Type                   | Default                                  | Description                                                                 |
+| --------------------------- | ---------------------- | ---------------------------------------- | --------------------------------------------------------------------------- |
+| `tokenSignatureAlgorithms`  | `string[]`             | `['ES256','ES384','ES512','EdDSA']`      | Allowed JWS signature algorithms. Override if your realm signs with others (e.g. `['RS256']`). |
+| `clockTolerance`            | `number` \| `string`   | `'5s'`                                   | Allowed clock skew between issuer and verifier (seconds, or a jose duration string). |
 
 ---
 
@@ -172,10 +184,14 @@ export async function GET(req: NextRequest) {
 interface TidecloakConfig {
   realm: string;
   'auth-server-url': string;
-  resource: string;
+  resource?: string;
   publicClient?: boolean;
   confidentialPort?: number;
-  jwk?: { keys: Array<{ kid: string; kty: string; alg: string; use: string; x: string; crv?: string }> };
+  jwk?: { keys: Array<{ kid: string; kty: string; alg?: string; use?: string; x?: string; crv?: string; n?: string; e?: string }> };
+  /** Allowed JWS signature algorithms. Default: ['ES256','ES384','ES512','EdDSA']. */
+  tokenSignatureAlgorithms?: string[];
+  /** Allowed clock skew (seconds or a jose duration string). Default: '5s'. */
+  clockTolerance?: number | string;
   [key: string]: unknown;
 }
 

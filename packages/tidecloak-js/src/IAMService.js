@@ -191,7 +191,23 @@ class IAMService {
       console.warn("[loadConfig] empty config");
       return null;
     }
-    this._config = config;
+    // Shallow-copy so we can normalise defaults without mutating the caller's object.
+    this._config = { ...config };
+
+    // DPoP is enabled and ENFORCED by default across all TideCloak SDKs. To weaken
+    // or disable it, set `useDPoP` explicitly:
+    //   - `useDPoP: false`              → disable DPoP entirely
+    //   - `useDPoP: { mode: 'auto' }`   → use DPoP only when the realm advertises it
+    //   - `useDPoP: { mode: 'strict' }` → require DPoP (the default); init fails if
+    //                                      the realm doesn't advertise DPoP support
+    const dpop = this._config.useDPoP;
+    if (dpop === false || dpop === null || dpop === "") {
+      delete this._config.useDPoP; // explicit opt-out
+    } else if (dpop === undefined || dpop === true) {
+      this._config.useDPoP = { mode: "strict" };
+    } else if (typeof dpop === "object" && dpop.mode === undefined) {
+      this._config.useDPoP = { ...dpop, mode: "strict" };
+    }
 
     // Hybrid mode: do not construct TideCloak client (tokens are server-side)
     if (this.isHybridMode()) {
@@ -487,7 +503,7 @@ class IAMService {
 
       // if successful, store token for middleware
       if (authenticated && this._tc.token) {
-        document.cookie = `kcToken=${this._tc.token}; path=/;`;
+        this._setTokenCookie(this._tc.token);
       }
     } catch (err) {
       console.error("[IAMService] TideCloak init error:", err);
@@ -506,6 +522,43 @@ class IAMService {
     return this._tc;
   }
 
+  /**
+   * Write the access token to the `kcToken` cookie used by the server middleware.
+   * Uses `SameSite=Lax` to blunt CSRF (the cookie is not sent on cross-site
+   * subrequests) while still allowing the post-login top-level redirect, and
+   * marks it `Secure` whenever the page is served over HTTPS.
+   * @private
+   */
+  _setTokenCookie(token) {
+    const secure =
+      typeof window !== "undefined" && window.location?.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `kcToken=${token}; path=/; SameSite=Lax${secure}`;
+  }
+
+  /** @private */
+  _clearTokenCookie() {
+    document.cookie =
+      "kcToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
+  }
+
+  /**
+   * Restrict a post-login return URL to a same-origin, root-relative path to
+   * prevent open-redirect. The OAuth `state` (and the sessionStorage fallback)
+   * round-trips this value and is then handed to `window.location.assign`, so an
+   * attacker-seeded absolute/protocol-relative URL ("https://evil", "//evil",
+   * "/\\evil", "javascript:...") must be rejected. Falls back to "/".
+   * @private
+   */
+  _sanitizeReturnUrl(url) {
+    if (typeof url !== "string" || url.length === 0) return "";
+    // Must be a single-leading-slash path; reject protocol-relative "//host"
+    // and backslash variants browsers normalise to "//".
+    if (url[0] !== "/" || url[1] === "/" || url[1] === "\\") return "/";
+    // Defensive: reject anything that still parses as having a URL scheme.
+    if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return "/";
+    return url;
+  }
+
   /** @returns {Object} Loaded config */
   getConfig() {
     if (!this._config) {
@@ -522,8 +575,9 @@ class IAMService {
   }
 
   /**
-   * Get valid token (refreshing if needed).
-   * @returns {Promise<string>}
+   * Get valid token (refreshing if needed). Resolves to `null` in native mode
+   * when no tokens are stored or a refresh fails.
+   * @returns {Promise<string|null>}
    * @throws {Error} In hybrid mode (tokens are server-side)
    */
   async getToken() {
@@ -546,6 +600,14 @@ class IAMService {
           return newTokens.accessToken;
         } catch (err) {
           console.error("[IAMService] Native token refresh failed:", err);
+          // The refresh token is no longer usable - drop the session so callers
+          // don't keep sending a stale/`null` bearer token, and surface the error.
+          this._nativeAuthenticated = false;
+          this._nativeTokens = null;
+          try {
+            await this._nativeAdapter?.deleteTokens?.();
+          } catch (_) { /* best-effort cleanup */ }
+          this._emit("authError", err);
           return null;
         }
       }
@@ -581,7 +643,7 @@ class IAMService {
 
   /**
    * Get ID token.
-   * @returns {string}
+   * @returns {string|null}
    * @throws {Error} In hybrid mode (tokens are server-side)
    */
   getIDToken() {
@@ -724,14 +786,15 @@ class IAMService {
       throw new Error("updateIAMToken() not available in hybrid mode - tokens are server-side");
     }
     if (this.isNativeMode()) {
-      // Native mode token refresh is handled in getToken()
-      // Just check if tokens need refresh and return status
+      // Native mode token refresh is handled in getToken(). Only report a refresh
+      // as performed when the token was actually expiring AND getToken() returned a
+      // fresh token (a failed refresh resolves to null and must not report success).
       const exp = this.getTokenExp();
       if (exp < 30) {
-        // Force refresh via getToken
-        await this.getToken();
+        const refreshedToken = await this.getToken();
+        return refreshedToken != null;
       }
-      return exp < 30;
+      return false;
     }
     const kc = this.getTideCloakClient();
     const refreshed = await kc.updateToken();
@@ -741,7 +804,7 @@ class IAMService {
         ? `[updateIAMToken] Refreshed: ${expiresIn}s`
         : `[updateIAMToken] Still valid: ${expiresIn}s`
     );
-    document.cookie = `kcToken=${kc.token}; path=/;`;
+    this._setTokenCookie(kc.token);
     return refreshed;
   }
 
@@ -769,7 +832,7 @@ class IAMService {
       }
       return false;
     }
-    document.cookie = 'kcToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    this._clearTokenCookie();
     const kc = this.getTideCloakClient();
     const refreshed = await kc.updateToken(-1);
     const expiresIn = this.getTokenExp();
@@ -778,7 +841,7 @@ class IAMService {
         ? `[updateToken] Immediately refreshed: ${expiresIn}s`
         : `[updateToken] No refresh needed: ${expiresIn}s`
     );
-    document.cookie = `kcToken=${kc.token}; path=/;`;
+    this._setTokenCookie(kc.token);
     return refreshed;
   }
 
@@ -787,6 +850,7 @@ class IAMService {
    * In hybrid mode, initiates PKCE flow and redirects to IdP.
    * In native mode, opens external browser with auth URL.
    * @param {string} [returnUrl] - URL to redirect to after successful auth (hybrid/native mode)
+   * @returns {void|Promise<void>} Resolves once the redirect/external-browser flow is initiated (hybrid/native); returns void in front-channel mode.
    */
   doLogin(returnUrl = "") {
     console.debug("[IAMService.doLogin] Called with returnUrl:", returnUrl);
@@ -989,8 +1053,11 @@ class IAMService {
       this._dpopProvider.updateResourceServerNonce(origin, dpopNonce);
     }
 
-    // Retry on 401 with use_dpop_nonce
-    if (response.status === 401 && dpopNonce) {
+    // Retry only when the server explicitly asks for a DPoP nonce
+    // (WWW-Authenticate: ... error="use_dpop_nonce"). A blind retry on any 401
+    // doubles unrelated auth failures into two requests.
+    const wwwAuth = response.headers.get("WWW-Authenticate") || "";
+    if (response.status === 401 && dpopNonce && wwwAuth.includes('error="use_dpop_nonce"')) {
       const retryProof = await this._dpopProvider.generateDPoPProof(urlStr, method, token, dpopNonce);
       headers.set("DPoP", retryProof);
       response = await fetch(url, { ...init, headers });
@@ -1048,7 +1115,7 @@ class IAMService {
       this._emit("logout");
       return;
     }
-    document.cookie = 'kcToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    this._clearTokenCookie();
     this.getTideCloakClient().logout({
       redirectUri: this._config["redirectUri"] ?? `${window.location.origin}/auth/redirect`
     });
@@ -1196,7 +1263,7 @@ class IAMService {
 
     // Decode return URL from state, fallback to sessionStorage
     const stateReturnUrl = state.startsWith("__url_") ? state.substring(6) : "";
-    const returnUrl = stateReturnUrl || sessionStorage.getItem("kc_return_url") || "";
+    const returnUrl = this._sanitizeReturnUrl(stateReturnUrl || sessionStorage.getItem("kc_return_url") || "");
 
     const verifier = sessionStorage.getItem("kc_pkce_verifier") || "";
     // Use opts override, then config, then empty string
@@ -1257,7 +1324,7 @@ class IAMService {
 
     // Decode return URL from state, fallback to sessionStorage (Keycloak broker modifies state)
     const stateReturnUrl = state.startsWith("__url_") ? state.substring(6) : "";
-    const returnUrl = stateReturnUrl || sessionStorage.getItem("kc_return_url") || "";
+    const returnUrl = this._sanitizeReturnUrl(stateReturnUrl || sessionStorage.getItem("kc_return_url") || "");
 
     // Handle error response from IdP
     if (error) {

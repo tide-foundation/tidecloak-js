@@ -2,11 +2,15 @@
   "name": "@tidecloak/verify",
   "version": "0.12.15",
   "description": "A lightweight utility for server-side verification of TideCloak-issued JSON Web Tokens (JWTs).",
+  "main": "./dist/cjs/TideJWT.js",
+  "module": "./dist/esm/TideJWT.js",
+  "types": "./dist/types/TideJWT.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/esm/TideJWT.js",
       "types": "./dist/types/TideJWT.d.ts",
-      "require": "./dist/cjs/TideJWT.js"
+      "import": "./dist/esm/TideJWT.js",
+      "require": "./dist/cjs/TideJWT.js",
+      "default": "./dist/esm/TideJWT.js"
     }
   },
   "files": [
@@ -15,7 +19,8 @@
   "scripts": {
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "build:esm": "tsc -p tsconfig.esm.json",
-    "build": "npm run build:cjs && npm run build:esm",
+    "build": "npm run build:cjs && npm run build:esm && node scripts/postbuild.cjs",
+    "test": "node --test test/*.test.mjs",
     "prepare": "npm run build"
   },
   "publishConfig": {

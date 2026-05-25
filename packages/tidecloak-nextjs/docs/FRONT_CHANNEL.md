@@ -215,6 +215,26 @@ export const config = {
 };
 ```
 
+### Options
+
+Both `createTideCloakProxy` and `createTideCloakMiddleware` accept the same options:
+
+| Option            | Type                                              | Description                                                                                  |
+| ----------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `config`          | adapter JSON                                      | Your TideCloak client adapter config.                                                        |
+| `protectedRoutes` | `Record<string, string[]>`                        | Map of route pattern → allowed roles (see pattern rules below).                              |
+| `cookieName`      | `string` (default `"kcToken"`)                    | Name of the cookie holding the access token.                                                 |
+| `onRequest`       | `(ctx, req) => NextResponse \| void`              | Runs before auth checks; return a response to short-circuit.                                 |
+| `onSuccess`       | `({ payload }, req) => NextResponse \| void`      | Runs after a token + role check passes.                                                       |
+| `onFailure`       | `({ token }, req) => NextResponse \| void`        | Runs when verification/role check fails. If omitted, responds `403`.                          |
+| `onError`         | `(err, req) => NextResponse`                      | Unexpected-error fallback. **Note the error is the first argument.** If omitted, the error is rethrown. |
+
+**`protectedRoutes` pattern rules:**
+
+- **Prefix** — `"/dashboard"` matches `/dashboard` and any sub-path.
+- **Glob** — `*` becomes a wildcard. A trailing `/*` also matches the bare base path, so `"/admin/*"` protects **both** `/admin` and `/admin/anything` (it will not match `/administrator`).
+- **`"OPTIONS"`** — matches requests by HTTP method instead of path.
+
 ---
 
 ## Server-Side Token Verification

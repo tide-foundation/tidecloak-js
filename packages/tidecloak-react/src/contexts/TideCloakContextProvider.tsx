@@ -102,9 +102,10 @@ export interface TideCloakContextProviderProps {
   /**
    * Authentication mode. Must be explicitly specified.
    * - 'native': For Electron/Tauri/React Native apps (requires adapter prop)
+   * - 'hybrid': Server-side token exchange (tokens held server-side)
    * - undefined: Standard frontchannel mode (browser-based)
    */
-  authMode?: 'native';
+  authMode?: 'native' | 'hybrid';
 
   /**
    * Native adapter for Electron/Tauri/React Native apps.
@@ -325,6 +326,7 @@ export function TideCloakContextProvider({
         setSessionExpired(true);
         setToken(null);
         setIdToken(null);
+        setTokenExp(null);
       }
     };
 
@@ -376,6 +378,7 @@ export function TideCloakContextProvider({
       setAuthenticated(false);
       setToken(null);
       setIdToken(null);
+      setTokenExp(null);
       setNeedsReauth(false);
 
       // Send notification
@@ -487,7 +490,11 @@ export function TideCloakContextProvider({
         .off('authRefreshError', handleAuthRefreshError)
         .off('logout', handleLogout)
         .off('tokenExpired', handleTokenExpired)
-        .off('initError', handleInitError as any);
+        .off('initError', handleInitError as any)
+        // initIAM(config, updateAuthState) registers updateAuthState on 'ready';
+        // remove it here too or it leaks one handler per reload/remount (the
+        // IAMService singleton outlives this component).
+        .off('ready', updateAuthState);
     };
   }, [resolvedConfig, reloadKey]);
 
@@ -564,8 +571,11 @@ export function TideCloakContextProvider({
     setWasOffline(false);
   }, []);
 
-  // Context value - provide safe defaults during initialization
-  const contextValue: TideCloakContextValue = {
+  // Context value - provide safe defaults during initialization.
+  // Memoized so consumers of useTideCloak() only re-render when a value actually
+  // changes (not on every provider render), and so the exposed function
+  // identities stay stable across unrelated renders.
+  const contextValue = React.useMemo<TideCloakContextValue>(() => ({
     // Bootstrap
     isInitializing,
     initError,
@@ -756,7 +766,14 @@ export function TideCloakContextProvider({
         throw error;
       }
     },
-  };
+  }), [
+    isInitializing, initError,
+    authenticated, sessionExpired, isRefreshing, isLoading,
+    isOffline, wasOffline, needsReauth,
+    token, idToken, tokenExp, baseURL,
+    login, logout, getToken, refreshToken, forceRefreshToken,
+    triggerReauth, clearReauth, resetWasOffline,
+  ]);
 
   return (
     <TideCloakContext.Provider value={contextValue}>
