@@ -478,8 +478,13 @@ class IAMService {
     try {
       authenticated = await this._tc.init({
         setupRequestEnclave: config.setupRequestEnclave ?? true, // true by default because most clients that uses this will need it on
-        onLoad: "check-sso",
-        silentCheckSsoRedirectUri: `${window.location.origin}/silent-check-sso.html`,
+        onLoad: this._config?.onLoad ?? config?.onLoad ?? "check-sso",
+        // Honor a caller-supplied silent-check-SSO redirect URI (e.g. consoles hosted under a
+        // realm sub-path register a base-aware URI); fall back to the origin root for root-hosted apps.
+        silentCheckSsoRedirectUri:
+          this._config?.silentCheckSsoRedirectUri
+          ?? config?.silentCheckSsoRedirectUri
+          ?? `${window.location.origin}/silent-check-sso.html`,
         pkceMethod: "S256",
         ...(this._config?.useDPoP && { useDPoP: this._config.useDPoP }),
         ...(this._config?.checkLoginIframe === false && { checkLoginIframe: false }),
