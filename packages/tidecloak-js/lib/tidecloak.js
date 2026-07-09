@@ -1792,7 +1792,10 @@ export default class TideCloak {
    * Make sure enclave is up - attach this function to a user gesture.
    */
   #ensureRequestEnclaveOpen() {
-    if(!this.requestEnclave) return;
+    // Never (re)open the enclave without a doken. Post-logout the doken is
+    // flushed; reopening a dokenless hidden enclave wedges it with
+    // "Expecting doken in request".
+    if(!this.requestEnclave || !this.doken) return;
     this.requestEnclave.checkEnclaveOpen();
   }
 
@@ -2232,9 +2235,35 @@ export default class TideCloak {
     } else {
       delete this.doken
       delete this.dokenParsed
-      if (this.requestEnclave && typeof this.requestEnclave.updateDoken === 'function') {
-        this.requestEnclave.updateDoken(undefined)
+      // No doken present (e.g. post-logout / flushed state). Do NOT push a
+      // "doken refresh" into the enclave: refreshing with an undefined doken
+      // wedges the hidden enclave ("Expecting doken in request",
+      // TIDE-SWE-UNHANDLED) and blocks the silent re-auth that runs after
+      // logout. Instead tear the stale enclave(s) down so (a) no dokenless
+      // refresh is ever sent, (b) the persistent user-gesture listener can no
+      // longer reopen a dokenless hidden enclave (#ensureRequestEnclaveOpen
+      // no-ops once requestEnclave is cleared), and (c) the next authenticated
+      // flow re-creates a fresh enclave from a valid doken via
+      // initRequestEnclave(). The app is then free to fall through to an
+      // interactive login, which recovers cleanly.
+      this.#teardownEnclaves()
+    }
+  }
+
+  /**
+   * Close and discard any open Tide enclaves. Called when the doken is cleared
+   * (logout / flushed state) so stale enclaves can't be driven without a doken.
+   */
+  #teardownEnclaves () {
+    for (const key of ['requestEnclave', 'approvalEnclave']) {
+      const enclave = this[key]
+      if (!enclave) continue
+      try {
+        if (typeof enclave.close === 'function') enclave.close()
+      } catch (error) {
+        this.#logWarn('[TIDECLOAK] Failed to close ' + key + ': ' + (error instanceof Error ? error.message : error))
       }
+      this[key] = undefined
     }
   }
 
