@@ -341,9 +341,29 @@ export default class TideCloak {
 
     this.onReady?.(this.authenticated)
 
-    // initialize request enclave if authenticated
-    if(this.doken && initOptions.setupRequestEnclave) {
-      this.initRequestEnclave();
+    // Do NOT eagerly open the Tide RequestEnclave during init().
+    //
+    // On a post-logout silent re-auth, the doken returned by the silent
+    // check-sso can be STALE: its session key no longer matches the session the
+    // hidden enclave cached from the previous login. Opening the hidden enclave
+    // here makes it sit "waiting for doken refresh" forever - a refresh that
+    // never comes because no fresh doken exists - which is exactly the
+    // "[ENCLAVE] Received init but waiting for doken refresh" ... hang that
+    // wedges the SPA on "Signing you in..." on the second login. (The enclave
+    // silently WAITS rather than emitting an error, so heimdall's own
+    // requireReloginCallback recovery never fires.)
+    //
+    // Instead we DEFER enclave setup: it is created lazily on the first real
+    // Tide operation (encrypt / decrypt / approve / signDpopApproval - each
+    // calls initRequestEnclave()), by which point a fresh interactive login has
+    // minted a current doken and the enclave can complete its handshake. We
+    // still register the user-gesture listener so the popup fallback can open
+    // once an enclave has actually been created; #ensureRequestEnclaveOpen
+    // no-ops while there is no enclave or no doken.
+    if (initOptions.setupRequestEnclave) {
+      if (this.doken) {
+        this.#logInfo('[TIDECLOAK] Deferring Tide RequestEnclave setup until first use (not opening during init to avoid a stale-doken handshake stall on silent re-auth).')
+      }
 
       // to get around popups requiring user gestures
       document.addEventListener('click', () => {
