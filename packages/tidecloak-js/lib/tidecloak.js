@@ -92,6 +92,15 @@ export default class TideCloak {
   silentCheckSsoRedirectUri
   /** @type {boolean} */
   silentCheckSsoFallback = true
+  /**
+   * Max time (ms) to wait for the hidden silent-check-sso iframe to post back
+   * before treating the attempt as "not authenticated". Guards against the
+   * post-logout wedge where the check-sso (or the Tide enclave it spins up)
+   * never responds and init() would otherwise hang forever. Overridable via
+   * initOptions.silentCheckSsoTimeout.
+   * @type {number}
+   */
+  silentCheckSsoTimeout = 10000
   /** @type {TideCloakPkceMethod} */
   pkceMethod = 'S256'
   enableLogging = false
@@ -269,6 +278,10 @@ export default class TideCloak {
 
     if (typeof initOptions.silentCheckSsoFallback === 'boolean') {
       this.silentCheckSsoFallback = initOptions.silentCheckSsoFallback
+    }
+
+    if (typeof initOptions.silentCheckSsoTimeout === 'number' && initOptions.silentCheckSsoTimeout > 0) {
+      this.silentCheckSsoTimeout = initOptions.silentCheckSsoTimeout
     }
 
     if (typeof initOptions.pkceMethod !== 'undefined') {
@@ -1067,6 +1080,16 @@ export default class TideCloak {
     document.body.appendChild(iframe)
 
     return await new Promise((resolve, reject) => {
+      let settled = false
+      /** @type {ReturnType<typeof setTimeout>=} */
+      let timer
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer)
+        window.removeEventListener('message', messageCallback)
+        if (iframe.parentNode) document.body.removeChild(iframe)
+      }
+
       /**
        * @param {MessageEvent} event
        */
@@ -1074,8 +1097,11 @@ export default class TideCloak {
         if (event.origin !== window.location.origin || iframe.contentWindow !== event.source) {
           return
         }
+        if (settled) return
+        settled = true
 
         const oauth = this.#parseCallback(event.data)
+        cleanup()
 
         try {
           await this.#processCallback(oauth)
@@ -1083,10 +1109,24 @@ export default class TideCloak {
         } catch (error) {
           reject(error)
         }
-
-        document.body.removeChild(iframe)
-        window.removeEventListener('message', messageCallback)
       }
+
+      // Fail-fast guard: a silent check-sso must NEVER hang the init() promise.
+      // After an SDK-driven logout the doken/DPoP key is flushed; if the hidden
+      // check-sso iframe (or the Tide request enclave it may spin up) never
+      // posts back, init() would otherwise never resolve, isInitializing would
+      // stay true, and the SPA would wedge on "Signing you in..." forever
+      // (observed hang: 80s+). Resolve as NOT authenticated so init() completes
+      // cleanly and the app can fall through to an interactive login (which
+      // recovers). The happy path (valid session posts back in ~1-2s) settles
+      // well before this fires, so it is unchanged.
+      timer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        this.#logWarn('[TIDECLOAK] Silent check-sso timed out after ' + this.silentCheckSsoTimeout + 'ms; treating as unauthenticated so the app can fall through to interactive login.')
+        cleanup()
+        resolve()
+      }, this.silentCheckSsoTimeout)
 
       window.addEventListener('message', messageCallback)
     })
@@ -1799,6 +1839,38 @@ export default class TideCloak {
   }
 
   /**
+   * Trigger a full interactive login redirect. Used as the recovery leg when a
+   * silent flow cannot proceed (e.g. the enclave asks for a doken refresh but
+   * the doken was flushed at logout). Navigates the whole page to Keycloak.
+   * @returns {Promise<void>}
+   */
+  async #reloginInteractively () {
+    await this.login({
+      idpHint: 'tide',
+      prompt: 'login',
+      redirectUri: window.location.href
+    })
+  }
+
+  /**
+   * Provide the current doken to the enclave, or fall through to interactive
+   * login when there is none (post-logout / flushed state). Throwing a bare
+   * error here would leave the enclave (and whatever awaits its doken-refresh
+   * completion) hanging; instead we redirect to a full interactive login, which
+   * recovers cleanly.
+   * @returns {Promise<string>}
+   */
+  async #provideDokenOrRelogin () {
+    await this.ensureTokenReady()
+    if (!this.doken) {
+      this.#logWarn('[TIDECLOAK] Enclave requested a doken refresh but no doken is present (post-logout). Falling through to interactive login.')
+      await this.#reloginInteractively()
+      throw new Error('[TIDECLOAK] No doken found - redirecting to interactive login')
+    }
+    return this.doken
+  }
+
+  /**
    * Initialize Tide RequestEnclave.
    */
   initRequestEnclave () {
@@ -1814,18 +1886,8 @@ export default class TideCloak {
         isRunningLocal: new URL(this.#getVoucherUrl()).hostname === "localhost"
       }).init({
         doken: this.doken,
-        dokenRefreshCallback: async () => {
-          await this.ensureTokenReady()
-          if (!this.doken) throw new Error('[TIDECLOAK] No doken found')
-          return this.doken
-        },
-        requireReloginCallback: async () => {
-          await this.login({
-            idpHint: 'tide',
-            prompt: 'login',
-            redirectUri: window.location.href
-          })
-        }
+        dokenRefreshCallback: async () => this.#provideDokenOrRelogin(),
+        requireReloginCallback: async () => this.#reloginInteractively()
       })
     }
   }
@@ -1847,18 +1909,8 @@ export default class TideCloak {
         backgroundUrl: this.#config['backgroundUrl'],
         logoUrl: this.#config['logoUrl'],
         doken: this.doken,
-        dokenRefreshCallback: async () => {
-          await this.ensureTokenReady()
-          if (!this.doken) throw new Error('[TIDECLOAK] No doken found')
-          return this.doken
-        },
-        requireReloginCallback: async () => {
-          await this.login({
-            idpHint: 'tide',
-            prompt: 'login',
-            redirectUri: window.location.href
-          })
-        }
+        dokenRefreshCallback: async () => this.#provideDokenOrRelogin(),
+        requireReloginCallback: async () => this.#reloginInteractively()
       })
     }
   }
