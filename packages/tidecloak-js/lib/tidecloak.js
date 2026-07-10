@@ -31,6 +31,15 @@ import { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew } from "heimdall-ti
 
 const CONTENT_TYPE_JSON = 'application/json'
 
+// Post-logout marker. After an explicit logout there is no session to silently
+// resume, so the immediately-following init() must skip the racy silent
+// check-sso (whose hidden iframe can net::ERR_ABORTED and wedge the app) and go
+// straight to interactive login. `logout()` stamps this durable localStorage
+// marker (survives the logout redirect round-trip); init() consumes it exactly
+// once and forces an interactive login when present + fresh.
+const POST_LOGOUT_MARKER_KEY = 'tide-post-logout'
+const POST_LOGOUT_MARKER_TTL_MS = 60000
+
 /**
  * @typedef {Object} Endpoints
  * @property {() => string} authorize
@@ -93,6 +102,15 @@ export default class TideCloak {
   silentCheckSsoRedirectUri
   /** @type {boolean} */
   silentCheckSsoFallback = true
+  /**
+   * Max time (ms) to wait for the hidden silent-check-sso iframe to post back
+   * before treating the attempt as "not authenticated". Guards against the
+   * post-logout wedge where the check-sso (or the Tide enclave it spins up)
+   * never responds and init() would otherwise hang forever. Overridable via
+   * initOptions.silentCheckSsoTimeout.
+   * @type {number}
+   */
+  silentCheckSsoTimeout = 10000
   /** @type {TideCloakPkceMethod} */
   pkceMethod = 'S256'
   enableLogging = false
@@ -272,6 +290,10 @@ export default class TideCloak {
       this.silentCheckSsoFallback = initOptions.silentCheckSsoFallback
     }
 
+    if (typeof initOptions.silentCheckSsoTimeout === 'number' && initOptions.silentCheckSsoTimeout > 0) {
+      this.silentCheckSsoTimeout = initOptions.silentCheckSsoTimeout
+    }
+
     if (typeof initOptions.pkceMethod !== 'undefined') {
       if (initOptions.pkceMethod !== 'S256' && initOptions.pkceMethod !== false) {
         throw new TypeError(`Invalid value for pkceMethod', expected 'S256' or false but got ${initOptions.pkceMethod}.`)
@@ -329,9 +351,29 @@ export default class TideCloak {
 
     this.onReady?.(this.authenticated)
 
-    // initialize request enclave if authenticated
-    if(this.doken && initOptions.setupRequestEnclave) {
-      this.initRequestEnclave();
+    // Do NOT eagerly open the Tide RequestEnclave during init().
+    //
+    // On a post-logout silent re-auth, the doken returned by the silent
+    // check-sso can be STALE: its session key no longer matches the session the
+    // hidden enclave cached from the previous login. Opening the hidden enclave
+    // here makes it sit "waiting for doken refresh" forever - a refresh that
+    // never comes because no fresh doken exists - which is exactly the
+    // "[ENCLAVE] Received init but waiting for doken refresh" ... hang that
+    // wedges the SPA on "Signing you in..." on the second login. (The enclave
+    // silently WAITS rather than emitting an error, so heimdall's own
+    // requireReloginCallback recovery never fires.)
+    //
+    // Instead we DEFER enclave setup: it is created lazily on the first real
+    // Tide operation (encrypt / decrypt / approve / signDpopApproval - each
+    // calls initRequestEnclave()), by which point a fresh interactive login has
+    // minted a current doken and the enclave can complete its handshake. We
+    // still register the user-gesture listener so the popup fallback can open
+    // once an enclave has actually been created; #ensureRequestEnclaveOpen
+    // no-ops while there is no enclave or no doken.
+    if (initOptions.setupRequestEnclave) {
+      if (this.doken) {
+        this.#logInfo('[TIDECLOAK] Deferring Tide RequestEnclave setup until first use (not opening during init to avoid a stale-doken handshake stall on silent re-auth).')
+      }
 
       // to get around popups requiring user gestures
       document.addEventListener('click', () => {
@@ -917,6 +959,15 @@ export default class TideCloak {
     }
 
     const onLoad = async () => {
+      // Post-logout deterministic path: if the previous logout stamped a fresh
+      // marker, skip silent check-sso entirely and go straight to interactive
+      // login. There is no session to silently resume after an explicit logout,
+      // and the silent path is exactly where the ERR_ABORTED wedge lives.
+      if (this.#consumePostLogoutMarker()) {
+        this.#logInfo('[TIDE-POSTLOGOUT] marker honored in init(); forcing interactive login, bypassing silent check-sso')
+        await doLogin(true)
+        return
+      }
       switch (initOptions.onLoad) {
         case 'check-sso':
           if (this.#loginIframe.enable) {
@@ -1060,14 +1111,38 @@ export default class TideCloak {
    */
   async #checkSsoSilently () {
     const iframe = document.createElement('iframe')
-    const src = await this.createLoginUrl({ prompt: 'none', redirectUri: this.silentCheckSsoRedirectUri })
-    iframe.setAttribute('src', src)
-    iframe.setAttribute('sandbox', 'allow-storage-access-by-user-activation allow-scripts allow-same-origin')
-    iframe.setAttribute('title', 'keycloak-silent-check-sso')
-    iframe.style.display = 'none'
-    document.body.appendChild(iframe)
 
-    return await new Promise((resolve, reject) => {
+    return await new Promise((resolve) => {
+      let settled = false
+      /** @type {ReturnType<typeof setTimeout>=} */
+      let timer
+      /** @type {ReturnType<typeof setTimeout>=} */
+      let loadGraceTimer
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer)
+        if (loadGraceTimer) clearTimeout(loadGraceTimer)
+        window.removeEventListener('message', messageCallback)
+        iframe.removeEventListener('error', onIframeError)
+        iframe.removeEventListener('load', onIframeLoad)
+        if (iframe.parentNode) document.body.removeChild(iframe)
+      }
+
+      // Every NON-authenticating terminal outcome funnels through here exactly
+      // once: onerror / onabort / load-without-message / timeout /
+      // createLoginUrl-failure. Resolving (never rejecting) as NOT-authenticated
+      // lets init() complete cleanly so the app falls through to interactive
+      // login. This is what makes the silent path structurally un-hangable: no
+      // matter which DOM event (or none) the aborted iframe produces, one of
+      // these fires. `via` is logged so QA can prove which path was taken.
+      const settleNotAuthenticated = (via) => {
+        if (settled) return
+        settled = true
+        this.#logWarn('[TIDE-SILENTSSO] terminal=' + via + ' -> not-authenticated (authenticated=' + this.authenticated + ')')
+        cleanup()
+        resolve()
+      }
+
       /**
        * @param {MessageEvent} event
        */
@@ -1075,21 +1150,64 @@ export default class TideCloak {
         if (event.origin !== window.location.origin || iframe.contentWindow !== event.source) {
           return
         }
-
-        const oauth = this.#parseCallback(event.data)
+        if (settled) return
+        settled = true
+        cleanup()
 
         try {
+          const oauth = this.#parseCallback(event.data)
           await this.#processCallback(oauth)
+          this.#logInfo('[TIDE-SILENTSSO] terminal=message -> processed (authenticated=' + this.authenticated + ')')
           resolve()
         } catch (error) {
-          reject(error)
+          // A failed silent callback must NOT reject: rejecting would surface as
+          // an init() error / AuthWall wall instead of a clean fall-through to
+          // interactive login. Resolve as not-authenticated.
+          this.#logWarn('[TIDE-SILENTSSO] terminal=message-error -> not-authenticated: ' + (error instanceof Error ? error.message : String(error)))
+          resolve()
         }
-
-        document.body.removeChild(iframe)
-        window.removeEventListener('message', messageCallback)
       }
 
+      const onIframeError = () => settleNotAuthenticated('onerror')
+
+      const onIframeLoad = () => {
+        // The iframe finished navigating. On the happy path it landed on the
+        // real silent-check-sso.html and `messageCallback` settles first. If it
+        // loaded an error page, or a cross-origin KC page that never posts, or
+        // an aborted navigation that still fired `load`, no message arrives - so
+        // arm a short grace timer that settles NOT-authenticated well before the
+        // outer ceiling.
+        if (settled) return
+        const grace = Math.max(250, Math.min(2000, Math.floor(this.silentCheckSsoTimeout / 4)))
+        if (loadGraceTimer) clearTimeout(loadGraceTimer)
+        loadGraceTimer = setTimeout(() => settleNotAuthenticated('load-no-message'), grace)
+      }
+
+      // Wire ALL listeners before the navigation starts so no immediate event is
+      // missed. `error` covers the browsers that surface a failed iframe
+      // navigation as an error/abort event; `load` + the grace timer cover the
+      // ones that fire load on an error document; the outer `timer` covers
+      // net::ERR_ABORTED that produces NO DOM event at all.
       window.addEventListener('message', messageCallback)
+      iframe.addEventListener('error', onIframeError)
+      iframe.addEventListener('load', onIframeLoad)
+
+      // Hard ceiling. Created synchronously (NOT after an awaited createLoginUrl)
+      // so it is always armed regardless of what the iframe navigation does.
+      timer = setTimeout(() => settleNotAuthenticated('timeout'), this.silentCheckSsoTimeout)
+
+      // Build the URL and start the navigation. Failure here must still settle
+      // (not reject) so init() stays deterministic.
+      this.createLoginUrl({ prompt: 'none', redirectUri: this.silentCheckSsoRedirectUri })
+        .then((src) => {
+          if (settled) return
+          iframe.setAttribute('src', src)
+          iframe.setAttribute('sandbox', 'allow-storage-access-by-user-activation allow-scripts allow-same-origin')
+          iframe.setAttribute('title', 'keycloak-silent-check-sso')
+          iframe.style.display = 'none'
+          document.body.appendChild(iframe)
+        })
+        .catch(() => settleNotAuthenticated('createLoginUrl-error'))
     })
   };
 
@@ -1394,7 +1512,42 @@ export default class TideCloak {
    */
   logout = async (options) => {
     await this.#dpopProvider?.flush()
+    // Stamp the post-logout marker so the next init() forces interactive login
+    // instead of running the racy silent check-sso. See POST_LOGOUT_MARKER_KEY.
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(POST_LOGOUT_MARKER_KEY, Date.now().toString())
+      }
+    } catch (e) {
+      this.#logWarn('[TIDE-POSTLOGOUT] could not set marker: ' + (e instanceof Error ? e.message : String(e)))
+    }
     return this.#adapter.logout(options)
+  }
+
+  /**
+   * Read + clear the post-logout marker. Returns true only when a marker was
+   * present AND fresh (set within POST_LOGOUT_MARKER_TTL_MS). Always clears the
+   * marker when present, so it fires at most once and a stale marker (a tab
+   * left open across a much later load) is discarded rather than forcing an
+   * unexpected interactive login.
+   * @returns {boolean}
+   */
+  #consumePostLogoutMarker () {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return false
+      const raw = window.localStorage.getItem(POST_LOGOUT_MARKER_KEY)
+      if (!raw) return false
+      window.localStorage.removeItem(POST_LOGOUT_MARKER_KEY)
+      const ts = Number(raw)
+      const fresh = Number.isFinite(ts) && (Date.now() - ts) < POST_LOGOUT_MARKER_TTL_MS
+      if (!fresh) {
+        this.#logWarn('[TIDE-POSTLOGOUT] marker present but stale (age > ' + POST_LOGOUT_MARKER_TTL_MS + 'ms); ignoring')
+      }
+      return fresh
+    } catch (e) {
+      this.#logWarn('[TIDE-POSTLOGOUT] could not read marker: ' + (e instanceof Error ? e.message : String(e)))
+      return false
+    }
   }
 
   /**
@@ -1792,8 +1945,43 @@ export default class TideCloak {
    * Make sure enclave is up - attach this function to a user gesture.
    */
   #ensureRequestEnclaveOpen() {
-    if(!this.requestEnclave) return;
+    // Never (re)open the enclave without a doken. Post-logout the doken is
+    // flushed; reopening a dokenless hidden enclave wedges it with
+    // "Expecting doken in request".
+    if(!this.requestEnclave || !this.doken) return;
     this.requestEnclave.checkEnclaveOpen();
+  }
+
+  /**
+   * Trigger a full interactive login redirect. Used as the recovery leg when a
+   * silent flow cannot proceed (e.g. the enclave asks for a doken refresh but
+   * the doken was flushed at logout). Navigates the whole page to Keycloak.
+   * @returns {Promise<void>}
+   */
+  async #reloginInteractively () {
+    await this.login({
+      idpHint: 'tide',
+      prompt: 'login',
+      redirectUri: window.location.href
+    })
+  }
+
+  /**
+   * Provide the current doken to the enclave, or fall through to interactive
+   * login when there is none (post-logout / flushed state). Throwing a bare
+   * error here would leave the enclave (and whatever awaits its doken-refresh
+   * completion) hanging; instead we redirect to a full interactive login, which
+   * recovers cleanly.
+   * @returns {Promise<string>}
+   */
+  async #provideDokenOrRelogin () {
+    await this.ensureTokenReady()
+    if (!this.doken) {
+      this.#logWarn('[TIDECLOAK] Enclave requested a doken refresh but no doken is present (post-logout). Falling through to interactive login.')
+      await this.#reloginInteractively()
+      throw new Error('[TIDECLOAK] No doken found - redirecting to interactive login')
+    }
+    return this.doken
   }
 
   /**
@@ -1812,18 +2000,8 @@ export default class TideCloak {
         isRunningLocal: new URL(this.#getVoucherUrl()).hostname === "localhost"
       }).init({
         doken: this.doken,
-        dokenRefreshCallback: async () => {
-          await this.ensureTokenReady()
-          if (!this.doken) throw new Error('[TIDECLOAK] No doken found')
-          return this.doken
-        },
-        requireReloginCallback: async () => {
-          await this.login({
-            idpHint: 'tide',
-            prompt: 'login',
-            redirectUri: window.location.href
-          })
-        }
+        dokenRefreshCallback: async () => this.#provideDokenOrRelogin(),
+        requireReloginCallback: async () => this.#reloginInteractively()
       })
     }
   }
@@ -1845,18 +2023,8 @@ export default class TideCloak {
         backgroundUrl: this.#config['backgroundUrl'],
         logoUrl: this.#config['logoUrl'],
         doken: this.doken,
-        dokenRefreshCallback: async () => {
-          await this.ensureTokenReady()
-          if (!this.doken) throw new Error('[TIDECLOAK] No doken found')
-          return this.doken
-        },
-        requireReloginCallback: async () => {
-          await this.login({
-            idpHint: 'tide',
-            prompt: 'login',
-            redirectUri: window.location.href
-          })
-        }
+        dokenRefreshCallback: async () => this.#provideDokenOrRelogin(),
+        requireReloginCallback: async () => this.#reloginInteractively()
       })
     }
   }
@@ -2232,9 +2400,35 @@ export default class TideCloak {
     } else {
       delete this.doken
       delete this.dokenParsed
-      if (this.requestEnclave && typeof this.requestEnclave.updateDoken === 'function') {
-        this.requestEnclave.updateDoken(undefined)
+      // No doken present (e.g. post-logout / flushed state). Do NOT push a
+      // "doken refresh" into the enclave: refreshing with an undefined doken
+      // wedges the hidden enclave ("Expecting doken in request",
+      // TIDE-SWE-UNHANDLED) and blocks the silent re-auth that runs after
+      // logout. Instead tear the stale enclave(s) down so (a) no dokenless
+      // refresh is ever sent, (b) the persistent user-gesture listener can no
+      // longer reopen a dokenless hidden enclave (#ensureRequestEnclaveOpen
+      // no-ops once requestEnclave is cleared), and (c) the next authenticated
+      // flow re-creates a fresh enclave from a valid doken via
+      // initRequestEnclave(). The app is then free to fall through to an
+      // interactive login, which recovers cleanly.
+      this.#teardownEnclaves()
+    }
+  }
+
+  /**
+   * Close and discard any open Tide enclaves. Called when the doken is cleared
+   * (logout / flushed state) so stale enclaves can't be driven without a doken.
+   */
+  #teardownEnclaves () {
+    for (const key of ['requestEnclave', 'approvalEnclave']) {
+      const enclave = this[key]
+      if (!enclave) continue
+      try {
+        if (typeof enclave.close === 'function') enclave.close()
+      } catch (error) {
+        this.#logWarn('[TIDECLOAK] Failed to close ' + key + ': ' + (error instanceof Error ? error.message : error))
       }
+      this[key] = undefined
     }
   }
 
