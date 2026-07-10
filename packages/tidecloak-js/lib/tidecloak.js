@@ -963,7 +963,7 @@ export default class TideCloak {
       // login. There is no session to silently resume after an explicit logout,
       // and the silent path is exactly where the ERR_ABORTED wedge lives.
       if (this.#consumePostLogoutMarker()) {
-        console.log('[TIDE-POSTLOGOUT] marker honored in init(); forcing interactive login, bypassing silent check-sso')
+        this.#logInfo('[TIDE-POSTLOGOUT] marker honored in init(); forcing interactive login, bypassing silent check-sso')
         await doLogin(true)
         return
       }
@@ -1109,7 +1109,6 @@ export default class TideCloak {
    * @returns {Promise<void>}
    */
   async #checkSsoSilently () {
-    console.log('[TIDE-SILENTSSO] start (timeout=' + this.silentCheckSsoTimeout + 'ms)')
     const iframe = document.createElement('iframe')
 
     return await new Promise((resolve) => {
@@ -1138,7 +1137,7 @@ export default class TideCloak {
       const settleNotAuthenticated = (via) => {
         if (settled) return
         settled = true
-        console.warn('[TIDE-SILENTSSO] terminal=' + via + ' -> not-authenticated (authenticated=' + this.authenticated + ')')
+        this.#logWarn('[TIDE-SILENTSSO] terminal=' + via + ' -> not-authenticated (authenticated=' + this.authenticated + ')')
         cleanup()
         resolve()
       }
@@ -1157,13 +1156,13 @@ export default class TideCloak {
         try {
           const oauth = this.#parseCallback(event.data)
           await this.#processCallback(oauth)
-          console.log('[TIDE-SILENTSSO] terminal=message -> processed (authenticated=' + this.authenticated + ')')
+          this.#logInfo('[TIDE-SILENTSSO] terminal=message -> processed (authenticated=' + this.authenticated + ')')
           resolve()
         } catch (error) {
           // A failed silent callback must NOT reject: rejecting would surface as
           // an init() error / AuthWall wall instead of a clean fall-through to
           // interactive login. Resolve as not-authenticated.
-          console.warn('[TIDE-SILENTSSO] terminal=message-error -> not-authenticated:', error instanceof Error ? error.message : String(error))
+          this.#logWarn('[TIDE-SILENTSSO] terminal=message-error -> not-authenticated: ' + (error instanceof Error ? error.message : String(error)))
           resolve()
         }
       }
@@ -1207,10 +1206,7 @@ export default class TideCloak {
           iframe.style.display = 'none'
           document.body.appendChild(iframe)
         })
-        .catch((error) => {
-          console.warn('[TIDE-SILENTSSO] createLoginUrl failed:', error instanceof Error ? error.message : String(error))
-          settleNotAuthenticated('createLoginUrl-error')
-        })
+        .catch(() => settleNotAuthenticated('createLoginUrl-error'))
     })
   };
 
@@ -1520,10 +1516,9 @@ export default class TideCloak {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem(POST_LOGOUT_MARKER_KEY, Date.now().toString())
-        console.log('[TIDE-POSTLOGOUT] marker set in logout(); next init() will force interactive login (skip silent check-sso)')
       }
     } catch (e) {
-      console.warn('[TIDE-POSTLOGOUT] could not set marker:', e instanceof Error ? e.message : String(e))
+      this.#logWarn('[TIDE-POSTLOGOUT] could not set marker: ' + (e instanceof Error ? e.message : String(e)))
     }
     return this.#adapter.logout(options)
   }
@@ -1545,11 +1540,11 @@ export default class TideCloak {
       const ts = Number(raw)
       const fresh = Number.isFinite(ts) && (Date.now() - ts) < POST_LOGOUT_MARKER_TTL_MS
       if (!fresh) {
-        console.warn('[TIDE-POSTLOGOUT] marker present but stale (age > ' + POST_LOGOUT_MARKER_TTL_MS + 'ms); ignoring')
+        this.#logWarn('[TIDE-POSTLOGOUT] marker present but stale (age > ' + POST_LOGOUT_MARKER_TTL_MS + 'ms); ignoring')
       }
       return fresh
     } catch (e) {
-      console.warn('[TIDE-POSTLOGOUT] could not read marker:', e instanceof Error ? e.message : String(e))
+      this.#logWarn('[TIDE-POSTLOGOUT] could not read marker: ' + (e instanceof Error ? e.message : String(e)))
       return false
     }
   }
