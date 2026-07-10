@@ -1,6 +1,6 @@
 export { default as IAMService } from './IAMService.js';
 export { default as TideCloak } from "../lib/tidecloak.js";
-export { RequestEnclave, ApprovalEnclaveNew } from "../lib/tidecloak.js";
+export { RequestEnclave, ApprovalEnclaveNew, createTideFetch } from "../lib/tidecloak.js";
 export { Tools, Models } from "@tideorg/js";
 
 // Re-export types for native mode (TypeScript will pick these up from types.ts)
