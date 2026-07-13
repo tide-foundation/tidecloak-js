@@ -1861,6 +1861,36 @@ export default class TideCloak {
       }
       return resp
     } else {
+      // SAFETY INVARIANT: if a DPoP provider exists, this client's tokens are
+      // sender-constrained (`cnf.jkt`), and a DPoP-bound token presented as a
+      // plain `Bearer` is INVALID per RFC 9449 - the resource server answers a
+      // bare `401` that names none of this. The silent fallback below is what
+      // hid exactly that bug. So when we are about to drop out of the DPoP path
+      // while STILL carrying an Authorization header, say so loudly - once per
+      // distinct header value, so a wedged consumer gets a signal rather than a
+      // scrolling wall.
+      if (dpopProvider) {
+        const existingAuth = new Headers(init.headers).get('Authorization')
+        if (
+          typeof existingAuth === 'string' &&
+          existingAuth.startsWith('Bearer ') &&
+          existingAuth !== this.#warnedStaleBearer
+        ) {
+          this.#warnedStaleBearer = existingAuth
+          console.error(
+            '[TIDECLOAK] secureFetch: DPoP is ENABLED on this client, but the request is going out as a ' +
+            'plain `Authorization: Bearer …` with NO DPoP proof' +
+            (!this.authenticated
+              ? ' (the client is not authenticated yet)'
+              : !this.token
+                ? ' (the client holds no access token yet)'
+                : '') +
+            '. If that token is DPoP-bound (`cnf.jkt`), the server will reject it with a bare 401. ' +
+            'Wait for the SDK to be authenticated and read the token from it at call time, or turn DPoP ' +
+            'off for this flow (omit `useDPoP` from the config).'
+          )
+        }
+      }
       return fetch(url, init)
     }
   }

@@ -203,23 +203,30 @@ class IAMService {
       console.warn("[loadConfig] empty config");
       return null;
     }
-    // Shallow-copy so we can normalise defaults without mutating the caller's object.
+    // Shallow-copy so we never mutate the caller's object.
     this._config = { ...config };
 
-    // DPoP is enabled and ENFORCED by default across all TideCloak SDKs. To weaken
-    // or disable it, set `useDPoP` explicitly:
-    //   - `useDPoP: false`              → disable DPoP entirely
-    //   - `useDPoP: { mode: 'auto' }`   → use DPoP only when the realm advertises it
-    //   - `useDPoP: { mode: 'strict' }` → require DPoP (the default); init fails if
-    //                                      the realm doesn't advertise DPoP support
-    const dpop = this._config.useDPoP;
-    if (dpop === false || dpop === null || dpop === "") {
-      delete this._config.useDPoP; // explicit opt-out
-    } else if (dpop === undefined || dpop === true) {
-      this._config.useDPoP = { mode: "strict" };
-    } else if (typeof dpop === "object" && dpop.mode === undefined) {
-      this._config.useDPoP = { ...dpop, mode: "strict" };
-    }
+    // ---------------------------------------------------------------------
+    // DPoP is OPT-IN. Do NOT default it on. Ever.
+    //
+    // `useDPoP` is passed through to `TideCloak.init()` VERBATIM and only when
+    // the caller actually set it (see ./utils/initOptions.js). If it is absent,
+    // no DPoP provider is constructed, no `dpop_jkt` is appended to the
+    // authorization request, and the realm issues a PLAIN access token.
+    //
+    // A previous revision defaulted this to `{ mode: "strict" }` whenever the
+    // caller omitted it ("DPoP on by default"). That silently broke every
+    // consumer that runs a deliberately non-DPoP flow: the authorization
+    // request grew a `dpop_jkt`, Keycloak issued a `typ: DPoP` /
+    // `cnf.jkt`-bound token, and the consumer's plain-Bearer fetch - correct
+    // for the flow it thought it was in - was rejected with a bare `401`
+    // (RFC 9449: a DPoP-bound token presented as a plain Bearer is invalid).
+    // The TideCloak admin console's bootstrap path is exactly this: it omits
+    // `useDPoP` on purpose and fetches with a plain Bearer.
+    //
+    // Enabling a sender-constraint the caller did not ask for changes the
+    // shape of the issued token. That is never a safe default to invent.
+    // ---------------------------------------------------------------------
 
     // Hybrid mode: do not construct TideCloak client (tokens are server-side)
     if (this.isHybridMode()) {

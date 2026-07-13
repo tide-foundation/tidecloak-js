@@ -40,7 +40,12 @@
  *   interactive login rather than emitting a URI that would 400.
  * - `pkceMethod` - always `"S256"`, as it was before PR #91.
  * - `useDPoP` / `checkLoginIframe` - the two options `initIAM` has always
- *   forwarded.
+ *   forwarded. `useDPoP` is forwarded ONLY when the caller actually set it, and
+ *   VERBATIM. DPoP is opt-in: nothing upstream may default it on, because
+ *   enabling it appends `dpop_jkt` to the authorization request and the realm
+ *   then issues a `cnf.jkt`-BOUND token, which a plain-Bearer consumer cannot
+ *   use (RFC 9449) - a bare `401` with no explanation. Pinned in
+ *   test/bootstrapDpop.test.js.
  *
  * ### Deliberately NOT forwarded (regression-tested in test/initOptions.test.js)
  * `scope`, `redirectUri`, `silentCheckSsoFallback`, `silentCheckSsoTimeout`.
