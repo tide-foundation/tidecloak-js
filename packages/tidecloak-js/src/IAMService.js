@@ -133,6 +133,13 @@ class IAMService {
 
     // --- DPoP state ---
     this._dpopProvider = null;
+
+    // --- Front-channel init state ---
+    // Set while `_tc.init()` is in flight, cleared once it settles. Lets a
+    // concurrent/repeat `initIAM()` (React StrictMode double-mount, a provider
+    // effect that re-runs before the first init resolves) join the in-flight init
+    // instead of short-circuiting past it and reporting a not-yet-populated state.
+    this._frontchannelInitPromise = null;
   }
 
   /**
@@ -492,9 +499,54 @@ class IAMService {
 
     if (this._tc.didInitialize) {
       console.debug("[IAMService] IAM Already initialized once.");
-      return !!this._tc.tokenParsed;
+
+      // An init started by an EARLIER call may still be in flight (React
+      // StrictMode double-mounts; a provider effect that re-runs before the first
+      // init settles). Its trailing `_emit("ready", ...)` has not happened yet, so
+      // it will still reach the handler we registered at the top of this call -
+      // just join it and let the event do the work.
+      if (this._frontchannelInitPromise) {
+        return this._frontchannelInitPromise;
+      }
+
+      // Init has already SETTLED, and its `ready` event has been emitted and is
+      // gone. Anyone registering a handler after the fact - a React provider
+      // re-running its effect and re-subscribing after a `reload()` /
+      // `approveTideRequests()` - would hear NOTHING, forever. It would go on
+      // serving whatever auth state it last observed while this singleton kept
+      // refreshing its own token underneath.
+      //
+      // That desync is exactly how a `401` is manufactured: the consumer sends a
+      // stale `Authorization: Bearer <old token>`, `TideCloak.secureFetch` no
+      // longer recognises it as the token it holds, silently falls back to a plain
+      // non-DPoP `fetch`, and a `dpop.bound.access.tokens` realm rejects a
+      // DPoP-bound token presented as a plain Bearer.
+      //
+      // `ready` is a STATE notification, not a one-shot lifecycle signal, so
+      // re-emitting the current state is safe and idempotent - every listener
+      // simply re-syncs to the truth.
+      const alreadyAuthenticated = !!this._tc.tokenParsed;
+      this._emit("ready", alreadyAuthenticated);
+      return alreadyAuthenticated;
     }
 
+    this._frontchannelInitPromise = this._initFrontchannel(config);
+    try {
+      return await this._frontchannelInitPromise;
+    } finally {
+      this._frontchannelInitPromise = null;
+    }
+  }
+
+  /**
+   * Drive the one-and-only `TideCloak.init()` for front-channel mode and emit the
+   * resulting `ready` state. Split out of {@link initIAM} so the in-flight promise
+   * can be shared with concurrent callers.
+   * @private
+   * @param {Object} config
+   * @returns {Promise<boolean>}
+   */
+  async _initFrontchannel(config) {
     // Read an init option from the resolved config. `loadConfig` assigns
     // `this._config = config`, so these are normally the same object; we check
     // both so a caller that passes options only to `initIAM` is still honoured.
@@ -612,6 +664,30 @@ class IAMService {
       throw new Error("Config not loaded - call initIAM() first");
     }
     return this._config;
+  }
+
+  /**
+   * Whether initialization has already run to completion for the current mode.
+   *
+   * "Settled", not "started": while an init is still in flight this returns
+   * `false`, because the auth state it will produce does not exist yet and reading
+   * it would report a spurious logged-out state.
+   *
+   * Consumers that subscribe to events LATE (a React provider re-running its
+   * effect and re-subscribing, say) must use this to re-read the current auth
+   * state synchronously rather than waiting on a `ready` event that has already
+   * been emitted and is gone.
+   *
+   * @returns {boolean}
+   */
+  isInitialized() {
+    if (this.isHybridMode()) {
+      return this._hybridCallbackHandled && !this._hybridCallbackPromise;
+    }
+    if (this.isNativeMode()) {
+      return this._nativeCallbackHandled && !this._nativeCallbackPromise;
+    }
+    return !!this._tc?.didInitialize && !this._frontchannelInitPromise;
   }
 
   /** @returns {boolean} Whether there's a valid token (or session in hybrid/native mode) */

@@ -82,6 +82,14 @@ export default class TideCloak {
   /** @type {import('./tidecloak-dpop.js').DPoPSignatureProvider=} */
   #dpopProvider
 
+  /**
+   * The last non-matching `Authorization: Bearer …` value `secureFetch` warned
+   * about, so a consumer stuck in a stale-token state gets ONE warning per stale
+   * token rather than one per request. See `secureFetch`.
+   * @type {string|null}
+   */
+  #warnedStaleBearer = null
+
   /** @type {TideCloakConfig} config */
   #config
   didInitialize = false
@@ -1782,7 +1790,35 @@ export default class TideCloak {
       const isOurBearerToken = existingAuth === `Bearer ${this.token}`
 
       if (!isOurBearerToken) {
-        // Quick escape - didn't put this check in first if statement as it's more expensive than other checks
+        // Quick escape - didn't put this check in first if statement as it's more expensive than other checks.
+        //
+        // BEHAVIOUR IS UNCHANGED: a request carrying some OTHER Bearer token is a
+        // legitimate pass-through (a third-party API), so it goes out as a plain
+        // fetch with no DPoP proof.
+        //
+        // But make it OBSERVABLE. When the caller hands us a Bearer token that is
+        // almost-but-not-quite ours - i.e. a token this client issued them earlier
+        // and that has since gone stale because they cached it and missed a refresh
+        // - this silent downgrade is fatal and mute: a `dpop.bound.access.tokens`
+        // realm rejects a DPoP-bound token presented as a plain Bearer with a bare
+        // `401`, and nothing anywhere explains why. One warning per distinct stale
+        // token (not per request), so a wedged consumer gets a clear signal instead
+        // of a scrolling wall.
+        if (
+          typeof existingAuth === 'string' &&
+          existingAuth.startsWith('Bearer ') &&
+          existingAuth !== this.#warnedStaleBearer
+        ) {
+          this.#warnedStaleBearer = existingAuth
+          console.warn(
+            '[TIDECLOAK] secureFetch: the Authorization header carries a Bearer token that is NOT the ' +
+            'token this client currently holds. Sending it as a PLAIN fetch with no DPoP proof. If that ' +
+            'token came from this SDK it has gone STALE (the caller cached a copy and missed a refresh) ' +
+            'and a DPoP-bound realm will answer 401. Read the token from the SDK at call time ' +
+            '(IAMService.getToken()) instead of holding a copy, or omit the Authorization header entirely ' +
+            'and let secureFetch attach it.'
+          )
+        }
         return fetch(url, init)
       }
 

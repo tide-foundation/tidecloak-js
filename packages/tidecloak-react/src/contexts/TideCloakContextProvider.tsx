@@ -465,6 +465,33 @@ export function TideCloakContextProvider({
       .on('tokenExpired', handleTokenExpired)
       .on('initError', handleInitError as any);
 
+    // NEVER rely solely on a future event to learn the auth state.
+    //
+    // The IAMService singleton outlives this component. Whenever this effect
+    // RE-runs - a `reloadKey` bump from `reload()` / `approveTideRequests()`, a
+    // `resolvedConfig` identity change, a StrictMode double-mount - the cleanup
+    // below tears every handler down (including the `ready` handler `initIAM`
+    // registers for us) and we re-subscribe here from scratch. But the `ready`
+    // event that carried the auth state fired during the FIRST init and is long
+    // gone: an event is a moment, not a value. So the handlers we just registered
+    // would sit there hearing nothing, and this component would go on serving the
+    // `token` it happens to hold in state while the SDK refreshed its own
+    // underneath.
+    //
+    // That desync is how a `401` gets manufactured: consumers read `token` from
+    // this context and put it in an `Authorization: Bearer …` header;
+    // `IAMService.secureFetch` compares it against the token the SDK actually
+    // holds, no longer recognises it as its own, and falls back to a plain
+    // non-DPoP fetch - which a `dpop.bound.access.tokens` realm rejects outright.
+    //
+    // So: if init has already settled, read the CURRENT state synchronously right
+    // now. (`initIAM` also re-emits `ready` on its already-initialized
+    // short-circuit; this is the belt to that braces, and keeps the provider
+    // correct against an older @tidecloak/js that doesn't.)
+    if (typeof (IAMService as any).isInitialized === 'function' && (IAMService as any).isInitialized()) {
+      void updateAuthState('resubscribe');
+    }
+
     setIsInitializing(true);
 
     // Initialize
