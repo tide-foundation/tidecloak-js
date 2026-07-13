@@ -1,4 +1,9 @@
-import { makePkce, fetchJson, resolveSilentCheckSsoRedirectUri } from "./utils/index.js";
+import {
+  makePkce,
+  fetchJson,
+  resolveSilentCheckSsoRedirectUri,
+  buildInitOptions,
+} from "./utils/index.js";
 import TideCloak, { RequestEnclave } from "../lib/tidecloak.js";
 
 /**
@@ -533,37 +538,15 @@ class IAMService {
       );
     }
 
-    const redirectUri = pick("redirectUri");
-    const silentCheckSsoFallback = pick("silentCheckSsoFallback");
-    const silentCheckSsoTimeout = pick("silentCheckSsoTimeout");
-    const scope = pick("scope");
-
     let authenticated = false;
     try {
-      authenticated = await this._tc.init({
-        setupRequestEnclave: config.setupRequestEnclave ?? true, // true by default because most clients that uses this will need it on
-        // NOTE: `onLoad` is deliberately NOT taken from the caller's config here.
-        // Callers (e.g. the admin console) pass `onLoad: "login-required"`, and
-        // honouring it would send #processInit down the `login-required` branch,
-        // which does a full top-level redirect on every load and never runs the
-        // silent check-sso path at all. That is a separate product decision, not
-        // part of fixing the redirect URI. Changing it belongs in its own change.
-        onLoad: "check-sso",
-        // `undefined` => TideCloak skips silent check-sso (see #processInit) and
-        // falls back to an interactive login rather than emitting a bad URI.
-        silentCheckSsoRedirectUri: silentSso.uri,
-        pkceMethod: pick("pkceMethod") ?? "S256",
-        // Forward the rest of the caller's init options instead of dropping them
-        // on the floor. `redirectUri` in particular must reach the TideCloak
-        // instance for sub-path-hosted apps, otherwise the adapter falls back to
-        // `location.href`.
-        ...(redirectUri !== undefined && { redirectUri }),
-        ...(silentCheckSsoFallback !== undefined && { silentCheckSsoFallback }),
-        ...(silentCheckSsoTimeout !== undefined && { silentCheckSsoTimeout }),
-        ...(scope !== undefined && { scope }),
-        ...(this._config?.useDPoP && { useDPoP: this._config.useDPoP }),
-        ...(this._config?.checkLoginIframe === false && { checkLoginIframe: false }),
-      });
+      authenticated = await this._tc.init(
+        buildInitOptions({
+          config: this._config ?? config,
+          setupRequestEnclave: config.setupRequestEnclave ?? true, // true by default because most clients that uses this will need it on
+          silentCheckSsoRedirectUri: silentSso.uri,
+        })
+      );
 
       // if successful, store token for middleware
       if (authenticated && this._tc.token) {
