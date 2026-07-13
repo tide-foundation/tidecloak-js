@@ -60,6 +60,9 @@ const POST_LOGOUT_MARKER_TTL_MS = 60000
  * @property {string=} iframeOrigin
  */
 
+import { shouldAttachDpopProof } from './secureFetchPolicy.js'
+
+export { shouldAttachDpopProof } from './secureFetchPolicy.js'
 export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, PolicySignRequest } from "heimdall-tide";
 export { Tools, Models } from "@tideorg/js";
 export default class TideCloak {
@@ -1787,7 +1790,7 @@ export default class TideCloak {
     const dpopProvider = this.#dpopProvider
     if (dpopProvider && this.authenticated && this.token) {
       const existingAuth = new Headers(init.headers).get('Authorization')
-      const isOurBearerToken = existingAuth === `Bearer ${this.token}`
+      const isOurBearerToken = shouldAttachDpopProof(existingAuth, this.token)
 
       if (!isOurBearerToken) {
         // Quick escape - didn't put this check in first if statement as it's more expensive than other checks.
