@@ -303,31 +303,90 @@ export function TideCloakContextProvider({
 
     let mounted = true;
 
+    /**
+     * Publish the SDK's auth state into React state.
+     *
+     * INVARIANT (do not break it): `authenticated === true` IMPLIES
+     * `token !== null`, in every single committed render.
+     *
+     * This function used to announce `setAuthenticated(true)` SYNCHRONOUSLY and
+     * only then `await IAMService.getToken()` to fill `token` in a later
+     * microtask. Between those two points React was free to commit a render -
+     * and it did, every time - in which the app was `authenticated` but the
+     * `token` was still `null`:
+     *
+     *   1. `initIAM()` finishes and calls `_emit("ready")`. `_emit` invokes its
+     *      listeners WITHOUT awaiting them (IAMService.js), so this async
+     *      function only gets as far as its first `await` before control returns.
+     *   2. `initIAM()` resolves -> the init effect below runs
+     *      `setIsInitializing(false)`.
+     *   3. React commits: `{ isInitializing: false, authenticated: true, token: null }`.
+     *      The app un-gates. Consumers mount and immediately fire authenticated
+     *      requests (react-query fires on subscribe).
+     *   4. A consumer reads `token` from this context, finds `null`, and sends
+     *      the request with NO `Authorization` header at all -> the resource
+     *      server answers a bare `401` that names none of this.
+     *   5. Only THEN does `getToken()` resolve and `setToken()` land - too late,
+     *      the request is already out and failed.
+     *
+     * That is the whole bug: not a stale token, not a missing DPoP proof - an
+     * authenticated-but-tokenless window that the app was invited to act in.
+     *
+     * So: resolve the token FIRST, then publish every field together. All the
+     * setState calls below sit in a single continuation, so React 18 auto-batches
+     * them into ONE commit - there is no longer any moment at which a consumer
+     * can observe `authenticated` without the `token` that makes it usable.
+     */
     const updateAuthState = async (eventName?: string) => {
       console.debug(`[TideCloak] Auth state update from: ${eventName}`);
       if (!mounted) return;
 
       const logged = IAMService.isLoggedIn();
-      setAuthenticated(logged);
 
-      if (logged) {
-        setSessionExpired(false);
-        setNeedsReauth(false);
-        try {
-          const t = await IAMService.getToken();
-          const idt = IAMService.getIDToken();
-          setToken(t);
-          setIdToken(idt);
-          setTokenExp(IAMService.getTokenExp());
-        } catch (e) {
-          console.error("[TideCloak] Failed to get tokens:", e);
-        }
-      } else {
+      if (!logged) {
+        setAuthenticated(false);
         setSessionExpired(true);
         setToken(null);
         setIdToken(null);
         setTokenExp(null);
+        return;
       }
+
+      // Logged in per the SDK - but we do not SAY so until we hold the token.
+      let t: string | null = null;
+      let idt: string | null = null;
+      let exp: number | null = null;
+      try {
+        t = await IAMService.getToken();
+        idt = IAMService.getIDToken();
+        exp = IAMService.getTokenExp();
+      } catch (e) {
+        console.error("[TideCloak] Failed to get tokens:", e);
+      }
+
+      if (!mounted) return;
+
+      // Fail CLOSED. A session we cannot produce a token for is not a session a
+      // consumer can do anything with: publishing `authenticated: true` with a
+      // null token is precisely what manufactured the 401. If the token could
+      // not be read, say we are not authenticated and let the app re-auth.
+      if (t === null) {
+        setAuthenticated(false);
+        setSessionExpired(true);
+        setToken(null);
+        setIdToken(null);
+        setTokenExp(null);
+        return;
+      }
+
+      // One batched commit: the token is in state in the SAME render that first
+      // reports `authenticated: true`.
+      setToken(t);
+      setIdToken(idt);
+      setTokenExp(exp);
+      setSessionExpired(false);
+      setNeedsReauth(false);
+      setAuthenticated(true);
     };
 
     const handleAuthSuccess = async () => {
@@ -465,6 +524,33 @@ export function TideCloakContextProvider({
       .on('tokenExpired', handleTokenExpired)
       .on('initError', handleInitError as any);
 
+    // NEVER rely solely on a future event to learn the auth state.
+    //
+    // The IAMService singleton outlives this component. Whenever this effect
+    // RE-runs - a `reloadKey` bump from `reload()` / `approveTideRequests()`, a
+    // `resolvedConfig` identity change, a StrictMode double-mount - the cleanup
+    // below tears every handler down (including the `ready` handler `initIAM`
+    // registers for us) and we re-subscribe here from scratch. But the `ready`
+    // event that carried the auth state fired during the FIRST init and is long
+    // gone: an event is a moment, not a value. So the handlers we just registered
+    // would sit there hearing nothing, and this component would go on serving the
+    // `token` it happens to hold in state while the SDK refreshed its own
+    // underneath.
+    //
+    // That desync is how a `401` gets manufactured: consumers read `token` from
+    // this context and put it in an `Authorization: Bearer …` header;
+    // `IAMService.secureFetch` compares it against the token the SDK actually
+    // holds, no longer recognises it as its own, and falls back to a plain
+    // non-DPoP fetch - which a `dpop.bound.access.tokens` realm rejects outright.
+    //
+    // So: if init has already settled, read the CURRENT state synchronously right
+    // now. (`initIAM` also re-emits `ready` on its already-initialized
+    // short-circuit; this is the belt to that braces, and keeps the provider
+    // correct against an older @tidecloak/js that doesn't.)
+    if (typeof (IAMService as any).isInitialized === 'function' && (IAMService as any).isInitialized()) {
+      void updateAuthState('resubscribe');
+    }
+
     setIsInitializing(true);
 
     // Initialize
@@ -474,6 +560,22 @@ export function TideCloakContextProvider({
         if (!loaded) throw new Error("Invalid config");
         setBaseURL((loaded['auth-server-url'] as string || '').replace(/\/+$/, ''));
         await IAMService.initIAM(resolvedConfig, updateAuthState);
+        if (!mounted) return;
+
+        // `initIAM` announces the auth state by emitting `ready`, and `_emit`
+        // fires its listeners WITHOUT awaiting them - it cannot await them, the
+        // emitter is synchronous. So `initIAM` resolving tells us the SDK has
+        // settled, but NOT that our async `updateAuthState` listener has finished
+        // writing that state into React. Clearing `isInitializing` here on the
+        // strength of `initIAM` alone is what un-gated the app one render too
+        // early, before `token` had landed.
+        //
+        // Await the auth state explicitly before we declare initialization done.
+        // `updateAuthState` is idempotent (it just re-reads the SDK and setStates
+        // the same values, which React bails out of), so running it once more
+        // costs a no-op render at worst and guarantees that by the time
+        // `isInitializing` flips to false the token is in state.
+        await updateAuthState('init');
         if (!mounted) return;
         setIsInitializing(false);
       } catch (err: any) {

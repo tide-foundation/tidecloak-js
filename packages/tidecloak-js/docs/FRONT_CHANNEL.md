@@ -80,14 +80,14 @@ await IAMService.initIAM({
 
 **Offline mode** lets users access your app even when their session has expired. You can then prompt for re-login only when an API call fails with 401.
 
-### DPoP (on by default)
+### DPoP (opt-in)
 
-DPoP (sender-constrained tokens, [RFC 9449](https://datatracker.ietf.org/doc/html/rfc9449)) is **enabled and enforced by default** in all TideCloak SDKs — you don't need to configure anything. The SDK binds tokens to a per-session key so a stolen bearer token can't be replayed.
+DPoP (sender-constrained tokens, [RFC 9449](https://datatracker.ietf.org/doc/html/rfc9449)) binds an access token to a per-session key, so a stolen token can't be replayed. It is **opt-in**: set `useDPoP` and the SDK turns it on; omit it and the SDK requests an ordinary (unbound) token.
 
-By default it runs in **`strict`** mode: if the realm doesn't advertise DPoP support, `initIAM` fails fast rather than silently downgrading to plain bearer tokens. You can change this:
+> **DPoP is not a flag you can flip in isolation.** Asking for it appends `dpop_jkt` to the authorization request, and the realm then issues a token carrying `typ: "DPoP"` and `cnf.jkt`. Such a token is **invalid** if it is later presented as a plain `Authorization: Bearer …` — the resource server answers a bare `401`. So enable DPoP only if every call that carries the token attaches a `DPoP:` proof (use `IAMService.secureFetch`, which does this for you). This is why the SDK will not turn DPoP on for you.
 
 ```js
-// Default (no config needed) — equivalent to:
+// Opt in, enforced — init fails if the realm doesn't advertise DPoP support:
 await IAMService.initIAM({ ...config, useDPoP: { mode: "strict" } });
 
 // Use DPoP only when the realm supports it, otherwise fall back to bearer:
@@ -96,16 +96,16 @@ await IAMService.initIAM({ ...config, useDPoP: { mode: "auto" } });
 // Pick the proof signing algorithm (default "ES256"):
 await IAMService.initIAM({ ...config, useDPoP: { mode: "strict", alg: "EdDSA" } });
 
-// Disable DPoP entirely:
-await IAMService.initIAM({ ...config, useDPoP: false });
+// No DPoP — a plain, unbound access token (the default):
+await IAMService.initIAM({ ...config });
 ```
 
 | `useDPoP` value            | Behavior                                                                 |
 | -------------------------- | ------------------------------------------------------------------------ |
-| *(omitted)* / `true`       | **Default.** DPoP enforced (`strict`); init fails if the realm lacks DPoP support. |
+| *(omitted)* / `false`      | **Default.** No DPoP. No `dpop_jkt`, plain unbound access token.          |
 | `{ mode: "auto" }`         | Use DPoP when the realm advertises it; otherwise fall back to bearer.    |
-| `{ mode: "strict", alg }`  | Enforce DPoP with a specific proof algorithm (`ES256` default).          |
-| `false`                    | Disable DPoP.                                                            |
+| `{ mode: "strict" }`       | Enforce DPoP; init fails if the realm lacks DPoP support.                |
+| `{ mode: …, alg }`         | As above, with a specific proof algorithm (`ES256` default).            |
 
 > Your **resource server** must validate DPoP proofs for the binding to be meaningful. See [`lib/README.md`](../lib/README.md#dpop-resource-server-setup) for serving `tide_dpop_auth.html`.
 
