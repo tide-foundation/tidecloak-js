@@ -60,6 +60,9 @@ const POST_LOGOUT_MARKER_TTL_MS = 60000
  * @property {string=} iframeOrigin
  */
 
+import { shouldAttachDpopProof } from './secureFetchPolicy.js'
+
+export { shouldAttachDpopProof } from './secureFetchPolicy.js'
 export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, PolicySignRequest } from "heimdall-tide";
 export { Tools, Models } from "@tideorg/js";
 export default class TideCloak {
@@ -81,6 +84,14 @@ export default class TideCloak {
   }
   /** @type {import('./tidecloak-dpop.js').DPoPSignatureProvider=} */
   #dpopProvider
+
+  /**
+   * The last non-matching `Authorization: Bearer …` value `secureFetch` warned
+   * about, so a consumer stuck in a stale-token state gets ONE warning per stale
+   * token rather than one per request. See `secureFetch`.
+   * @type {string|null}
+   */
+  #warnedStaleBearer = null
 
   /** @type {TideCloakConfig} config */
   #config
@@ -1779,10 +1790,38 @@ export default class TideCloak {
     const dpopProvider = this.#dpopProvider
     if (dpopProvider && this.authenticated && this.token) {
       const existingAuth = new Headers(init.headers).get('Authorization')
-      const isOurBearerToken = existingAuth === `Bearer ${this.token}`
+      const isOurBearerToken = shouldAttachDpopProof(existingAuth, this.token)
 
       if (!isOurBearerToken) {
-        // Quick escape - didn't put this check in first if statement as it's more expensive than other checks
+        // Quick escape - didn't put this check in first if statement as it's more expensive than other checks.
+        //
+        // BEHAVIOUR IS UNCHANGED: a request carrying some OTHER Bearer token is a
+        // legitimate pass-through (a third-party API), so it goes out as a plain
+        // fetch with no DPoP proof.
+        //
+        // But make it OBSERVABLE. When the caller hands us a Bearer token that is
+        // almost-but-not-quite ours - i.e. a token this client issued them earlier
+        // and that has since gone stale because they cached it and missed a refresh
+        // - this silent downgrade is fatal and mute: a `dpop.bound.access.tokens`
+        // realm rejects a DPoP-bound token presented as a plain Bearer with a bare
+        // `401`, and nothing anywhere explains why. One warning per distinct stale
+        // token (not per request), so a wedged consumer gets a clear signal instead
+        // of a scrolling wall.
+        if (
+          typeof existingAuth === 'string' &&
+          existingAuth.startsWith('Bearer ') &&
+          existingAuth !== this.#warnedStaleBearer
+        ) {
+          this.#warnedStaleBearer = existingAuth
+          console.warn(
+            '[TIDECLOAK] secureFetch: the Authorization header carries a Bearer token that is NOT the ' +
+            'token this client currently holds. Sending it as a PLAIN fetch with no DPoP proof. If that ' +
+            'token came from this SDK it has gone STALE (the caller cached a copy and missed a refresh) ' +
+            'and a DPoP-bound realm will answer 401. Read the token from the SDK at call time ' +
+            '(IAMService.getToken()) instead of holding a copy, or omit the Authorization header entirely ' +
+            'and let secureFetch attach it.'
+          )
+        }
         return fetch(url, init)
       }
 
@@ -1822,6 +1861,36 @@ export default class TideCloak {
       }
       return resp
     } else {
+      // SAFETY INVARIANT: if a DPoP provider exists, this client's tokens are
+      // sender-constrained (`cnf.jkt`), and a DPoP-bound token presented as a
+      // plain `Bearer` is INVALID per RFC 9449 - the resource server answers a
+      // bare `401` that names none of this. The silent fallback below is what
+      // hid exactly that bug. So when we are about to drop out of the DPoP path
+      // while STILL carrying an Authorization header, say so loudly - once per
+      // distinct header value, so a wedged consumer gets a signal rather than a
+      // scrolling wall.
+      if (dpopProvider) {
+        const existingAuth = new Headers(init.headers).get('Authorization')
+        if (
+          typeof existingAuth === 'string' &&
+          existingAuth.startsWith('Bearer ') &&
+          existingAuth !== this.#warnedStaleBearer
+        ) {
+          this.#warnedStaleBearer = existingAuth
+          console.error(
+            '[TIDECLOAK] secureFetch: DPoP is ENABLED on this client, but the request is going out as a ' +
+            'plain `Authorization: Bearer …` with NO DPoP proof' +
+            (!this.authenticated
+              ? ' (the client is not authenticated yet)'
+              : !this.token
+                ? ' (the client holds no access token yet)'
+                : '') +
+            '. If that token is DPoP-bound (`cnf.jkt`), the server will reject it with a bare 401. ' +
+            'Wait for the SDK to be authenticated and read the token from it at call time, or turn DPoP ' +
+            'off for this flow (omit `useDPoP` from the config).'
+          )
+        }
+      }
       return fetch(url, init)
     }
   }

@@ -50,7 +50,7 @@ npm install @tidecloak/nextjs
 - `verifyTideCloakToken()` - Server-side JWT verification
 - `doEncrypt()` / `doDecrypt()` - Tag-based encryption
 
-> **DPoP is enabled and enforced by default** (sender-constrained tokens). Pass `useDPoP: false` or `useDPoP: { mode: "auto" }` in your provider config to relax it — see the [`@tidecloak/js` DPoP docs](../tidecloak-js/docs/FRONT_CHANNEL.md#dpop-on-by-default).
+> **DPoP is opt-in** (sender-constrained tokens). By default you get a plain, unbound access token. Pass `useDPoP: { mode: "auto" }` or `{ mode: "strict" }` in your provider config to turn it on — see the [`@tidecloak/js` DPoP docs](../tidecloak-js/docs/FRONT_CHANNEL.md#dpop-opt-in).
 
 ---
 

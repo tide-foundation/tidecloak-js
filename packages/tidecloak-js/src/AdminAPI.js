@@ -29,6 +29,27 @@ class AdminAPI {
   }
 
   /**
+   * SAFETY INVARIANT: never send this SDK's own access token as a plain `Bearer`.
+   *
+   * When DPoP is enabled the issued token is sender-constrained (`typ: DPoP`,
+   * `cnf.jkt`), and RFC 9449 says a bound token presented as a plain `Bearer` is
+   * invalid - the server answers a bare `401` explaining nothing. So every admin
+   * call goes through `IAMService.secureFetch`, which:
+   *
+   *   - with a DPoP provider: upgrades `Authorization: Bearer <our token>` to
+   *     `Authorization: DPoP <our token>` + a `DPoP:` proof (and handles nonces);
+   *   - with no DPoP provider: falls through to a plain `fetch` - byte-for-byte
+   *     what this method did before.
+   *
+   * @private
+   */
+  async _authFetch(url, init) {
+    // Hybrid mode keeps tokens server-side and `secureFetch` refuses to run.
+    if (IAMService.isHybridMode?.()) return fetch(url, init);
+    return IAMService.secureFetch(url, init);
+  }
+
+  /**
    * Make an authenticated fetch request
    */
   async fetch(endpoint, options = {}) {
@@ -36,7 +57,7 @@ class AdminAPI {
     const baseURL = IAMService.getBaseUrl();
     const url = endpoint.startsWith('http') ? endpoint : `${baseURL}${endpoint}`;
 
-    const response = await fetch(url, {
+    const response = await this._authFetch(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
@@ -62,7 +83,7 @@ class AdminAPI {
     const baseURL = IAMService.getBaseUrl();
     const url = endpoint.startsWith('http') ? endpoint : `${baseURL}${endpoint}`;
 
-    const response = await fetch(url, {
+    const response = await this._authFetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -250,7 +271,7 @@ class AdminAPI {
 
     const url = `${baseURL}/admin/realms/${realm}/tideAdminResources/get-required-action-link?${params.toString()}`;
 
-    const response = await fetch(url, {
+    const response = await this._authFetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
