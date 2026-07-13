@@ -1,4 +1,4 @@
-import { makePkce, fetchJson } from "./utils/index.js";
+import { makePkce, fetchJson, resolveSilentCheckSsoRedirectUri } from "./utils/index.js";
 import TideCloak, { RequestEnclave } from "../lib/tidecloak.js";
 
 /**
@@ -490,13 +490,77 @@ class IAMService {
       return !!this._tc.tokenParsed;
     }
 
+    // Read an init option from the resolved config. `loadConfig` assigns
+    // `this._config = config`, so these are normally the same object; we check
+    // both so a caller that passes options only to `initIAM` is still honoured.
+    const pick = (key) => this._config?.[key] ?? config?.[key];
+
+    // --- Silent-check-SSO redirect URI ---------------------------------------
+    // This used to be hardcoded to `${window.location.origin}/silent-check-sso.html`
+    // with NO caller override, which is only correct for an origin-root-hosted
+    // app. Any app served under a sub-path got a URI that is neither served nor
+    // registered on the OIDC client, so Keycloak answered `400 Invalid parameter:
+    // redirect_uri`, the silent iframe never posted back, and the app hung on its
+    // bootstrap spinner. Resolve it properly instead: an explicit caller value
+    // always wins, otherwise derive from the app's declared base. See
+    // ./utils/silentCheckSso.js.
+    const hasBaseElement =
+      typeof document !== "undefined" && !!document.querySelector("base[href]");
+    const silentSso = resolveSilentCheckSsoRedirectUri({
+      origin: window.location.origin,
+      configured: pick("silentCheckSsoRedirectUri"),
+      // `document.baseURI` is the browser's resolution of `<base href>`. Only pass
+      // it when such an element actually exists - otherwise it is just the current
+      // page URL, which for a deep SPA route would derive a bogus base.
+      baseHref: hasBaseElement ? document.baseURI : undefined,
+      redirectUri: pick("redirectUri"),
+    });
+
+    if (!silentSso.uri) {
+      // FAIL LOUD. Passing `undefined` makes TideCloak skip the silent check
+      // entirely and fall back to a redirect-based `prompt=none` login, which
+      // still authenticates the user. That is strictly better than emitting a
+      // URI we know will 400 and wedge the app on its spinner.
+      console.error(
+        `[IAMService] Cannot derive a silent-check-sso redirect URI: ${silentSso.reason}. ` +
+          "Skipping silent check-sso and falling back to a redirect-based login. " +
+          "Set `silentCheckSsoRedirectUri` in your TideCloak config to a URI that is " +
+          "both served by your app and registered on the OIDC client."
+      );
+    } else if (silentSso.source !== "config") {
+      console.debug(
+        `[IAMService] silentCheckSsoRedirectUri derived from ${silentSso.source}: ${silentSso.uri}`
+      );
+    }
+
+    const redirectUri = pick("redirectUri");
+    const silentCheckSsoFallback = pick("silentCheckSsoFallback");
+    const silentCheckSsoTimeout = pick("silentCheckSsoTimeout");
+    const scope = pick("scope");
+
     let authenticated = false;
     try {
       authenticated = await this._tc.init({
         setupRequestEnclave: config.setupRequestEnclave ?? true, // true by default because most clients that uses this will need it on
+        // NOTE: `onLoad` is deliberately NOT taken from the caller's config here.
+        // Callers (e.g. the admin console) pass `onLoad: "login-required"`, and
+        // honouring it would send #processInit down the `login-required` branch,
+        // which does a full top-level redirect on every load and never runs the
+        // silent check-sso path at all. That is a separate product decision, not
+        // part of fixing the redirect URI. Changing it belongs in its own change.
         onLoad: "check-sso",
-        silentCheckSsoRedirectUri: `${window.location.origin}/silent-check-sso.html`,
-        pkceMethod: "S256",
+        // `undefined` => TideCloak skips silent check-sso (see #processInit) and
+        // falls back to an interactive login rather than emitting a bad URI.
+        silentCheckSsoRedirectUri: silentSso.uri,
+        pkceMethod: pick("pkceMethod") ?? "S256",
+        // Forward the rest of the caller's init options instead of dropping them
+        // on the floor. `redirectUri` in particular must reach the TideCloak
+        // instance for sub-path-hosted apps, otherwise the adapter falls back to
+        // `location.href`.
+        ...(redirectUri !== undefined && { redirectUri }),
+        ...(silentCheckSsoFallback !== undefined && { silentCheckSsoFallback }),
+        ...(silentCheckSsoTimeout !== undefined && { silentCheckSsoTimeout }),
+        ...(scope !== undefined && { scope }),
         ...(this._config?.useDPoP && { useDPoP: this._config.useDPoP }),
         ...(this._config?.checkLoginIframe === false && { checkLoginIframe: false }),
       });

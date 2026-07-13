@@ -24,6 +24,7 @@
     "./policy.css": "./dist/esm/src/policy.css"
   },
   "scripts": {
+    "test": "node --test test/*.test.js",
     "postinstall": "node ./scripts/postinstall.cjs",
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "build:esm": "tsc -p tsconfig.esm.json",
