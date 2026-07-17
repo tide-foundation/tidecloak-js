@@ -1805,6 +1805,7 @@ export default class TideCloak {
 
       // https://datatracker.ietf.org/doc/html/rfc9449#section-9
       // Resource servers signal via: WWW-Authenticate: DPoP error="use_dpop_nonce"
+      let currentResp = resp; // we use currentResp to handle cases where there might be NONCE AND DELEGATION ISSUES back to back
       if (resp.status === 401 && newNonce) {
         const wwwAuth = resp.headers.get('WWW-Authenticate') ?? ''
         if (wwwAuth.includes('DPoP') && wwwAuth.includes('error="use_dpop_nonce"')) {
@@ -1818,10 +1819,52 @@ export default class TideCloak {
           if (retryNonce) {
             dpopProvider.updateResourceServerNonce(origin, retryNonce)
           }
-          return retryResp
+          currentResp = retryResp
         }
       }
-      return resp
+      // Tide specific DPoP Delegation Proof Replay
+      const delegationKey = currentResp.headers.get('DPoP-Delegation-Key')
+      const delegationChallenge = currentResp.headers.get('DPoP-Delegation-Challenge')
+      if (currentResp.status === 401 && delegationKey && delegationChallenge) {
+        const wwwAuth = currentResp.headers.get('WWW-Authenticate') ?? ''
+        if (wwwAuth.includes('DPoP') && wwwAuth.includes('error="delegation_required"')) {
+          // Generate resource delegation
+          const jti = this.tokenParsed.jti
+          let challengeMessage
+          if (jti != null) {
+            challengeMessage = `dpop-jti-challenge:${jti}`
+          } else {
+            const ath = bytesToBase64(new Uint8Array(await sha256Digest(this.token)))
+              .replace(/\+/g, '-')
+              .replace(/\//g, '_')
+              .replace(/=/g, '') // to base64url
+            challengeMessage = `dpop-ath-challenge:${ath}`
+          }
+          let dpopDelegationJwt
+          try {
+            dpopDelegationJwt = await dpopProvider.generateResourceDelegation(delegationKey, challengeMessage, delegationChallenge, this.token)
+          } catch (error) {
+            console.warn('[KEYCLOAK] Refusing DPoP delegation, returning original response:', error)
+            return currentResp
+          }
+          // The retry must still be a fully authenticated DPoP request; the
+          // delegation header supplements the proof, it doesn't replace it.
+          const latestNonce = dpopProvider.getResourceServerNonce(origin)
+          const retryProof = await dpopProvider.generateDPoPProof(urlString, method, this.token, latestNonce)
+          const retryHeaders = new Headers(init.headers)
+          retryHeaders.set('Authorization', `DPoP ${this.token}`)
+          retryHeaders.set('DPoP', retryProof)
+          retryHeaders.set('DPoP-Resource-Delegation', dpopDelegationJwt)
+          const retryResp = await fetch(url, { ...init, headers: retryHeaders })
+          // Capture nonce from retry response for future requests
+          const retryNonce = retryResp.headers.get('DPoP-Nonce')
+          if (retryNonce) {
+            dpopProvider.updateResourceServerNonce(origin, retryNonce)
+          }
+          currentResp = retryResp
+        }
+      }
+      return currentResp
     } else {
       return fetch(url, init)
     }

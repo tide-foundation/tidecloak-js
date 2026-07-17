@@ -91,4 +91,17 @@ export class DPoPSignatureProvider {
    * @returns Base64url-encoded SHA-256 thumbprint
    */
   generateJWKThumbprint(): Promise<string>
+
+  /**
+   * Sign a delegation request as a JWT using the DPoP private key.
+   * The resulting JWT proves the user authorizes the delegation described by the claims.
+   *
+   * @param resourcePublicKeyInfo Base64 URL encoded Ed25519 SubjectPublicKeyInfo (DER)
+   * @param challengeMessage UTF8 text
+   * @param resourceChallengeSignature Base64 URL encoded signature
+   * @param accessToken Access token if calling resource server
+   * @returns Compact JWT string (header.payload.signature)
+   * @throws If the resource's challenge signature cannot be verified
+   */
+  generateResourceDelegation(resourcePublicKeyInfo: string, challengeMessage: string, resourceChallengeSignature: string, accessToken: string): Promise<string>
 }

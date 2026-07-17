@@ -514,35 +514,6 @@ export class DPoPSignatureProvider {
   }
 
   /**
-   * Sign a delegation request as a JWT using the DPoP private key.
-   * The resulting JWT proves the user authorizes the delegation described by the claims.
-   *
-   * @param {Record<string, unknown>} claims - The delegation request claims (aud, scope, iat, exp, jti, etc.)
-   * @returns {Promise<string>} Compact JWT string (header.payload.signature)
-   */
-  async signDelegationRequest(claims) {
-    const state = await this.#store.get()
-    if (state === undefined) throw new Error('DPoP not initialized')
-
-    const exportedJwk = await crypto.subtle.exportKey("jwk", state.keys.publicKey);
-    const header = {
-      alg: this.#alg,
-      typ: "delegation+jwt",
-      jwk: {
-        crv: exportedJwk.crv,
-        kty: exportedJwk.kty,
-        x: exportedJwk.x,
-        y: exportedJwk.y
-      }
-    };
-
-    const te = new TextEncoder();
-    const unsignedToken = `${base64UrlEncodeBuffer(te.encode(JSON.stringify(header)))}.${base64UrlEncodeBuffer(te.encode(JSON.stringify(claims)))}`
-    const signature = await this.#sign(te.encode(unsignedToken), state.keys.privateKey);
-    return `${unsignedToken}.${base64UrlEncodeBuffer(signature)}`
-  }
-
-  /**
    * Compute the SHA256 thumbprint of the DPoP Public Key
    * @returns {string} Base64 URL Encoding of the thumbprint
    */
@@ -560,21 +531,116 @@ export class DPoPSignatureProvider {
     }
     return base64UrlEncodeBuffer(await sha256Digest(JSON.stringify(jwk)));
   }
+
+    /**
+   * Sign a delegation request as a JWT using the DPoP private key.
+   * The resulting JWT proves the user authorizes the delegation described by the claims.
+   *
+   * @param {string} resourcePublicKeyInfo Base64 URL encoded Ed25519 SubjectPublicKeyInfo
+   * @param {string} challengeMessage UTF8 text
+   * @param {string} resourceChallengeSignature Base64 URL encoded signature
+   * @param {string} accessToken Access token if calling resource server
+   * @returns {Promise<string>} Compact JWT string (header.payload.signature)
+   * @throws {Error} If the resource's challenge signature cannot be verified
+   */
+  async generateResourceDelegation(resourcePublicKeyInfo, challengeMessage, resourceChallengeSignature, accessToken) {
+    const state = await this.#store.get()
+    if (state === undefined) throw new Error('DPoP not initialized')
+
+    if (typeof resourcePublicKeyInfo !== 'string' || resourcePublicKeyInfo.length === 0) throw new Error('resourcePublicKeyInfo must be a non-empty base64url-encoded string')
+    if (typeof challengeMessage !== 'string' || challengeMessage.length === 0) throw new Error('challengeMessage must be a non-empty string')
+    if (typeof resourceChallengeSignature !== 'string' || resourceChallengeSignature.length === 0) throw new Error('resourceChallengeSignature must be a non-empty base64url-encoded signature')
+
+    /** @type {Uint8Array} */
+    let resourceSpki
+    try {
+      resourceSpki = base64UrlDecodeBuffer(resourcePublicKeyInfo)
+    } catch (error) {
+      throw new Error('resourcePublicKeyInfo is not base64url-encoded', { cause: error })
+    }
+
+    /** @type {Uint8Array} */
+    let challengeSignature
+    try {
+      challengeSignature = base64UrlDecodeBuffer(resourceChallengeSignature)
+    } catch (error) {
+      throw new Error('resourceChallengeSignature is not base64url-encoded', { cause: error })
+    }
+
+    /** @type {CryptoKey} */
+    let resourceKey
+    try {
+      resourceKey = await crypto.subtle.importKey('spki', resourceSpki, KEY_GEN_PARAMS[BrowserSignatureAlgs.EdDSA], true, ['verify'])
+    } catch (error) {
+      throw new Error('resourcePublicKeyInfo could not be imported as an Ed25519 SubjectPublicKeyInfo public key', { cause: error })
+    }
+
+    const te = new TextEncoder();
+    const challengeVerified = await crypto.subtle.verify(
+      SIGN_PARAMS[BrowserSignatureAlgs.EdDSA],
+      resourceKey,
+      challengeSignature,
+      te.encode(challengeMessage)
+    )
+    if (!challengeVerified) throw new Error('Resource challenge signature verification failed')
+
+    const exportedJwk = await crypto.subtle.exportKey("jwk", state.keys.publicKey);
+    const jwk = {
+      crv: exportedJwk.crv,
+      kty: exportedJwk.kty,
+      x: exportedJwk.x,
+      y: exportedJwk.y
+    }
+
+    const header = {
+      alg: this.#alg,
+      typ: "delegation+jwt",
+      jwk: jwk
+    }
+    const payload = {
+      jti: crypto.randomUUID(),
+      iat: Math.floor(Date.now() / 1000) - (this.#getTimeSkew?.() ?? 0),
+      delegate_cnf: {
+        // SubjectPublicKeyInfoThumbprint - spt (new standard)
+        spt: base64UrlEncodeBuffer(await sha256Digest(resourceSpki))
+      },
+
+      ath: base64UrlEncodeBuffer(await sha256Digest(accessToken))
+    }
+
+    const unsignedToken = `${base64UrlEncodeBuffer(te.encode(JSON.stringify(header)))}.${base64UrlEncodeBuffer(te.encode(JSON.stringify(payload)))}`
+    const signature = await this.#sign(te.encode(unsignedToken), state.keys.privateKey);
+    return `${unsignedToken}.${base64UrlEncodeBuffer(signature)}`
+  }
 }
 
 /**
- * @param {string} message
+ * @param {string | ArrayBuffer | Uint8Array} message Strings are UTF-8 encoded; bytes are hashed as-is
  * @see https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest#basic_example
  */
 async function sha256Digest (message) {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(message)
+  const data = typeof message === 'string' ? new TextEncoder().encode(message) : message
 
   if (typeof crypto === 'undefined' || typeof crypto.subtle === 'undefined') {
     throw new Error('Web Crypto API is not available.')
   }
 
   return await crypto.subtle.digest('SHA-256', data)
+}
+
+/**
+ * @param {string} value
+ * @returns {Uint8Array}
+ */
+function base64UrlDecodeBuffer(value) {
+  const base64 = value.replaceAll('-', '+').replaceAll('_', '/')
+  const padding = (4 - base64.length % 4) % 4
+  const binary = atob(base64 + '='.repeat(padding))
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
 }
 
 /**
