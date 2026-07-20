@@ -1,4 +1,9 @@
-import { makePkce, fetchJson } from "./utils/index.js";
+import {
+  makePkce,
+  fetchJson,
+  resolveSilentCheckSsoRedirectUri,
+  buildInitOptions,
+} from "./utils/index.js";
 import TideCloak, { RequestEnclave } from "../lib/tidecloak.js";
 
 /**
@@ -128,6 +133,13 @@ class IAMService {
 
     // --- DPoP state ---
     this._dpopProvider = null;
+
+    // --- Front-channel init state ---
+    // Set while `_tc.init()` is in flight, cleared once it settles. Lets a
+    // concurrent/repeat `initIAM()` (React StrictMode double-mount, a provider
+    // effect that re-runs before the first init resolves) join the in-flight init
+    // instead of short-circuiting past it and reporting a not-yet-populated state.
+    this._frontchannelInitPromise = null;
   }
 
   /**
@@ -191,23 +203,30 @@ class IAMService {
       console.warn("[loadConfig] empty config");
       return null;
     }
-    // Shallow-copy so we can normalise defaults without mutating the caller's object.
+    // Shallow-copy so we never mutate the caller's object.
     this._config = { ...config };
 
-    // DPoP is enabled and ENFORCED by default across all TideCloak SDKs. To weaken
-    // or disable it, set `useDPoP` explicitly:
-    //   - `useDPoP: false`              → disable DPoP entirely
-    //   - `useDPoP: { mode: 'auto' }`   → use DPoP only when the realm advertises it
-    //   - `useDPoP: { mode: 'strict' }` → require DPoP (the default); init fails if
-    //                                      the realm doesn't advertise DPoP support
-    const dpop = this._config.useDPoP;
-    if (dpop === false || dpop === null || dpop === "") {
-      delete this._config.useDPoP; // explicit opt-out
-    } else if (dpop === undefined || dpop === true) {
-      this._config.useDPoP = { mode: "strict" };
-    } else if (typeof dpop === "object" && dpop.mode === undefined) {
-      this._config.useDPoP = { ...dpop, mode: "strict" };
-    }
+    // ---------------------------------------------------------------------
+    // DPoP is OPT-IN. Do NOT default it on. Ever.
+    //
+    // `useDPoP` is passed through to `TideCloak.init()` VERBATIM and only when
+    // the caller actually set it (see ./utils/initOptions.js). If it is absent,
+    // no DPoP provider is constructed, no `dpop_jkt` is appended to the
+    // authorization request, and the realm issues a PLAIN access token.
+    //
+    // A previous revision defaulted this to `{ mode: "strict" }` whenever the
+    // caller omitted it ("DPoP on by default"). That silently broke every
+    // consumer that runs a deliberately non-DPoP flow: the authorization
+    // request grew a `dpop_jkt`, Keycloak issued a `typ: DPoP` /
+    // `cnf.jkt`-bound token, and the consumer's plain-Bearer fetch - correct
+    // for the flow it thought it was in - was rejected with a bare `401`
+    // (RFC 9449: a DPoP-bound token presented as a plain Bearer is invalid).
+    // The TideCloak admin console's bootstrap path is exactly this: it omits
+    // `useDPoP` on purpose and fetches with a plain Bearer.
+    //
+    // Enabling a sender-constraint the caller did not ask for changes the
+    // shape of the issued token. That is never a safe default to invent.
+    // ---------------------------------------------------------------------
 
     // Hybrid mode: do not construct TideCloak client (tokens are server-side)
     if (this.isHybridMode()) {
@@ -487,19 +506,106 @@ class IAMService {
 
     if (this._tc.didInitialize) {
       console.debug("[IAMService] IAM Already initialized once.");
-      return !!this._tc.tokenParsed;
+
+      // An init started by an EARLIER call may still be in flight (React
+      // StrictMode double-mounts; a provider effect that re-runs before the first
+      // init settles). Its trailing `_emit("ready", ...)` has not happened yet, so
+      // it will still reach the handler we registered at the top of this call -
+      // just join it and let the event do the work.
+      if (this._frontchannelInitPromise) {
+        return this._frontchannelInitPromise;
+      }
+
+      // Init has already SETTLED, and its `ready` event has been emitted and is
+      // gone. Anyone registering a handler after the fact - a React provider
+      // re-running its effect and re-subscribing after a `reload()` /
+      // `approveTideRequests()` - would hear NOTHING, forever. It would go on
+      // serving whatever auth state it last observed while this singleton kept
+      // refreshing its own token underneath.
+      //
+      // That desync is exactly how a `401` is manufactured: the consumer sends a
+      // stale `Authorization: Bearer <old token>`, `TideCloak.secureFetch` no
+      // longer recognises it as the token it holds, silently falls back to a plain
+      // non-DPoP `fetch`, and a `dpop.bound.access.tokens` realm rejects a
+      // DPoP-bound token presented as a plain Bearer.
+      //
+      // `ready` is a STATE notification, not a one-shot lifecycle signal, so
+      // re-emitting the current state is safe and idempotent - every listener
+      // simply re-syncs to the truth.
+      const alreadyAuthenticated = !!this._tc.tokenParsed;
+      this._emit("ready", alreadyAuthenticated);
+      return alreadyAuthenticated;
+    }
+
+    this._frontchannelInitPromise = this._initFrontchannel(config);
+    try {
+      return await this._frontchannelInitPromise;
+    } finally {
+      this._frontchannelInitPromise = null;
+    }
+  }
+
+  /**
+   * Drive the one-and-only `TideCloak.init()` for front-channel mode and emit the
+   * resulting `ready` state. Split out of {@link initIAM} so the in-flight promise
+   * can be shared with concurrent callers.
+   * @private
+   * @param {Object} config
+   * @returns {Promise<boolean>}
+   */
+  async _initFrontchannel(config) {
+    // Read an init option from the resolved config. `loadConfig` assigns
+    // `this._config = config`, so these are normally the same object; we check
+    // both so a caller that passes options only to `initIAM` is still honoured.
+    const pick = (key) => this._config?.[key] ?? config?.[key];
+
+    // --- Silent-check-SSO redirect URI ---------------------------------------
+    // This used to be hardcoded to `${window.location.origin}/silent-check-sso.html`
+    // with NO caller override, which is only correct for an origin-root-hosted
+    // app. Any app served under a sub-path got a URI that is neither served nor
+    // registered on the OIDC client, so Keycloak answered `400 Invalid parameter:
+    // redirect_uri`, the silent iframe never posted back, and the app hung on its
+    // bootstrap spinner. Resolve it properly instead: an explicit caller value
+    // always wins, otherwise derive from the app's declared base. See
+    // ./utils/silentCheckSso.js.
+    const hasBaseElement =
+      typeof document !== "undefined" && !!document.querySelector("base[href]");
+    const silentSso = resolveSilentCheckSsoRedirectUri({
+      origin: window.location.origin,
+      configured: pick("silentCheckSsoRedirectUri"),
+      // `document.baseURI` is the browser's resolution of `<base href>`. Only pass
+      // it when such an element actually exists - otherwise it is just the current
+      // page URL, which for a deep SPA route would derive a bogus base.
+      baseHref: hasBaseElement ? document.baseURI : undefined,
+      redirectUri: pick("redirectUri"),
+    });
+
+    if (!silentSso.uri) {
+      // FAIL LOUD. Passing `undefined` makes TideCloak skip the silent check
+      // entirely and fall back to a redirect-based `prompt=none` login, which
+      // still authenticates the user. That is strictly better than emitting a
+      // URI we know will 400 and wedge the app on its spinner.
+      console.error(
+        `[IAMService] Cannot derive a silent-check-sso redirect URI: ${silentSso.reason}. ` +
+          "Skipping silent check-sso and falling back to a redirect-based login. " +
+          "Set `silentCheckSsoRedirectUri` in your TideCloak config to a URI that is " +
+          "both served by your app and registered on the OIDC client."
+      );
+    } else if (silentSso.source !== "config") {
+      console.debug(
+        `[IAMService] silentCheckSsoRedirectUri derived from ${silentSso.source}: ${silentSso.uri}`
+      );
     }
 
     let authenticated = false;
     try {
-      authenticated = await this._tc.init({
-        setupRequestEnclave: config.setupRequestEnclave ?? true, // true by default because most clients that uses this will need it on
-        onLoad: "check-sso",
-        silentCheckSsoRedirectUri: `${window.location.origin}/silent-check-sso.html`,
-        pkceMethod: "S256",
-        ...(this._config?.useDPoP && { useDPoP: this._config.useDPoP }),
-        ...(this._config?.checkLoginIframe === false && { checkLoginIframe: false }),
-      });
+      authenticated = await this._tc.init(
+        buildInitOptions({
+          config: this._config ?? config,
+          setupRequestEnclave: config.setupRequestEnclave ?? true, // true by default because most clients that uses this will need it on
+          silentCheckSsoRedirectUri: silentSso.uri,
+        })
+      );
 
       // if successful, store token for middleware
       if (authenticated && this._tc.token) {
@@ -565,6 +671,30 @@ class IAMService {
       throw new Error("Config not loaded - call initIAM() first");
     }
     return this._config;
+  }
+
+  /**
+   * Whether initialization has already run to completion for the current mode.
+   *
+   * "Settled", not "started": while an init is still in flight this returns
+   * `false`, because the auth state it will produce does not exist yet and reading
+   * it would report a spurious logged-out state.
+   *
+   * Consumers that subscribe to events LATE (a React provider re-running its
+   * effect and re-subscribing, say) must use this to re-read the current auth
+   * state synchronously rather than waiting on a `ready` event that has already
+   * been emitted and is gone.
+   *
+   * @returns {boolean}
+   */
+  isInitialized() {
+    if (this.isHybridMode()) {
+      return this._hybridCallbackHandled && !this._hybridCallbackPromise;
+    }
+    if (this.isNativeMode()) {
+      return this._nativeCallbackHandled && !this._nativeCallbackPromise;
+    }
+    return !!this._tc?.didInitialize && !this._frontchannelInitPromise;
   }
 
   /** @returns {boolean} Whether there's a valid token (or session in hybrid/native mode) */

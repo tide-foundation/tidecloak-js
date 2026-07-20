@@ -327,6 +327,16 @@ export interface IAMServiceInstance {
   getConfig(): IAMConfig;
 
   /**
+   * Whether initialization has already run to COMPLETION for the current mode.
+   * `false` while an init is still in flight (its auth state does not exist yet).
+   *
+   * Use this when subscribing to events late - after a `ready` event may already
+   * have been emitted - to re-read the current auth state synchronously instead of
+   * waiting on an event that will never come again.
+   */
+  isInitialized(): boolean;
+
+  /**
    * Check if user is logged in.
    */
   isLoggedIn(): boolean;
