@@ -22,19 +22,36 @@ set -euo pipefail
 # ─── Resolve script directory (run from anywhere) ────────────────────────────
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
 
-# ─── Load overrides from .env.example (CRLF-safe) ────────────────────────────
+# ─── Load defaults from .env.example (CRLF-safe) ─────────────────────────────
+# -f guard keeps it a no-op when absent.
 ENV_FILE="${SCRIPT_DIR}/.env.example"
 if [[ -f "$ENV_FILE" ]]; then
-  if grep -q $'\r' "$ENV_FILE"; then
-    TMP_ENV="$(mktemp)"
-    tr -d '\r' < "$ENV_FILE" > "$TMP_ENV"
-    # shellcheck disable=SC1090
-    source "$TMP_ENV"
-    rm -f "$TMP_ENV"
-  else
-    # shellcheck disable=SC1090
-    source "$ENV_FILE"
-  fi
+  # Apply each KEY=VALUE from the defaults file with FALLBACK semantics: a
+  # variable already present in the caller's environment is preserved and the
+  # default is ignored. We deliberately do NOT `source` the file, because raw
+  # assignments would hard-override caller-supplied env (e.g. NEW_REALM_NAME).
+  # CRLF-safe: a trailing CR is stripped from every line.
+  while IFS= read -r _env_line || [[ -n "$_env_line" ]]; do
+    _env_line="${_env_line%$'\r'}"
+    if [[ "$_env_line" =~ ^[[:space:]]*(#|$) ]]; then
+      continue
+    fi
+    if [[ "$_env_line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
+      _env_key="${BASH_REMATCH[2]}"
+      _env_val="${BASH_REMATCH[3]}"
+      _env_val="${_env_val#"${_env_val%%[![:space:]]*}"}"
+      _env_val="${_env_val%"${_env_val##*[![:space:]]}"}"
+      if [[ ${#_env_val} -ge 2 && "$_env_val" == \"*\" ]]; then
+        _env_val="${_env_val:1:${#_env_val}-2}"
+      elif [[ ${#_env_val} -ge 2 && "$_env_val" == \'*\' ]]; then
+        _env_val="${_env_val:1:${#_env_val}-2}"
+      fi
+      if [[ -z "${!_env_key:-}" ]]; then
+        printf -v "$_env_key" '%s' "$_env_val"
+      fi
+    fi
+  done < "$ENV_FILE"
+  unset _env_line _env_key _env_val
 fi
 
 # ─── Defaults (override via env) ─────────────────────────────────────────────
@@ -132,22 +149,28 @@ get_admin_token() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Helper: status-capturing admin API call.
-#  Usage:  code=$(api METHOD URL [extra curl args...])
+#  Usage:  api METHOD URL [extra curl args...]
+#          then read the results from the globals it sets:
+#            RESP_CODE  - the HTTP status ("000" on hard network failure)
+#            RESP_BODY  - the full response body
+#  IMPORTANT: call api WITHOUT command substitution. It sets globals in the
+#  CURRENT shell; running it as `code=$(api ...)` would execute it in a subshell
+#  and the RESP_BODY/RESP_CODE it sets would be discarded before the parent
+#  could read them.
 #  - Authorization: Bearer ${TOKEN} is added automatically (refresh TOKEN first).
-#  - Response body is left in the global RESP_BODY.
 #  - Never aborts the script on a non-2xx HTTP response (curl -s exits 0);
-#    only a hard network failure yields code "000".
+#    only a hard network failure yields RESP_CODE "000".
 # ─────────────────────────────────────────────────────────────────────────────
+RESP_CODE=""
 RESP_BODY=""
 api() {
   local method="$1" url="$2"; shift 2
-  local tmp code
+  local tmp
   tmp="$(mktemp)"
-  code=$(curl -s -o "${tmp}" -w "%{http_code}" -X "${method}" "${url}" \
-           -H "Authorization: Bearer ${TOKEN}" "$@") || code="000"
+  RESP_CODE=$(curl -s -o "${tmp}" -w "%{http_code}" -X "${method}" "${url}" \
+           -H "Authorization: Bearer ${TOKEN}" "$@") || RESP_CODE="000"
   RESP_BODY="$(cat "${tmp}")"
   rm -f "${tmp}"
-  printf '%s' "${code}"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -214,9 +237,10 @@ TIDE_CONSOLE_ORIGIN="${TIDECLOAK_LOCAL_URL}/realms/${REALM_NAME}/tide-console/"
 
 echo "Creating realm '${REALM_NAME}'..."
 TOKEN="$(get_admin_token)"
-code=$(api POST "${TIDECLOAK_LOCAL_URL}/admin/realms" \
+api POST "${TIDECLOAK_LOCAL_URL}/admin/realms" \
   -H "Content-Type: application/json" \
-  --data-binary @"${TMP_REALM_JSON}")
+  --data-binary @"${TMP_REALM_JSON}"
+code="${RESP_CODE}"
 if [[ "${code}" == 2* ]]; then
   echo "  realm create -> ${code} (created)"
 elif [[ "${code}" == "409" ]]; then
@@ -241,11 +265,12 @@ fi
 # ═════════════════════════════════════════════════════════════════════════════
 echo "Setting up Tide realm (VRK keygen on the ORK network)..."
 TOKEN="$(get_admin_token)"
-code=$(api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/vendorResources/setUpTideRealm" \
+api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/vendorResources/setUpTideRealm" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "email=${SUBSCRIPTION_EMAIL}" \
   --data-urlencode "isRagnarokEnabled=true" \
-  --data-urlencode "skipLicense=false")
+  --data-urlencode "skipLicense=false"
+code="${RESP_CODE}"
 if [[ "${code}" != 2* ]]; then
   echo "ERROR: setUpTideRealm failed (HTTP ${code})." >&2
   echo "       This step needs a healthy ORK network (VRK keygen)." >&2
@@ -260,7 +285,8 @@ echo "  setUpTideRealm -> ${code}"
 # ═════════════════════════════════════════════════════════════════════════════
 echo "Stamping iga.attestor=tide on the realm..."
 TOKEN="$(get_admin_token)"
-code=$(api GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}")
+api GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}"
+code="${RESP_CODE}"
 if [[ "${code}" != 2* ]]; then
   echo "ERROR: could not fetch realm representation (HTTP ${code})." >&2
   echo "       Response: ${RESP_BODY}" >&2
@@ -269,9 +295,10 @@ fi
 REALM_REP_FILE="$(mktemp)"
 jq '.attributes = ((.attributes // {}) + {"iga.attestor":"tide"})' <<< "${RESP_BODY}" > "${REALM_REP_FILE}"
 TOKEN="$(get_admin_token)"
-code=$(api PUT "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}" \
+api PUT "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}" \
   -H "Content-Type: application/json" \
-  --data-binary @"${REALM_REP_FILE}")
+  --data-binary @"${REALM_REP_FILE}"
+code="${RESP_CODE}"
 rm -f "${REALM_REP_FILE}"
 if [[ "${code}" != 2* ]]; then
   echo "ERROR: failed to set iga.attestor=tide (HTTP ${code})." >&2
@@ -285,9 +312,10 @@ echo "  iga.attestor=tide -> ${code}"
 # ═════════════════════════════════════════════════════════════════════════════
 echo "Enabling IGA governance..."
 TOKEN="$(get_admin_token)"
-code=$(api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/tide-admin/toggle-iga" \
+api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/tide-admin/toggle-iga" \
   -H "Content-Type: application/json" \
-  -d '{"enabled":true}')
+  -d '{"enabled":true}'
+code="${RESP_CODE}"
 if [[ "${code}" == 2* ]]; then
   echo "  toggle-iga -> ${code} (IGA enabled)"
 elif [[ "${code}" == "409" ]]; then
@@ -313,9 +341,10 @@ drain_change_requests "(after IGA enable)"
 # ═════════════════════════════════════════════════════════════════════════════
 echo "Creating admin user..."
 TOKEN="$(get_admin_token)"
-code=$(api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/users" \
+api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/users" \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","email":"admin@tidecloak.com","firstName":"Admin","lastName":"User","enabled":true,"emailVerified":false,"attributes":{"tideInvitable":["true"]}}')
+  -d '{"username":"admin","email":"admin@tidecloak.com","firstName":"Admin","lastName":"User","enabled":true,"emailVerified":false,"attributes":{"tideInvitable":["true"]}}'
+code="${RESP_CODE}"
 if [[ "${code}" == 2* || "${code}" == "201" ]]; then
   echo "  create user -> ${code}"
 elif [[ "${code}" == "409" ]]; then
@@ -338,7 +367,8 @@ drain_change_requests "(after user create)"
 # ═════════════════════════════════════════════════════════════════════════════
 echo "Resolving admin userId..."
 TOKEN="$(get_admin_token)"
-code=$(api GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/users?username=admin&exact=true")
+api GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/users?username=admin&exact=true"
+code="${RESP_CODE}"
 USER_ID="$(jq -r '.[0].id // empty' <<< "${RESP_BODY}")"
 if [[ -z "${USER_ID}" ]]; then
   echo "ERROR: could not resolve admin userId (HTTP ${code}); the CREATE_USER change-request may not have committed." >&2
@@ -352,10 +382,11 @@ echo "  admin userId = ${USER_ID}"
 # ═════════════════════════════════════════════════════════════════════════════
 echo "Minting Tide enrollment link..."
 TOKEN="$(get_admin_token)"
-code=$(api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/tideAdminResources/get-required-action-link?userId=${USER_ID}&lifespan=3600" \
+api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/tideAdminResources/get-required-action-link?userId=${USER_ID}&lifespan=3600" \
   -H "Content-Type: application/json" \
   -H "Accept: text/plain" \
-  -d '["link-tide-account-action"]')
+  -d '["link-tide-account-action"]'
+code="${RESP_CODE}"
 if [[ "${code}" != 2* ]]; then
   echo "ERROR: failed to mint enrollment link (HTTP ${code})." >&2
   echo "       Response: ${RESP_BODY}" >&2
@@ -410,7 +441,8 @@ drain_change_requests "(after enrollment)"
 # ═════════════════════════════════════════════════════════════════════════════
 echo "Signing tide IdP settings (CustomAdminUIDomain -> console origin)..."
 TOKEN="$(get_admin_token)"
-code=$(api GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/identity-provider/instances/tide")
+api GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/identity-provider/instances/tide"
+code="${RESP_CODE}"
 if [[ "${code}" != 2* ]]; then
   echo "ERROR: could not fetch tide IdP instance (HTTP ${code})." >&2
   echo "       Response: ${RESP_BODY}" >&2
@@ -419,9 +451,10 @@ fi
 IDP_REP_FILE="$(mktemp)"
 jq --arg d "${TIDE_CONSOLE_ORIGIN}" '.config.CustomAdminUIDomain = $d' <<< "${RESP_BODY}" > "${IDP_REP_FILE}"
 TOKEN="$(get_admin_token)"
-code=$(api PUT "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/identity-provider/instances/tide" \
+api PUT "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/identity-provider/instances/tide" \
   -H "Content-Type: application/json" \
-  --data-binary @"${IDP_REP_FILE}")
+  --data-binary @"${IDP_REP_FILE}"
+code="${RESP_CODE}"
 rm -f "${IDP_REP_FILE}"
 if [[ "${code}" != 2* ]]; then
   echo "ERROR: failed to update tide IdP settings (HTTP ${code})." >&2
@@ -429,9 +462,10 @@ if [[ "${code}" != 2* ]]; then
   exit 1
 fi
 TOKEN="$(get_admin_token)"
-code=$(api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/vendorResources/sign-idp-settings" \
+api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/vendorResources/sign-idp-settings" \
   -H "Content-Type: text/plain" \
-  --data-binary "")
+  --data-binary ""
+code="${RESP_CODE}"
 if [[ "${code}" != 2* ]]; then
   echo "ERROR: sign-idp-settings failed (HTTP ${code}). Needs healthy ORKs." >&2
   echo "       Response: ${RESP_BODY}" >&2
@@ -444,14 +478,16 @@ echo "  IdP settings signed -> ${code}"
 # ═════════════════════════════════════════════════════════════════════════════
 echo "Granting tide-realm-admin to the admin user..."
 TOKEN="$(get_admin_token)"
-code=$(api GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/clients?clientId=${REALM_MGMT_CLIENT_ID}")
+api GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/clients?clientId=${REALM_MGMT_CLIENT_ID}"
+code="${RESP_CODE}"
 RM_UUID="$(jq -r '.[0].id // empty' <<< "${RESP_BODY}")"
 if [[ -z "${RM_UUID}" ]]; then
   echo "ERROR: could not resolve realm-management client uuid (HTTP ${code})." >&2
   exit 1
 fi
 TOKEN="$(get_admin_token)"
-code=$(api GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/clients/${RM_UUID}/roles/${ADMIN_ROLE_NAME}")
+api GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/clients/${RM_UUID}/roles/${ADMIN_ROLE_NAME}"
+code="${RESP_CODE}"
 if [[ "${code}" != 2* ]]; then
   echo "ERROR: could not fetch ${ADMIN_ROLE_NAME} role (HTTP ${code})." >&2
   echo "       Response: ${RESP_BODY}" >&2
@@ -461,15 +497,17 @@ ROLE_REP="${RESP_BODY}"
 
 # idempotency: skip if the mapping already exists
 TOKEN="$(get_admin_token)"
-code=$(api GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/users/${USER_ID}/role-mappings/clients/${RM_UUID}")
+api GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/users/${USER_ID}/role-mappings/clients/${RM_UUID}"
+code="${RESP_CODE}"
 ALREADY=$(jq -r --arg r "${ADMIN_ROLE_NAME}" '[.[]?.name] | index($r) // empty' <<< "${RESP_BODY}")
 if [[ -n "${ALREADY}" ]]; then
   echo "  ${ADMIN_ROLE_NAME} already mapped; skipping grant."
 else
   TOKEN="$(get_admin_token)"
-  code=$(api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/users/${USER_ID}/role-mappings/clients/${RM_UUID}" \
+  api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/users/${USER_ID}/role-mappings/clients/${RM_UUID}" \
     -H "Content-Type: application/json" \
-    -d "[${ROLE_REP}]")
+    -d "[${ROLE_REP}]"
+  code="${RESP_CODE}"
   case "${code}" in
     2*)  echo "  grant -> ${code}" ;;
     202) echo "  grant -> 202 (change-request parked)" ;;
@@ -477,9 +515,10 @@ else
       echo "  grant -> 409; draining users then retrying once..."
       drain_change_requests "(grant 409 retry)"
       TOKEN="$(get_admin_token)"
-      code=$(api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/users/${USER_ID}/role-mappings/clients/${RM_UUID}" \
+      api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/users/${USER_ID}/role-mappings/clients/${RM_UUID}" \
         -H "Content-Type: application/json" \
-        -d "[${ROLE_REP}]")
+        -d "[${ROLE_REP}]"
+      code="${RESP_CODE}"
       case "${code}" in
         2*|202|409) echo "  grant retry -> ${code}" ;;
         *) echo "ERROR: grant retry failed (HTTP ${code})." >&2; echo "       ${RESP_BODY}" >&2; exit 1 ;;
@@ -504,7 +543,8 @@ INCOMPLETE_FIRSTADMIN=0
 # ═════════════════════════════════════════════════════════════════════════════
 echo "Fetching adapter config..."
 TOKEN="$(get_admin_token)"
-code=$(api GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/clients?clientId=${CLIENT_NAME}")
+api GET "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/clients?clientId=${CLIENT_NAME}"
+code="${RESP_CODE}"
 CLIENT_UUID="$(jq -r '.[0].id // empty' <<< "${RESP_BODY}")"
 if [[ -z "${CLIENT_UUID}" ]]; then
   echo "ERROR: could not resolve client '${CLIENT_NAME}' uuid (HTTP ${code})." >&2
