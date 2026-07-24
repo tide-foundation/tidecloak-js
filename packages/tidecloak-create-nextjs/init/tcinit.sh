@@ -25,10 +25,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Load overrides from .env.example in the project root
-if [ -f "${PROJECT_ROOT}/.env.example" ]; then
-  # shellcheck disable=SC1090
-  source "${PROJECT_ROOT}/.env.example"
+# ─── Load overrides from .env.example next to the script (CRLF-safe) ─────────
+# The defaults file is co-located with this script (init/.env.example), NOT in
+# PROJECT_ROOT. Resolve it robustly like the template copies; -f guard keeps it
+# a no-op when absent.
+ENV_FILE="${SCRIPT_DIR}/.env.example"
+if [[ -f "$ENV_FILE" ]]; then
+  if grep -q $'\r' "$ENV_FILE"; then
+    TMP_ENV="$(mktemp)"
+    tr -d '\r' < "$ENV_FILE" > "$TMP_ENV"
+    # shellcheck disable=SC1090
+    source "$TMP_ENV"
+    rm -f "$TMP_ENV"
+  else
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+  fi
 fi
 
 # ─── Defaults (override via env) ─────────────────────────────────────────────
@@ -41,12 +53,27 @@ KC_USER="${KC_USER:-admin}"
 KC_PASSWORD="${KC_PASSWORD:-password}"
 CLIENT_NAME="${CLIENT_NAME:-myclient}"
 SUBSCRIPTION_EMAIL="${SUBSCRIPTION_EMAIL:-test@demo.org}"
-REALM_JSON_PATH="${REALM_JSON_PATH:-${SCRIPT_DIR}/realm.json}"
 ADAPTER_OUTPUT_PATH="${ADAPTER_OUTPUT_PATH:-${PROJECT_ROOT}/tidecloak.json}"
 MARKER_DIR="${PROJECT_ROOT}"
 
-if [[ ! -f "${REALM_JSON_PATH}" ]]; then
-  echo "ERROR: realm.json not found at ${REALM_JSON_PATH}" >&2
+# ─── Find realm.json robustly ────────────────────────────────────────────────
+# Priority: env → same dir → parent → current working dir. A relative
+# REALM_JSON_PATH sourced from .env.example (e.g. "./realm.json") is resolved
+# against cwd first and then falls back to the copy shipped next to the script.
+CANDIDATES=()
+[[ "${REALM_JSON_PATH:-}" != "" ]] && CANDIDATES+=("${REALM_JSON_PATH}")
+CANDIDATES+=("${SCRIPT_DIR}/realm.json" "${SCRIPT_DIR}/../realm.json" "$(pwd)/realm.json")
+
+REALM_JSON_PATH=""
+for p in "${CANDIDATES[@]}"; do
+  if [[ -f "$p" ]]; then REALM_JSON_PATH="$p"; break; fi
+done
+
+if [[ -z "${REALM_JSON_PATH}" ]]; then
+  echo "ERROR: Could not find realm.json in:" >&2
+  for p in "${CANDIDATES[@]}"; do echo "   - $p" >&2; done
+  echo "   Put realm.json next to the script (${SCRIPT_DIR}/realm.json)" >&2
+  echo "   OR run with: REALM_JSON_PATH=/abs/path/realm.json bash init/tcinit.sh" >&2
   exit 1
 fi
 
