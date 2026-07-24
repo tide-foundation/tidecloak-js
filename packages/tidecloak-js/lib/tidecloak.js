@@ -1864,6 +1864,12 @@ export default class TideCloak {
           currentResp = retryResp
         }
       }
+      // Tide specific SessionKey-Enclave Proof Replay
+      const asgardExceptionCode = currentResp.headers.get('Asgard-Exception')
+      if (!currentResp.ok && asgardExceptionCode) {
+        
+      }
+
       return currentResp
     } else {
       return fetch(url, init)
