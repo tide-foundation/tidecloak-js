@@ -88,12 +88,41 @@ need_cmd mktemp
 if sed --version >/dev/null 2>&1; then SED_INPLACE=(-i); else SED_INPLACE=(-i ''); fi
 
 # ─── Cleanup handler ─────────────────────────────────────────────────────────
+# INCOMPLETE_FIRSTADMIN is set to 1 once IGA is enabled (step 4) and cleared
+# back to 0 after the final grant+flip (step 14) completes. If the script exits
+# non-zero while this flag is set, the realm is half-provisioned (IGA on, admin
+# not yet granted/flipped) and we warn loudly. We do NOT auto-delete the realm.
 TMP_REALM_JSON=""
+INCOMPLETE_FIRSTADMIN=0
 cleanup() {
+  local rc=$?
   [[ -n "${TMP_REALM_JSON}" && -f "${TMP_REALM_JSON}" ]] && rm -f "${TMP_REALM_JSON}" || true
   [[ -f "${MARKER_DIR}/.realm_name" ]] && rm -f "${MARKER_DIR}/.realm_name" || true
+  if [[ "${rc}" != "0" && "${INCOMPLETE_FIRSTADMIN}" == "1" ]]; then
+    echo "" >&2
+    echo "──────────────────────────────────────────────────────────────────────" >&2
+    echo "WARNING: realm '${REALM_NAME:-?}' may be left in an incomplete firstAdmin" >&2
+    echo "         state (IGA enabled, admin not yet granted/flipped)." >&2
+    echo "         Complete provisioning or delete the realm before use." >&2
+    echo "──────────────────────────────────────────────────────────────────────" >&2
+  fi
 }
 trap cleanup EXIT
+
+# ─── Plaintext-to-remote credential warning (non-fatal) ──────────────────────
+# TIDECLOAK_LOCAL_URL is resolved in the preamble above. If we are about to send
+# admin credentials and bearer tokens over cleartext http:// to a NON-loopback
+# host, warn the user. Loopback http:// stays silent; https:// stays silent.
+case "${TIDECLOAK_LOCAL_URL}" in
+  http://localhost|http://localhost:*|http://localhost/*)   : ;;
+  http://127.0.0.1|http://127.0.0.1:*|http://127.0.0.1/*)   : ;;
+  http://\[::1\]|http://\[::1\]:*|http://\[::1\]/*)         : ;;
+  http://*)
+    echo "WARNING: TIDECLOAK_LOCAL_URL='${TIDECLOAK_LOCAL_URL}' uses cleartext http:// to a non-loopback host." >&2
+    echo "         Admin credentials and bearer tokens will be sent UNENCRYPTED over the network." >&2
+    echo "         Use an https:// URL when targeting a remote TideCloak." >&2
+    ;;
+esac
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Helper: grab a fresh master admin-cli token (master realm password grant)
@@ -140,15 +169,34 @@ drain_change_requests() {
   echo "Draining PENDING change-requests ${label}..."
   while (( rounds < 12 )); do
     TOKEN="$(get_admin_token)"
-    ids=$(curl -s "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/iga/change-requests?status=PENDING" \
-      -H "Authorization: Bearer ${TOKEN}" -H "Cache-Control: no-store" | jq -r '.[].id // empty')
+    local list_tmp list_code
+    list_tmp="$(mktemp)"
+    list_code=$(curl -s -o "${list_tmp}" -w "%{http_code}" \
+      "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/iga/change-requests?status=PENDING" \
+      -H "Authorization: Bearer ${TOKEN}" -H "Cache-Control: no-store") || list_code="000"
+    if [[ "${list_code}" == "401" || "${list_code}" == "403" ]]; then
+      rm -f "${list_tmp}"
+      echo "FATAL: change-request LIST returned HTTP ${list_code} ${label} - admin authentication/authorization failed." >&2
+      echo "       Refusing to treat an auth failure as an empty inbox. Check KC_USER/KC_PASSWORD and admin privileges." >&2
+      exit 1
+    fi
+    ids=$(jq -r '.[].id // empty' < "${list_tmp}")
+    rm -f "${list_tmp}"
     if [[ -z "${ids}" ]]; then echo "  inbox empty ${label}"; return 0; fi
     while IFS= read -r id; do
       [[ -z "$id" ]] && continue
       st=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
         "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/iga/change-requests/${id}/approve" \
         -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" -d '{}')
-      case "$st" in 2*) : ;; 404|409|412) : ;; *) echo "  WARN approve ${id} -> ${st}";; esac
+      case "$st" in
+        2*) : ;;
+        401|403)
+          echo "FATAL: change-request approve ${id} returned HTTP ${st} ${label} - admin authentication/authorization failed." >&2
+          echo "       Check KC_USER/KC_PASSWORD and admin privileges." >&2
+          exit 1 ;;
+        404|409|412) : ;;
+        *) echo "  WARN approve ${id} -> ${st}" ;;
+      esac
     done <<< "${ids}"
     ((rounds++)) || true
   done
@@ -176,8 +224,18 @@ TOKEN="$(get_admin_token)"
 code=$(api POST "${TIDECLOAK_LOCAL_URL}/admin/realms" \
   -H "Content-Type: application/json" \
   --data-binary @"${TMP_REALM_JSON}")
-if [[ "${code}" == 2* || "${code}" == "409" ]]; then
-  echo "  realm create -> ${code} (created or already exists)"
+if [[ "${code}" == 2* ]]; then
+  echo "  realm create -> ${code} (created)"
+elif [[ "${code}" == "409" ]]; then
+  if [[ "${ALLOW_EXISTING_REALM:-}" == "1" ]]; then
+    echo "  WARNING: realm '${REALM_NAME}' already exists (HTTP 409); ALLOW_EXISTING_REALM=1 set, proceeding." >&2
+    echo "           NOTE: the drain step approves ALL pending change-requests in this realm," >&2
+    echo "           including any unrelated to this provisioning run." >&2
+  else
+    echo "ERROR: Realm '${REALM_NAME}' already exists; this script provisions FRESH realms and would" >&2
+    echo "       approve all pending change-requests. Set ALLOW_EXISTING_REALM=1 to override." >&2
+    exit 1
+  fi
 else
   echo "ERROR: realm creation failed (HTTP ${code})" >&2
   echo "       ${RESP_BODY}" >&2
@@ -247,6 +305,11 @@ else
   exit 1
 fi
 
+# From here until the final grant+flip (step 14) the realm is half-provisioned:
+# IGA is enabled but the first admin is not yet granted/flipped. A non-zero exit
+# in this window triggers the incomplete-firstAdmin warning in cleanup().
+INCOMPLETE_FIRSTADMIN=1
+
 # ═════════════════════════════════════════════════════════════════════════════
 #  Step 5: drain the ADOPT change-requests raised by enabling IGA
 # ═════════════════════════════════════════════════════════════════════════════
@@ -296,7 +359,7 @@ echo "  admin userId = ${USER_ID}"
 # ═════════════════════════════════════════════════════════════════════════════
 echo "Minting Tide enrollment link..."
 TOKEN="$(get_admin_token)"
-code=$(api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/tideAdminResources/get-required-action-link?userId=${USER_ID}&lifespan=43200" \
+code=$(api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/tideAdminResources/get-required-action-link?userId=${USER_ID}&lifespan=3600" \
   -H "Content-Type: application/json" \
   -H "Accept: text/plain" \
   -d '["link-tide-account-action"]')
@@ -438,6 +501,10 @@ fi
 #           No drain or governed write may run after this point.
 # ═════════════════════════════════════════════════════════════════════════════
 drain_change_requests "(final: grant + firstAdmin->multiAdmin flip)"
+
+# Grant+flip committed: the realm is fully provisioned. Clear the incomplete
+# state flag so a later non-zero exit does NOT emit the half-provisioned warning.
+INCOMPLETE_FIRSTADMIN=0
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  Step 15: fetch the client adapter config (tidecloak.json)
