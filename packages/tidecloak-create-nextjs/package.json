@@ -27,6 +27,7 @@
     "build:cjs": "tsc -p tsconfig.cjs.json && mv dist/cjs/create.js dist/cjs/create.cjs",
     "build:esm": "tsc -p tsconfig.esm.json",
     "build":      "npm run build:cjs && npm run build:esm",
+    "sync:init": "cp init/realm.json template-ts-app/init/realm.json && cp init/realm.json template-js-app/init/realm.json",
     "prepare": "npm run build"
   },
 

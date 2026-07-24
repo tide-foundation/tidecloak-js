@@ -59,6 +59,9 @@
             "implicitFlowEnabled": false,
             "publicClient": true,
             "fullScopeAllowed": true,
+            "attributes": {
+                "tide.createdViaConsole": "true"
+            },
             "protocolMappers": [
                 {
                     "name": "Tide User Key",
@@ -90,6 +93,16 @@
                         "access.token.claim": "true",
                         "claim.name": "vuid",
                         "jsonType.label": "String"
+                    }
+                },
+                {
+                    "name": "audience (self): myclient",
+                    "protocol": "openid-connect",
+                    "protocolMapper": "oidc-audience-mapper",
+                    "config": {
+                        "included.client.audience": "myclient",
+                        "access.token.claim": "true",
+                        "id.token.claim": "false"
                     }
                 }
             ]
