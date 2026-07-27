@@ -9,6 +9,25 @@ import { jwtVerify, createLocalJWKSet, createRemoteJWKSet } from "jose";
 const DEFAULT_ALLOWED_ALGORITHMS = ["ES256", "ES384", "ES512", "EdDSA"];
 
 /**
+ * Decoded claims of a verified TideCloak access token.
+ *
+ * Standard OIDC/JWT claims are present alongside the Tide-specific claims
+ * injected by the TideCloak protocol mappers (`tideuserkey`, `vuid`). The
+ * index signature keeps arbitrary additional claims accessible (typed as
+ * `unknown`) so this type never has to be exhaustive.
+ *
+ * @typedef {Object.<string, unknown> & {
+ *   tideuserkey?: string,
+ *   vuid?: string,
+ *   sub?: string,
+ *   iss?: string,
+ *   azp?: string,
+ *   realm_access?: { roles?: string[] },
+ *   resource_access?: Object.<string, { roles?: string[] }>
+ * }} TideTokenClaims
+ */
+
+/**
  * Verify a TideCloak-issued JWT on the server side using your imported config object.
  *
  * @param {object} config - Imported TideCloak configuration (parsed JSON). May also
@@ -16,7 +35,7 @@ const DEFAULT_ALLOWED_ALGORITHMS = ["ES256", "ES384", "ES512", "EdDSA"];
  *   (number of seconds, or a jose duration string) to tune verification.
  * @param {string} token - access token to verify.
  * @param {string[]} [allowedRoles] - Array of Tidecloak realm or client roles; user must have at least one.
- * @returns {Promise<object|null>} - The token payload if valid and role-check passes, otherwise null.
+ * @returns {Promise<TideTokenClaims|null>} - The token claims if valid and role-check passes, otherwise null.
  */
 export async function verifyTideCloakToken(config, token, allowedRoles = []) {
   try {
@@ -74,7 +93,7 @@ export async function verifyTideCloakToken(config, token, allowedRoles = []) {
       }
     }
 
-    return payload;
+    return /** @type {TideTokenClaims} */ (payload);
   } catch (err) {
     // Log only the message (not the error object, which can echo token-derived
     // data). Note: this collapses both invalid tokens and infrastructure failures
