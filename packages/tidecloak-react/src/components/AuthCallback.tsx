@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAuthCallback, UseAuthCallbackOptions } from '../hooks/useAuthCallback.js';
+import { useAuthCallback, UseAuthCallbackOptions } from '../hooks/useAuthCallback';
 
 export interface AuthCallbackProps extends UseAuthCallbackOptions {
   /**
