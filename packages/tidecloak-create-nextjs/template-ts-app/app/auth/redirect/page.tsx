@@ -7,9 +7,10 @@ import { useTideCloak } from '@tidecloak/nextjs';
 export default function RedirectPage() {
   const { authenticated, isInitializing, logout } = useTideCloak()
   const router = useRouter()
-  // Landing message after the Tide account link completes. Overridden on the
-  // token-expiry failure path so we never claim success while signing out.
-  const [message, setMessage] = useState('Tide Account Linked Successfully')
+  // Generic landing message shown briefly after any login while auth resolves.
+  // Overridden on the token-expiry failure path so we never claim success while
+  // signing out.
+  const [message, setMessage] = useState('Waiting for authentication...')
 
   // Handles redirect when middleware detects token expiry
   useEffect(() => {
