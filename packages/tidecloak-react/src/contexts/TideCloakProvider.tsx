@@ -1,5 +1,5 @@
 import React, { ReactNode, FC } from "react";
-import { TideCloakContextProvider } from "./TideCloakContextProvider";
+import { TideCloakContextProvider } from "./TideCloakContextProvider.js";
 
 interface TideCloakProviderProps {
   config: Record<string, any>;

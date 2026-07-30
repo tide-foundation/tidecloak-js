@@ -1,16 +1,16 @@
 import React from 'react';
-import { useTideCloakContext } from './contexts/TideCloakContextProvider';
-import type { TideCloakContextValue, TideCloakContextProviderProps } from './contexts/TideCloakContextProvider';
+import { useTideCloakContext } from './contexts/TideCloakContextProvider.js';
+import type { TideCloakContextValue, TideCloakContextProviderProps } from './contexts/TideCloakContextProvider.js';
 
-export { TideCloakContextProvider } from './contexts/TideCloakContextProvider';
-export type { TideCloakContextValue, TideCloakContextProviderProps, ActionNotification, ActionNotificationType } from './contexts/TideCloakContextProvider';
+export { TideCloakContextProvider } from './contexts/TideCloakContextProvider.js';
+export type { TideCloakContextValue, TideCloakContextProviderProps, ActionNotification, ActionNotificationType } from './contexts/TideCloakContextProvider.js';
 export type { NativeAdapter, NativeTokenData, NativeAuthCallbackResult } from "@tidecloak/js";
 
 // Hybrid mode utilities
-export { useAuthCallback, parseCallbackUrl } from './hooks/useAuthCallback';
-export type { AuthCallbackState, UseAuthCallbackOptions } from './hooks/useAuthCallback';
-export { AuthCallback, SimpleAuthCallback } from './components/AuthCallback';
-export type { AuthCallbackProps } from './components/AuthCallback';
+export { useAuthCallback, parseCallbackUrl } from './hooks/useAuthCallback.js';
+export type { AuthCallbackState, UseAuthCallbackOptions } from './hooks/useAuthCallback.js';
+export { AuthCallback, SimpleAuthCallback } from './components/AuthCallback.js';
+export type { AuthCallbackProps } from './components/AuthCallback.js';
 export { RequestEnclave, AdminAPI } from "@tidecloak/js";
 
 /**

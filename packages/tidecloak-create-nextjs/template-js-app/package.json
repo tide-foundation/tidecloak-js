@@ -12,6 +12,10 @@
     "next": "16.x",
     "react": "19.x",
     "react-dom": "19.x",
-    "@tidecloak/nextjs": "^0.14.1"
+    "@tidecloak/nextjs": "^0.14.11"
+  },
+  "overrides": {
+    "postcss": "^8.5.25",
+    "sharp": "^0.35.3"
   }
 }

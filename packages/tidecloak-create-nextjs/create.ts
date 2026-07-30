@@ -116,6 +116,30 @@ async function main(): Promise<void> {
         input.trim().length > 0 || 'Please enter your app URL'
     })
 
+    // Pin the generated app to the port from the app URL so it actually runs
+    // there (redirectUris/webOrigins already use the full URL incl. port). If
+    // the URL has no explicit port (e.g. a bare https domain), leave the
+    // template defaults so Next falls back to its default port (3000).
+    let appPort = ''
+    try {
+      appPort = new URL(clientAppUrl.trim()).port
+    } catch {
+      // Non-URL input: leave defaults, redirectUris config handles the rest.
+    }
+    if (appPort) {
+      try {
+        const appPkgPath = path.resolve(process.cwd(), targetDir, 'package.json')
+        const appPkg = JSON.parse(fs.readFileSync(appPkgPath, 'utf8'))
+        appPkg.scripts = appPkg.scripts || {}
+        appPkg.scripts.dev = `next dev -p ${appPort}`
+        appPkg.scripts.start = `next start -p ${appPort}`
+        fs.writeFileSync(appPkgPath, JSON.stringify(appPkg, null, 2) + '\n')
+        console.log(`Configured app to run on port ${appPort} (from ${clientAppUrl.trim()})`)
+      } catch (err: any) {
+        console.warn(`Could not pin app port ${appPort}: ${err.message}`)
+      }
+    }
+
     const { kcUser } = await prompt<{ kcUser: string }>({
       type: 'input',
       name: 'kcUser',
