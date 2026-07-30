@@ -1,8 +1,14 @@
 'use client'
 
 import { useTideCloak } from '@tidecloak/nextjs'
+import type { TidecloakConfig } from '@tidecloak/nextjs/server'
 import { useState, useCallback, useEffect } from 'react'
-import tcConfig from "../../tidecloak.json"
+import rawConfig from "../../tidecloak.json"
+
+// tidecloak.json is a placeholder ({}) until `npm run init` provisions the realm
+// and writes the real adapter config. Type it via the SDK's own config shape so
+// fields like `realm` type-check regardless of the placeholder's contents.
+const tcConfig = rawConfig as TidecloakConfig
 
 
 export default function HomePage() {
