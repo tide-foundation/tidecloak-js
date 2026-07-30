@@ -2,7 +2,13 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { createTideCloakMiddleware } from "@tidecloak/nextjs/server";
-import tcConfig from "./tidecloak.json";
+import type { TidecloakConfig } from "@tidecloak/nextjs/server";
+import rawConfig from "./tidecloak.json";
+
+// tidecloak.json is a placeholder ({}) until `npm run init` provisions the realm
+// and writes the real adapter config. Type it via the SDK's own config shape so
+// the middleware options type-check regardless of the placeholder's contents.
+const tcConfig = rawConfig as TidecloakConfig;
 
 export default createTideCloakMiddleware({
   config: tcConfig,
