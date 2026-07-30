@@ -260,10 +260,10 @@ else
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  Step 2: setUpTideRealm (mints the realm VRK on the ORK network)
+#  Step 2: setUpTideRealm (mints the realm VRK on the Tide Cybersecurity Fabric)
 #          REQUIRES healthy ORKs. Non-2xx = fail loudly.
 # ═════════════════════════════════════════════════════════════════════════════
-echo "Setting up Tide realm (VRK keygen on the ORK network)..."
+echo "Setting up Tide realm (VRK keygen on the Tide Cybersecurity Fabric)..."
 TOKEN="$(get_admin_token)"
 api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/vendorResources/setUpTideRealm" \
   -H "Content-Type: application/x-www-form-urlencoded" \
@@ -273,7 +273,7 @@ api POST "${TIDECLOAK_LOCAL_URL}/admin/realms/${REALM_NAME}/vendorResources/setU
 code="${RESP_CODE}"
 if [[ "${code}" != 2* ]]; then
   echo "ERROR: setUpTideRealm failed (HTTP ${code})." >&2
-  echo "       This step needs a healthy ORK network (VRK keygen)." >&2
+  echo "       This step needs a healthy Cybersecurity Fabric (VRK keygen)." >&2
   echo "       Check that your ORKs are reachable and the license email is valid." >&2
   echo "       Response: ${RESP_BODY}" >&2
   exit 1
