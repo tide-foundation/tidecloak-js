@@ -1,6 +1,6 @@
 {
   "name": "@tidecloak/js",
-  "version": "0.14.12",
+  "version": "0.14.13",
   "description": "Vanilla JavaScript/browser SDK for TideCloak with an IAMService singleton and low-level client.",
   "type": "module",
   "main": "dist/cjs/src/index.js",
@@ -57,11 +57,11 @@
     "authorization"
   ],
   "dependencies": {
-    "heimdall-tide": "^0.14.12",
-    "@tideorg/js": "^0.14.12"
+    "heimdall-tide": "^0.14.13",
+    "@tideorg/js": "^0.14.13"
   },
   "peerDependencies": {
-    "@tidecloak/policy": "^0.14.12"
+    "@tidecloak/policy": "^0.14.13"
   },
   "peerDependenciesMeta": {
     "@tidecloak/policy": {
