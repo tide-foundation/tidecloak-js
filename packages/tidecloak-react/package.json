@@ -1,6 +1,6 @@
 {
   "name": "@tidecloak/react",
-  "version": "0.14.17",
+  "version": "0.14.18",
   "description": "TideCloak client-side React SDK",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -49,6 +49,6 @@
     "@types/react-dom": "^19.1.6"
   },
   "dependencies": {
-    "@tidecloak/js": "^0.14.17"
+    "@tidecloak/js": "^0.14.18"
   }
 }
