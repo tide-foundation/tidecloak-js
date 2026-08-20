@@ -61,7 +61,7 @@
     "@tideorg/js": "^0.14.23"
   },
   "peerDependencies": {
-    "@tidecloak/policy": "*"
+    "@tidecloak/policy": "^0.14.20"
   },
   "peerDependenciesMeta": {
     "@tidecloak/policy": {
