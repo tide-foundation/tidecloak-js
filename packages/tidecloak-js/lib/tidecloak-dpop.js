@@ -570,14 +570,14 @@ export class DPoPSignatureProvider {
     /** @type {CryptoKey} */
     let resourceKey
     try {
-      resourceKey = await crypto.subtle.importKey('spki', resourceSpki, KEY_GEN_PARAMS[BrowserSignatureAlgs.EdDSA], true, ['verify'])
+      resourceKey = await crypto.subtle.importKey('spki', resourceSpki, KEY_GEN_PARAMS[BrowserSignatureAlgs.ES256], true, ['verify'])
     } catch (error) {
-      throw new Error('resourcePublicKeyInfo could not be imported as an Ed25519 SubjectPublicKeyInfo public key', { cause: error })
+      throw new Error('resourcePublicKeyInfo could not be imported as an P-256 SubjectPublicKeyInfo public key', { cause: error })
     }
 
     const te = new TextEncoder();
     const challengeVerified = await crypto.subtle.verify(
-      SIGN_PARAMS[BrowserSignatureAlgs.EdDSA],
+      SIGN_PARAMS[BrowserSignatureAlgs.ES256],
       resourceKey,
       challengeSignature,
       te.encode(challengeMessage)
