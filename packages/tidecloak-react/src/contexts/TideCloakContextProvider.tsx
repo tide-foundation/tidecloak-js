@@ -73,6 +73,16 @@ export interface TideCloakContextValue {
   secureFetch: (url: string | URL | RequestInfo, init?: RequestInit) => Promise<Response>;
   // Tide request signing (for policy creation)
   initializeTideRequest: <T extends { encode: () => Uint8Array }>(request: T) => Promise<T>
+  /**
+   * Send an initialised request to the Tide network and get back its signatures.
+   *
+   * The other half of initializeTideRequest. Initialising a request without being able to run it
+   * leaves a caller holding something they can do nothing with, which is why this is here.
+   *
+   * The request is passed through untouched, so any model the network accepts works - including a
+   * custom one, which the network matches by the shape of its id rather than from a list.
+   */
+  executeTideRequest: (request: { encode: () => Uint8Array } | Uint8Array, waitForAll?: boolean) => Promise<Uint8Array[]>
   getVendorId: () => string
   getResource: () => string
 
@@ -794,6 +804,21 @@ export function TideCloakContextProvider({
       return request;
     },
 
+    // Sending an initialised request to be signed. The counterpart to initializeTideRequest.
+    executeTideRequest: async (
+      request: { encode: () => Uint8Array } | Uint8Array,
+      waitForAll: boolean = false
+    ): Promise<Uint8Array[]> => {
+      const tc = (IAMService as any)._tc;
+      if (!tc?.executeSignRequest) {
+        throw new Error("TideCloak executeSignRequest not available");
+      }
+      // Encoded bytes or something that can encode itself, since a caller who has already
+      // initialised a request is holding bytes rather than an object.
+      const encoded = request instanceof Uint8Array ? request : request.encode();
+      return await tc.executeSignRequest(encoded, waitForAll);
+    },
+
     // Get vendor ID from config
     getVendorId: () => {
       const cfg = IAMService.getConfig() as any;
@@ -920,6 +945,7 @@ const defaultContextValue: TideCloakContextValue = {
   doDecrypt: async () => null,
   secureFetch: (url: string | URL | RequestInfo, init?: RequestInit) => fetch(url, init),
   initializeTideRequest: async () => { throw new Error("TideCloakContextProvider not available"); },
+  executeTideRequest: async () => { throw new Error("TideCloakContextProvider not available"); },
   getVendorId: () => "",
   getResource: () => "",
   approveTideRequests: async () => { throw new Error("TideCloakContextProvider not available"); },
