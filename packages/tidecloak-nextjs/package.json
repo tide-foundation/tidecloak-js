@@ -52,7 +52,7 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@tidecloak/react": "^0.14.20",
+    "@tidecloak/react": "^0.14.28",
     "@tidecloak/verify": "^0.14.20"
   },
   "devDependencies": {

@@ -66,8 +66,12 @@ export interface TideCloakContextValue {
   resetWasOffline: () => void;
 
   // Tide actions
-  doEncrypt: (data: any) => Promise<any>;
-  doDecrypt: (data: any) => Promise<any>;
+  //
+  // decryptionPolicy is the SIGNED policy bytes that guard the data. Passing one is what makes the
+  // orks run a contract over the request (PolicyEnabledEncryption:1 / PolicyEnabledDecryption:1)
+  // instead of encrypting under the caller's key alone; omit it and there is no contract to run.
+  doEncrypt: (data: any, decryptionPolicy?: Uint8Array) => Promise<any>;
+  doDecrypt: (data: any, decryptionPolicy?: Uint8Array) => Promise<any>;
 
   // DPoP-aware fetch
   secureFetch: (url: string | URL | RequestInfo, init?: RequestInit) => Promise<Response>;
@@ -734,10 +738,10 @@ export function TideCloakContextProvider({
     
     secureFetch: (url: string | URL | RequestInfo, init?: RequestInit) =>
       isInitializing ? fetch(url, init) : IAMService.secureFetch(url, init),
-    doEncrypt: async (data: any) => {
+    doEncrypt: async (data: any, decryptionPolicy?: Uint8Array) => {
       if (isInitializing) return null;
       try {
-        const result = await IAMService.doEncrypt(data);
+        const result = await IAMService.doEncrypt(data, decryptionPolicy ?? undefined);
         onActionNotificationRef.current?.({
           type: 'success',
           title: 'Encrypted',
@@ -756,10 +760,10 @@ export function TideCloakContextProvider({
         throw error;
       }
     },
-    doDecrypt: async (data: any) => {
+    doDecrypt: async (data: any, decryptionPolicy?: Uint8Array) => {
       if (isInitializing) return null;
       try {
-        const result = await IAMService.doDecrypt(data);
+        const result = await IAMService.doDecrypt(data, decryptionPolicy ?? undefined);
         onActionNotificationRef.current?.({
           type: 'success',
           title: 'Decrypted',
