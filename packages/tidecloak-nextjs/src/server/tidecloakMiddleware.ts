@@ -24,11 +24,12 @@ interface JWK {
 export interface TidecloakConfig {
   realm: string;
   "auth-server-url": string;
-  "ssl-required": string;
-  resource: string;
-  "public-client": boolean;
-  "confidential-port": number;
-  jwk: {
+  "ssl-required"?: string;
+  resource?: string;
+  "public-client"?: boolean;
+  "confidential-port"?: number;
+  /** Local JWKS. When absent, keys are fetched from the realm's certs endpoint. */
+  jwk?: {
     keys: JWK[];
   };
   // any additional properties are allowed, but typed as unknown
