@@ -5,7 +5,7 @@ Welcome to the TideCloak SDK. This repository contains multiple packages for int
 ## Starter Projects & Tutorials
 
 **Create Next.js Template**
-Official NPM template to scaffold a TideCloak-Next.js project with middleware and hooks - start building instantly.
+Official NPM template to scaffold a TideCloak-Next.js project with server-side route protection and hooks, and start building instantly.
 [Documentation](packages/tidecloak-create-nextjs/README.md)
 
 **React + Vite Getting Started**
@@ -27,7 +27,7 @@ React SDK with context provider, hooks, and UI guards.
 [Documentation](packages/tidecloak-react/README.md)
 
 **@tidecloak/nextjs**
-Next.js SDK for client-side auth, middleware, and hooks.
+Next.js SDK for client-side auth, route protection (proxy or middleware), and hooks.
 [Documentation](packages/tidecloak-nextjs/README.md)
 
 **@tidecloak/js**
