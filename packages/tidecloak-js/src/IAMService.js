@@ -17,12 +17,14 @@ import TideCloak, { RequestEnclave } from "../lib/tidecloak.js";
  * ---
  * ## Front-channel Mode
  *
+ * Handlers are called with the event name first, then the event's arguments.
+ *
  * Usage A: pass an onReady callback directly
  * ```js
  * import { IAMService } from '@tidecloak/js';
- * import tidecloakConfig from './tidecloakAdapter.json';
+ * import tidecloakConfig from './tidecloak.json';
  *
- * IAMService.initIAM(tidecloakConfig, authenticated => {
+ * IAMService.initIAM(tidecloakConfig, (_event, authenticated) => {
  *   if (!authenticated) IAMService.doLogin();
  * }).catch(console.error);
  * ```
@@ -30,8 +32,8 @@ import TideCloak, { RequestEnclave } from "../lib/tidecloak.js";
  * Usage B: attach multiple listeners, then init
  * ```js
  * IAMService
- *   .on('ready', auth => console.log('ready', auth))
- *   .on('authError', err => console.error('Auth failed', err));
+ *   .on('ready', (_event, auth) => console.log('ready', auth))
+ *   .on('authError', (_event, err) => console.error('Auth failed', err));
  *
  * await IAMService.initIAM(tidecloakConfig);
  * ```
@@ -92,6 +94,7 @@ import TideCloak, { RequestEnclave } from "../lib/tidecloak.js";
  *
  * ---
  * ## Events
+ * Every handler receives `(eventName, ...args)`.
  * - `ready` - Emitted when initialization completes (with authenticated boolean)
  * - `initError` - Emitted when initialization fails
  * - `authSuccess` - Emitted on successful authentication
@@ -143,7 +146,8 @@ class IAMService {
   }
 
   /**
-   * Register an event listener.
+   * Register an event listener. The handler is called as `handler(event, ...args)`,
+   * so the event name comes first, e.g. `on('ready', (_event, authenticated) => ...)`.
    * @param {'ready'|'initError'|'authSuccess'|'authError'|'authRefreshSuccess'|'authRefreshError'|'logout'|'tokenExpired'} event
    * @param {Function} handler
    * @returns {this}
@@ -276,7 +280,7 @@ class IAMService {
    * Initialize the TideCloak SSO client with silent SSO check.
    * In hybrid mode, handles the redirect callback if present.
    * @param {Object} config - TideCloak configuration object.
-   * @param {Function} [onReady] - Optional callback for the 'ready' event.
+   * @param {Function} [onReady] - Optional 'ready' handler, called as `(event, authenticated)`.
    * @returns {Promise<boolean>} true if authenticated, else false.
    */
   async initIAM(config, onReady) {
@@ -907,6 +911,16 @@ class IAMService {
   }
 
   /**
+   * Alias of {@link IAMService#getValueFromIDToken}, with the same casing as the React context.
+   * @param {string} key - The name of the claim to retrieve from the ID token's payload.
+   * @returns {*} Custom claim from ID token
+   * @throws {Error} In hybrid mode (tokens are server-side)
+   */
+  getValueFromIdToken(key) {
+    return this.getValueFromIDToken(key);
+  }
+
+  /**
    * Refreshes token if expired or about to expire.
    * @returns {Promise<boolean>}
    * @throws {Error} In hybrid mode (token refresh handled server-side)
@@ -1009,7 +1023,7 @@ class IAMService {
    * Encrypt data via adapter.
    * Not available in hybrid mode (encryption requires client-side doken).
    * @param {{ data: string | Uint8Array, tags: string[] }[]} data - Array of objects to encrypt
-   * @param {Uint8Array} decryption_policy Optional policy to protect the encrypted data
+   * @param {Uint8Array} [decryption_policy] Optional policy to protect the encrypted data
    * @returns {Promise<(string | Uint8Array)[]>} Array of encrypted values
    */
   async doEncrypt(data, decryption_policy=null) {
@@ -1026,7 +1040,7 @@ class IAMService {
    * Decrypt data via adapter.
    * Not available in hybrid mode (decryption requires client-side doken).
    * @param {{ encrypted: string | Uint8Array, tags: string[] }[]} data - Array of objects to decrypt
-   * @param {Uint8Array} decryption_policy Optional policy to protect the encrypted data
+   * @param {Uint8Array} [decryption_policy] Optional policy the data was encrypted under
    * @returns {Promise<(string | Uint8Array)[]>} Array of decrypted values
    */
   async doDecrypt(data, decryption_policy=null) {
