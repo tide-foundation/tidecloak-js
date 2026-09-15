@@ -1022,6 +1022,7 @@ class IAMService {
   /**
    * Encrypt data via adapter.
    * Not available in hybrid mode (encryption requires client-side doken).
+   * In native mode, passing a decryption policy throws.
    * @param {{ data: string | Uint8Array, tags: string[] }[]} data - Array of objects to encrypt
    * @param {Uint8Array} [decryption_policy] Optional policy to protect the encrypted data
    * @returns {Promise<(string | Uint8Array)[]>} Array of encrypted values
@@ -1031,6 +1032,10 @@ class IAMService {
       throw new Error("Encrypt not supported in hybrid mode (tokens are server-side)");
     }
     if (this.isNativeMode()) {
+      // The native path doesn't forward policies, so fail rather than drop it.
+      if (decryption_policy != null) {
+        throw new Error("encrypt with a decryption policy not supported in native mode");
+      }
       return this._nativeEncrypt(data);
     }
     return this.getTideCloakClient().encrypt(data, decryption_policy);
@@ -1039,6 +1044,7 @@ class IAMService {
   /**
    * Decrypt data via adapter.
    * Not available in hybrid mode (decryption requires client-side doken).
+   * In native mode, passing a decryption policy throws.
    * @param {{ encrypted: string | Uint8Array, tags: string[] }[]} data - Array of objects to decrypt
    * @param {Uint8Array} [decryption_policy] Optional policy the data was encrypted under
    * @returns {Promise<(string | Uint8Array)[]>} Array of decrypted values
@@ -1048,6 +1054,10 @@ class IAMService {
       throw new Error("Decrypt not supported in hybrid mode (tokens are server-side)");
     }
     if (this.isNativeMode()) {
+      // The native path doesn't forward policies, so fail rather than drop it.
+      if (decryption_policy != null) {
+        throw new Error("decrypt with a decryption policy not supported in native mode");
+      }
       return this._nativeDecrypt(data);
     }
     return this.getTideCloakClient().decrypt(data, decryption_policy);

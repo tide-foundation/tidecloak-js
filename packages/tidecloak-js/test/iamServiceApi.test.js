@@ -53,3 +53,35 @@ test('getValueFromIdToken throws in hybrid mode, like getValueFromIDToken', asyn
 
   assert.throws(() => IAMService.getValueFromIdToken('sub'), /hybrid mode/);
 });
+
+test('native mode rejects encrypt and decrypt with a decryption policy', async () => {
+  const IAMService = await freshIAMService();
+  await IAMService.loadConfig({ authMode: 'native', adapter: {} });
+  const calls = [];
+  IAMService._nativeEncrypt = async (data) => { calls.push('encrypt'); return data; };
+  IAMService._nativeDecrypt = async (data) => { calls.push('decrypt'); return data; };
+  const policy = new Uint8Array([1, 2, 3]);
+
+  await assert.rejects(
+    IAMService.doEncrypt([{ data: 'x', tags: ['t'] }], policy),
+    /decryption policy not supported in native mode/,
+  );
+  await assert.rejects(
+    IAMService.doDecrypt([{ encrypted: 'x', tags: ['t'] }], policy),
+    /decryption policy not supported in native mode/,
+  );
+  assert.deepEqual(calls, [], 'nothing reaches the native enclave when a policy is given');
+});
+
+test('native mode encrypt and decrypt without a policy still work', async () => {
+  const IAMService = await freshIAMService();
+  await IAMService.loadConfig({ authMode: 'native', adapter: {} });
+  const calls = [];
+  IAMService._nativeEncrypt = async () => { calls.push('encrypt'); return ['enc']; };
+  IAMService._nativeDecrypt = async () => { calls.push('decrypt'); return ['dec']; };
+
+  assert.deepEqual(await IAMService.doEncrypt([{ data: 'x', tags: ['t'] }]), ['enc']);
+  assert.deepEqual(await IAMService.doDecrypt([{ encrypted: 'x', tags: ['t'] }], null), ['dec']);
+  assert.deepEqual(await IAMService.doEncrypt([{ data: 'x', tags: ['t'] }], undefined), ['enc']);
+  assert.deepEqual(calls, ['encrypt', 'decrypt', 'encrypt']);
+});
