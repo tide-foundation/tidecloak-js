@@ -35,6 +35,8 @@
   },
   "files": [
     "dist",
+    "docs",
+    "lib/README.md",
     "scripts/postinstall.cjs",
     "silent-check-sso.html"
   ],
