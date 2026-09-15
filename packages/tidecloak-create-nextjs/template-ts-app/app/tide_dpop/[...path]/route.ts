@@ -1,19 +1,18 @@
 import fs from "fs"
 import path from "path"
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Tide DPoP resource-server endpoint.
 //
-// DPoP is enabled by default, and the SDK's DPoP flow loads this page from your
-// own origin at:
+// DPoP is opt-in. This route is only used when you pass `useDPoP` in the
+// provider config; without it nothing requests this page and you can delete it.
+// With DPoP on, the SDK loads this page from your own origin at:
 //   /tide_dpop/iss/<issuer-hex>/aud/<client-hex>/tide_dpop_auth.html
 //
-// This catch-all route serves the single bundled `public/tide_dpop_auth.html`
-// for any such path, with the two response headers Tide requires:
-//   • Content-Security-Policy — the sha256 hashes pin the file's inline
-//     script/style (so only that exact code runs).
-//   • Allow-CSP-From: * — lets the ORK embed this page cross-origin.
-// ─────────────────────────────────────────────────────────────────────────────
+// This catch-all route serves the bundled `public/tide_dpop_auth.html` for any
+// such path, with the two response headers Tide requires:
+//   - Content-Security-Policy: the sha256 hashes pin the file's inline
+//     script/style, so only that exact code runs.
+//   - Allow-CSP-From: *, which lets the ORK embed this page cross-origin.
 
 const htmlPath = path.join(process.cwd(), "public", "tide_dpop_auth.html")
 
