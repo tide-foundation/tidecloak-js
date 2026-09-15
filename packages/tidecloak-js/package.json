@@ -59,13 +59,5 @@
   "dependencies": {
     "heimdall-tide": "^0.13.21",
     "@tideorg/js": "^0.13.21"
-  },
-  "peerDependencies": {
-    "@tidecloak/policy": "*"
-  },
-  "peerDependenciesMeta": {
-    "@tidecloak/policy": {
-      "optional": true
-    }
   }
 }
