@@ -14,7 +14,7 @@ Your users click "Login" in your app, their browser opens, they log in, and they
 
 ### 1. Get Your Config File
 
-Download `adapter.json` from your TideCloak admin console. This has all your TideCloak settings.
+Download `tidecloak.json` (your client adapter config) from your TideCloak admin console. It has all your TideCloak settings.
 
 ### 2. Create Your Adapter
 
@@ -78,19 +78,19 @@ That's it for the adapter. Just 6 functions, all platform-specific. The SDK hand
 
 ```js
 import { IAMService } from "@tidecloak/js";
-import adapterConfig from "./adapter.json";
+import adapterConfig from "./tidecloak.json";
 import { createElectronAdapter } from "./electronAdapter";
 
 const config = {
   authMode: "native",
   adapter: createElectronAdapter(),
-  ...adapterConfig,  // Spread your adapter.json config
+  ...adapterConfig,  // Spread your tidecloak.json config
 };
 
-// Listen for events
+// Listen for events. Handlers get the event name first, then its arguments.
 IAMService
   .on("authSuccess", () => console.log("Logged in!"))
-  .on("authError", (err) => console.error("Login failed:", err))
+  .on("authError", (_event, err) => console.error("Login failed:", err))
   .on("logout", () => console.log("Logged out"));
 
 // Start the SDK
@@ -147,7 +147,7 @@ IAMService.getIDToken();          // ID token
 // Get user info
 IAMService.getName();             // Username
 IAMService.getValueFromToken("email");
-IAMService.getValueFromIdToken("name");
+IAMService.getValueFromIDToken("name"); // getValueFromIdToken also works
 
 // Check roles
 IAMService.hasRealmRole("admin");
@@ -174,7 +174,7 @@ IAMService
   .on("authSuccess", () => {
     // User logged in successfully
   })
-  .on("authError", (err) => {
+  .on("authError", (_event, err) => {
     // Login failed
   })
   .on("logout", () => {
@@ -204,6 +204,8 @@ const [decrypted] = await IAMService.doDecrypt([
 ```
 
 Users need the right roles (`_tide_<tag>.selfencrypt` / `_tide_<tag>.selfdecrypt`) to encrypt/decrypt with specific tags.
+
+Native mode doesn't support decryption policies. Passing a policy to `doEncrypt` or `doDecrypt` throws, and the draft/commit encryption methods aren't available.
 
 ---
 
@@ -277,6 +279,6 @@ Fix: Use `new BrowserWindow()` to open the login page, not `shell.openExternal()
 
 **Encryption/decryption fails with missing config**
 
-Make sure your `adapter.json` includes:
+Make sure your `tidecloak.json` includes:
 - `vendorId` - Your Tide vendor ID
 - `client-origin-auth-{origin}` - Auth signature for your app's origin (e.g., `client-origin-auth-http://localhost:5174`)

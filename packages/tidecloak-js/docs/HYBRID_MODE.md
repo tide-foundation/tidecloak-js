@@ -141,7 +141,7 @@ These won't work because tokens are on your server:
 
 - `getToken()`, `getIDToken()`
 - `getName()`, `hasRealmRole()`, `hasClientRole()`
-- `getValueFromToken()`, `getValueFromIdToken()`
+- `getValueFromToken()`, `getValueFromIDToken()` (and its alias `getValueFromIdToken()`)
 - `doEncrypt()`, `doDecrypt()`
 
 Your backend should provide user info via your own API endpoints.

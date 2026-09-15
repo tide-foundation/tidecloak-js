@@ -14,7 +14,7 @@ Click login, your users go to TideCloak, they log in, they come back authenticat
 
 ### 1. Get Your Config File
 
-Download `adapter.json` from your TideCloak admin console and put it in your app.
+Download `tidecloak.json` (your client adapter config) from your TideCloak admin console and put it in your app.
 
 ### 2. Add Silent SSO Check File
 
@@ -43,11 +43,11 @@ Create `public/auth/redirect.html`:
 
 ```js
 import { IAMService } from "@tidecloak/js";
-import config from "./adapter.json";
+import config from "./tidecloak.json";
 
-// Listen for events
+// Listen for events. Handlers get the event name first, then its arguments.
 IAMService
-  .on("ready", (loggedIn) => {
+  .on("ready", (_event, loggedIn) => {
     console.log("Ready! Logged in:", loggedIn);
     updateUI(loggedIn);
   })
@@ -62,32 +62,14 @@ IAMService
 await IAMService.initIAM(config);
 ```
 
-### Session Mode
-
-Control how the SDK handles tokens on startup:
-
-```js
-await IAMService.initIAM({
-  ...config,
-  sessionMode: "offline",  // or "online"
-});
-```
-
-| Mode | Behavior | Best For |
-|------|----------|----------|
-| `"online"` | Validates tokens with server, refreshes if needed, requires login if invalid | Always-connected apps |
-| `"offline"` | Accepts stored tokens without server validation, even if expired | Offline-first apps, PWAs |
-
-**Offline mode** lets users access your app even when their session has expired. You can then prompt for re-login only when an API call fails with 401.
-
 ### DPoP (opt-in)
 
 DPoP (sender-constrained tokens, [RFC 9449](https://datatracker.ietf.org/doc/html/rfc9449)) binds an access token to a per-session key, so a stolen token can't be replayed. It is **opt-in**: set `useDPoP` and the SDK turns it on; omit it and the SDK requests an ordinary (unbound) token.
 
-> **DPoP is not a flag you can flip in isolation.** Asking for it appends `dpop_jkt` to the authorization request, and the realm then issues a token carrying `typ: "DPoP"` and `cnf.jkt`. Such a token is **invalid** if it is later presented as a plain `Authorization: Bearer …` — the resource server answers a bare `401`. So enable DPoP only if every call that carries the token attaches a `DPoP:` proof (use `IAMService.secureFetch`, which does this for you). This is why the SDK will not turn DPoP on for you.
+> **DPoP is not a flag you can flip in isolation.** Asking for it appends `dpop_jkt` to the authorization request, and the realm then issues a token carrying `typ: "DPoP"` and `cnf.jkt`. Such a token is **invalid** if it is later presented as a plain `Authorization: Bearer …`, and the resource server answers a bare `401`. So enable DPoP only if every call that carries the token attaches a `DPoP:` proof (use `IAMService.secureFetch`, which does this for you). This is why the SDK will not turn DPoP on for you.
 
 ```js
-// Opt in, enforced — init fails if the realm doesn't advertise DPoP support:
+// Opt in, enforced: init fails if the realm doesn't advertise DPoP support
 await IAMService.initIAM({ ...config, useDPoP: { mode: "strict" } });
 
 // Use DPoP only when the realm supports it, otherwise fall back to bearer:
@@ -96,7 +78,7 @@ await IAMService.initIAM({ ...config, useDPoP: { mode: "auto" } });
 // Pick the proof signing algorithm (default "ES256"):
 await IAMService.initIAM({ ...config, useDPoP: { mode: "strict", alg: "EdDSA" } });
 
-// No DPoP — a plain, unbound access token (the default):
+// No DPoP, a plain unbound access token (the default)
 await IAMService.initIAM({ ...config });
 ```
 
@@ -131,7 +113,7 @@ IAMService.getIDToken();           // ID token
 // Get user info
 IAMService.getName();              // Username
 IAMService.getValueFromToken("email");
-IAMService.getValueFromIdToken("name");
+IAMService.getValueFromIDToken("name"); // getValueFromIdToken also works
 
 // Check roles
 IAMService.hasRealmRole("admin");
@@ -151,15 +133,17 @@ await IAMService.doDecrypt([{ encrypted: "...", tags: ["personal"] }]);
 
 ## Events
 
+Every handler is called with the event name first, then the event's arguments.
+
 ```js
 IAMService
-  .on("ready", (loggedIn) => {
+  .on("ready", (_event, loggedIn) => {
     // SDK is ready - loggedIn is true/false
   })
   .on("authSuccess", () => {
     // User logged in
   })
-  .on("authError", (err) => {
+  .on("authError", (_event, err) => {
     // Login failed
   })
   .on("logout", () => {
@@ -194,6 +178,7 @@ const decrypted = await IAMService.doDecrypt([
 - `data` must be a string or `Uint8Array` (not an object - use `JSON.stringify()` first)
 - Users need `_tide_<tag>.selfencrypt` / `_tide_<tag>.selfdecrypt` roles
 - Output order matches input order
+- Both methods take an optional signed decryption policy (`Uint8Array`) as a second argument. See [Policy-Protected Encryption](../lib/README.md#policy-protected-encryption).
 
 ### Encrypt Objects
 
@@ -239,4 +224,4 @@ Wait for the `ready` event before using tokens.
 
 **Encryption fails**
 
-Make sure your `adapter.json` includes `vendorId` and the `client-origin-auth-{origin}` for your app's origin.
+Make sure your `tidecloak.json` includes `vendorId` and the `client-origin-auth-{origin}` for your app's origin.
