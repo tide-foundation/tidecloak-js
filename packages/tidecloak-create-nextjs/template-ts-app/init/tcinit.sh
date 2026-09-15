@@ -15,8 +15,9 @@ set -euo pipefail
 #  It resolves everything relative to SCRIPT_DIR and is runnable from anywhere.
 #
 #  The governance body below (from "Helper: grab a fresh master admin-cli
-#  token" onward) is IDENTICAL to the canonical init/tcinit.sh. Both are kept
-#  in sync via `npm run sync:init`. Only this path/bootstrap preamble differs.
+#  token" onward) is IDENTICAL to the canonical init/tcinit.sh, and
+#  test/tcinit-sync.test.mjs fails if they drift. Only this path/bootstrap
+#  preamble differs.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ─── Resolve script directory (run from anywhere) ────────────────────────────
@@ -64,7 +65,7 @@ KC_USER="${KC_USER:-admin}"
 KC_PASSWORD="${KC_PASSWORD:-password}"
 CLIENT_NAME="${CLIENT_NAME:-myclient}"
 SUBSCRIPTION_EMAIL="${SUBSCRIPTION_EMAIL:-test@demo.org}"
-ADAPTER_OUTPUT_PATH="${ADAPTER_OUTPUT_PATH:-${SCRIPT_DIR}/tidecloak.json}"
+ADAPTER_OUTPUT_PATH="${ADAPTER_OUTPUT_PATH:-${SCRIPT_DIR}/../tidecloak.json}"
 MARKER_DIR="${SCRIPT_DIR}"
 
 # ─── Find realm.json robustly ────────────────────────────────────────────────

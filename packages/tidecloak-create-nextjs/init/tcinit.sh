@@ -17,8 +17,8 @@ set -euo pipefail
 #
 #  The governance body below (from "Helper: grab a fresh master admin-cli
 #  token" onward) is IDENTICAL to the two shipped template copies under
-#  template-ts-app/init/ and template-js-app/init/. Keep them in sync via
-#  `npm run sync:init`. Only this path/bootstrap preamble differs.
+#  template-ts-app/init/ and template-js-app/init/, and test/tcinit-sync.test.mjs
+#  fails if they drift. Only this path/bootstrap preamble differs.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ─── Determine paths ─────────────────────────────────────────────────────────
