@@ -458,8 +458,9 @@ export function TideCloakContextProvider({
       }
     };
 
-    const handleInitError = (err: Error) => {
+    const handleInitError = (error: unknown) => {
       if (!mounted) return;
+      const err = error instanceof Error ? error : new Error(String(error));
       setInitError(err);
       setIsInitializing(false);
 
@@ -518,6 +519,9 @@ export function TideCloakContextProvider({
       });
     };
 
+    // IAMService calls handlers as (event, ...args), so unwrap the error first.
+    const handleInitErrorEvent = (_event: string, error: unknown) => handleInitError(error);
+
     // Subscribe to IAMService events
     IAMService
       .on('authSuccess', handleAuthSuccess)
@@ -526,7 +530,7 @@ export function TideCloakContextProvider({
       .on('authRefreshError', handleAuthRefreshError)
       .on('logout', handleLogout)
       .on('tokenExpired', handleTokenExpired)
-      .on('initError', handleInitError as any);
+      .on('initError', handleInitErrorEvent);
 
     // NEVER rely solely on a future event to learn the auth state.
     //
@@ -582,7 +586,7 @@ export function TideCloakContextProvider({
         await updateAuthState('init');
         if (!mounted) return;
         setIsInitializing(false);
-      } catch (err: any) {
+      } catch (err: unknown) {
         handleInitError(err);
       }
     })();
@@ -596,7 +600,7 @@ export function TideCloakContextProvider({
         .off('authRefreshError', handleAuthRefreshError)
         .off('logout', handleLogout)
         .off('tokenExpired', handleTokenExpired)
-        .off('initError', handleInitError as any)
+        .off('initError', handleInitErrorEvent)
         // initIAM(config, updateAuthState) registers updateAuthState on 'ready';
         // remove it here too or it leaks one handler per reload/remount (the
         // IAMService singleton outlives this component).
