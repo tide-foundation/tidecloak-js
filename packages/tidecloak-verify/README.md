@@ -30,12 +30,12 @@ import { verifyTideCloakToken } from '@tidecloak/verify';
 
 | Parameter      | Type                  | Description                                                                                                          |
 | -------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `config`       | `object`              | Your TideCloak adapter JSON (the Tidecloak client configuration you download from your realm settings).               |
+| `config`       | `object`              | Your `tidecloak.json` adapter config (the client configuration you download from your realm settings).               |
 | `token`        | `string`              | The raw JWT (access token) to verify.                                                                                |
 | `allowedRoles` | `string[]` (optional) | Array of Tidecloak realm or client roles. If provided, the user must have at least one of these roles in their token. |
 
 **Returns:**
-`Promise<object | null>`
+`Promise<TideTokenClaims | null>`
 
 * **Success:** Decoded token payload when all checks pass.
 * **Failure:** `null` if verification fails or the user lacks the required role(s).
@@ -48,13 +48,13 @@ Internally, `verifyTideCloakToken` uses the [jose](https://github.com/panva/jose
 2. Construct the correct issuer URL from `config['auth-server-url']` and `config.realm`.
 3. Choose between a local JWK Set (`config.jwk.keys`) or fetch the JWK Set remotely from Tidecloak.
 4. Verify the token's signature against a **pinned algorithm allowlist** (`ES256`, `ES384`, `ES512`, `EdDSA` by default), the `issuer`, and the standard time claims (`exp`/`nbf`) with a small `clockTolerance`.
-5. Verify the `azp` (authorized party) against `config.resource` — **only when `resource` is configured**.
+5. Verify the `azp` (authorized party) against `config.resource`, **only when `resource` is configured**.
 6. Extract realm (`payload.realm_access.roles`) and client (`payload.resource_access[resource].roles`) roles.
 7. Check for at least one matching role if `allowedRoles` is specified.
 
 On any failure, it logs the error message to the console and returns `null`.
 
-> **Note:** the algorithm allowlist closes algorithm-confusion attacks — without it, `jose` would accept any algorithm a key in the set can validate. A `null` result collapses both invalid tokens and infrastructure failures (e.g. an unreachable remote JWKS endpoint), so treat `null` as "not authorized" and monitor your JWKS reachability separately.
+> **Note:** the algorithm allowlist closes algorithm-confusion attacks. Without it, `jose` would accept any algorithm a key in the set can validate. A `null` result collapses both invalid tokens and infrastructure failures (e.g. an unreachable remote JWKS endpoint), so treat `null` as "not authorized" and monitor your JWKS reachability separately.
 
 ### Optional config fields
 
@@ -78,7 +78,7 @@ You can tune verification by adding these optional fields to the `config` object
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import { verifyTideCloakToken } from '@tidecloak/verify';
-import config from './tidecloakAdapter.json';
+import config from './tidecloak.json' with { type: 'json' };
 
 const app = express();
 app.use(cookieParser());
@@ -102,7 +102,7 @@ app.listen(3000, () => console.log('Server running on port 3000'));
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { verifyTideCloakToken } = require('@tidecloak/verify');
-const config = require('./tidecloakAdapter.json');
+const config = require('./tidecloak.json');
 
 const app = express();
 app.use(cookieParser());
@@ -124,7 +124,7 @@ app.listen(3000, () => console.log('Server running on port 3000'));
 // pages/secure.js (Next.js Pages Router)
 import React from 'react';
 import { verifyTideCloakToken } from '@tidecloak/verify';
-import config from '../tidecloakAdapter.json';
+import config from '../tidecloak.json';
 
 export async function getServerSideProps({ req }) {
   const token = req.cookies.kcToken || req.headers.authorization?.split(' ')[1] || '';
@@ -146,7 +146,7 @@ export default function SecurePage({ user }) {
 // pages/api/secure.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { verifyTideCloakToken } from '@tidecloak/verify';
-import config from '../../tidecloakAdapter.json';
+import config from '../../tidecloak.json';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const token = req.cookies.kcToken || req.headers.authorization?.split(' ')[1] || '';
@@ -164,7 +164,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 // app/api/secure/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyTideCloakToken } from '@tidecloak/verify';
-import config from '../../../tidecloakAdapter.json';
+import config from '../../../tidecloak.json';
 
 export async function GET(req: NextRequest) {
   const token = req.cookies.get('kcToken')?.value || '';
@@ -180,13 +180,17 @@ export async function GET(req: NextRequest) {
 
 ## TypeScript Definitions
 
+The fields `verifyTideCloakToken` reads from `config`:
+
 ```ts
 interface TidecloakConfig {
   realm: string;
   'auth-server-url': string;
   resource?: string;
-  publicClient?: boolean;
-  confidentialPort?: number;
+  'public-client'?: boolean;
+  'confidential-port'?: number;
+  'ssl-required'?: string;
+  /** Local JWKS. When absent, keys are fetched from the realm's certs endpoint. */
   jwk?: { keys: Array<{ kid: string; kty: string; alg?: string; use?: string; x?: string; crv?: string; n?: string; e?: string }> };
   /** Allowed JWS signature algorithms. Default: ['ES256','ES384','ES512','EdDSA']. */
   tokenSignatureAlgorithms?: string[];
@@ -195,11 +199,21 @@ interface TidecloakConfig {
   [key: string]: unknown;
 }
 
+type TideTokenClaims = Record<string, unknown> & {
+  tideuserkey?: string;
+  vuid?: string;
+  sub?: string;
+  iss?: string;
+  azp?: string;
+  realm_access?: { roles?: string[] };
+  resource_access?: Record<string, { roles?: string[] }>;
+};
+
 export declare function verifyTideCloakToken(
-  config: TidecloakConfig,
+  config: object,
   token: string,
   allowedRoles?: string[]
-): Promise<Record<string, any> | null>;
+): Promise<TideTokenClaims | null>;
 ```
 
 ---
