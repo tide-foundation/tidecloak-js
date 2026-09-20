@@ -39,4 +39,4 @@ npm install @tidecloak/react
 
 ## Security defaults
 
-**DPoP (sender-constrained tokens) is opt-in.** By default the SDK requests a plain, unbound access token. To turn DPoP on, pass `useDPoP` in the provider `config`: `{ mode: "auto" }` (use DPoP only when the realm supports it) or `{ mode: "strict" }` (require it). Only do so if every call carrying the token attaches a `DPoP:` proof — a bound token sent as a plain `Bearer` is rejected with a `401`. See the [`@tidecloak/js` DPoP docs](../tidecloak-js/docs/FRONT_CHANNEL.md#dpop-opt-in).
+**DPoP (sender-constrained tokens) is opt-in.** By default the SDK requests a plain, unbound access token. To turn DPoP on, pass `useDPoP` in the provider `config`: `{ mode: "auto" }` (use DPoP only when the realm supports it) or `{ mode: "strict" }` (require it). Only do so if every call carrying the token attaches a `DPoP:` proof, because a bound token sent as a plain `Bearer` is rejected with a `401`. See the [`@tidecloak/js` DPoP docs](https://github.com/tide-foundation/tidecloak-js/blob/main/packages/tidecloak-js/docs/FRONT_CHANNEL.md#dpop-opt-in).

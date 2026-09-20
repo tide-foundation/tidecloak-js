@@ -20,11 +20,11 @@ npm install @tidecloak/react
 
 ### 2. Get Your Config File
 
-Download `adapter.json` from your TideCloak admin console and put it in your `public/` folder:
+Download `tidecloak.json` (your client adapter config) from your TideCloak admin console and put it in your `public/` folder:
 
 ```
 public/
-  adapter.json
+  tidecloak.json
   silent-check-sso.html
 ```
 
@@ -44,14 +44,14 @@ import { TideCloakContextProvider } from '@tidecloak/react';
 
 function App() {
   return (
-    <TideCloakContextProvider>
+    <TideCloakContextProvider configUrl="/tidecloak.json">
       <YourApp />
     </TideCloakContextProvider>
   );
 }
 ```
 
-That's it. The SDK fetches your config from `/adapter.json` automatically.
+The provider fetches the config from `configUrl`. If you pass neither `configUrl` nor `config`, it fetches `/adapter.json`, so set one of them when your file has a different name.
 
 ### 5. Add a Redirect Route
 
@@ -63,7 +63,7 @@ import { Routes, Route } from 'react-router-dom';
 
 function App() {
   return (
-    <TideCloakContextProvider>
+    <TideCloakContextProvider configUrl="/tidecloak.json">
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/auth/redirect" element={<AuthRedirect />} />
@@ -123,10 +123,12 @@ function Header() {
 <TideCloakContextProvider configUrl="/config/tidecloak.json">
 ```
 
+`configUrl` defaults to `/adapter.json`.
+
 ### Provide Config Directly
 
 ```tsx
-import adapterConfig from './adapter.json';
+import adapterConfig from './tidecloak.json';
 
 <TideCloakContextProvider config={adapterConfig}>
 ```
@@ -177,21 +179,6 @@ interface ActionNotification {
 | `decrypt` | Success, error |
 | `approval` | Approved, denied, error |
 | `init` | Initialization error |
-
-### Session Mode
-
-Control how the SDK handles tokens on startup:
-
-```tsx
-<TideCloakContextProvider config={{ sessionMode: 'offline' }}>
-```
-
-| Mode | Behavior | Best For |
-|------|----------|----------|
-| `'online'` | Validates tokens with server, refreshes if needed, requires login if invalid | Always-connected apps |
-| `'offline'` | Accepts stored tokens without server validation, even if expired | Offline-first apps, PWAs |
-
-**Offline mode** lets users access your app even when their session has expired. You can then prompt for re-login only when an API call fails with 401.
 
 ---
 
@@ -536,9 +523,9 @@ results.forEach(result => {
 
 Make sure you have a route for `/auth/redirect` and your redirect URI is registered in TideCloak.
 
-**"adapter.json not found" error**
+**Config file not found**
 
-Make sure the file is in your `public/` folder and accessible at `/adapter.json`.
+Make sure `tidecloak.json` is in your `public/` folder and `configUrl` points at it. Without `configUrl` the provider looks for `/adapter.json`.
 
 **"silent-check-sso.html not found" or silent SSO fails**
 

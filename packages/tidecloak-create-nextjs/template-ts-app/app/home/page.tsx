@@ -19,7 +19,7 @@ export default function HomePage() {
   const [verifyResult, setVerifyResult] = useState<string | null>(null)
   const [verifying, setVerifying] = useState(false)
 
-  // Self encrypt/decrypt: data is bound to THIS user's identity — only they can
+  // Self encrypt/decrypt: data is bound to THIS user's identity, so only they can
   // decrypt it. The "message" tag matches the _tide_message.selfencrypt/.selfdecrypt
   // roles granted to every user in init/realm.json.
   const TAG = "message"
@@ -79,7 +79,7 @@ export default function HomePage() {
 
   // Submit = encrypt the current value, persist the ciphertext, then decrypt it
   // straight back so the field keeps showing plaintext. We store only the
-  // ciphertext (here in localStorage; in a real app, on your server) — it's
+  // ciphertext (here in localStorage; in a real app, on your server), and it's
   // decrypted again when you log back in.
   const onSubmit = useCallback(async () => {
     setBusy(true); setCryptoErr(""); setStatus("")
@@ -126,7 +126,7 @@ export default function HomePage() {
         <div style={{ marginTop: '1.5rem', borderTop: '1px solid #eee', paddingTop: '1rem', textAlign: 'left' }}>
           <h2 style={{ fontSize: '1.1rem', margin: '0 0 0.25rem' }}>Your encrypted note</h2>
           <p style={{ margin: '0 0 0.5rem', color: '#777', fontSize: '0.85rem' }}>
-            This is an encrypted textbox under your own identity — only you can decrypt it.
+            This is an encrypted textbox under your own identity. Only you can decrypt it.
           </p>
 
           <textarea

@@ -1,16 +1,16 @@
-// an example nextJS middleware router that does server-side validation on all traffic to secure pages
+// Example Next.js proxy that verifies the access token server-side before a protected page loads.
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { createTideCloakMiddleware } from "@tidecloak/nextjs/server";
+import { createTideCloakProxy } from "@tidecloak/nextjs/server";
 import type { TidecloakConfig } from "@tidecloak/nextjs/server";
 import rawConfig from "./tidecloak.json";
 
 // tidecloak.json is a placeholder ({}) until `npm run init` provisions the realm
 // and writes the real adapter config. Type it via the SDK's own config shape so
-// the middleware options type-check regardless of the placeholder's contents.
+// the proxy options type-check regardless of the placeholder's contents.
 const tcConfig = rawConfig as TidecloakConfig;
 
-export default createTideCloakMiddleware({
+export const proxy = createTideCloakProxy({
   config: tcConfig,
   protectedRoutes: {
     // "offline_access" is granted to every authenticated user, so this protects
@@ -31,16 +31,16 @@ export default createTideCloakMiddleware({
   onSuccess: (ctx: { payload: Record<string, any> }, req: NextRequest) => {
     return NextResponse.next();
   },
-  // Note: onError receives (err, req) - the error is the first argument.
+  // onError receives (err, req): the error is the first argument.
   onError: (err: unknown, req: NextRequest) => {
-    console.error("[Middleware] error verifying token for", req.nextUrl.pathname, err);
+    console.error("[Proxy] error verifying token for", req.nextUrl.pathname, err);
     // if something unexpected happens, redirect to your auth flow
     const redirectUrl = new URL("/auth/redirect", req.url);
     return NextResponse.redirect(redirectUrl);
   },
 });
 
-// Tell Next.js which paths to apply this middleware to (bare path and subpaths)
+// Which paths the proxy runs on (the bare path and its subpaths)
 export const config = {
   matcher: ["/protected", "/protected/:path*"],
 };

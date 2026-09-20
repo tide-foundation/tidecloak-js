@@ -14,11 +14,11 @@ Your users click "Login" in your app, their browser opens, they log in, and they
 
 ### 1. Get Your Config File
 
-Download `adapter.json` from your TideCloak admin console and put it in your `public/` folder.
+Download `tidecloak.json` (your client adapter config) from your TideCloak admin console and put it in your `public/` folder.
 
 ```
 public/
-  adapter.json
+  tidecloak.json
 ```
 
 ### 2. Create Your Adapter
@@ -93,6 +93,7 @@ function App() {
     <TideCloakContextProvider
       authMode="native"
       adapter={createElectronAdapter()}
+      configUrl="/tidecloak.json"
     >
       <YourApp />
     </TideCloakContextProvider>
@@ -101,7 +102,7 @@ function App() {
 ```
 
 The SDK will:
-- Fetch your config from `/adapter.json` automatically
+- Fetch your config from `configUrl` (which defaults to `/adapter.json`)
 - Handle login, logout, token refresh
 - Manage encryption if configured
 
@@ -126,7 +127,7 @@ function LoginButton() {
 
 ### Custom Config Location
 
-Config isn't at `/adapter.json`? No problem:
+`configUrl` defaults to `/adapter.json`. Point it wherever your file lives:
 
 ```tsx
 <TideCloakContextProvider
@@ -141,7 +142,7 @@ Config isn't at `/adapter.json`? No problem:
 Don't want to fetch? Pass it in:
 
 ```tsx
-import adapterConfig from './adapter.json';
+import adapterConfig from './tidecloak.json';
 
 <TideCloakContextProvider
   authMode="native"
@@ -326,6 +327,8 @@ const [decrypted] = await doDecrypt([
 ```
 
 Users need the right roles to encrypt/decrypt with specific tags.
+
+Native mode doesn't support decryption policies: passing one as the second argument to `doEncrypt` or `doDecrypt` throws.
 
 ---
 
@@ -578,6 +581,6 @@ Fix: Use `new BrowserWindow()` to open the login page, not `shell.openExternal()
 
 **Encryption/decryption fails with missing config**
 
-Make sure your `adapter.json` includes:
+Make sure your `tidecloak.json` includes:
 - `vendorId` - Your Tide vendor ID
 - `client-origin-auth-{origin}` - Auth signature for your app's origin (e.g., `client-origin-auth-http://localhost:5174`)

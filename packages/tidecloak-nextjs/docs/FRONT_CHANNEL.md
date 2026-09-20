@@ -14,11 +14,13 @@ npm install @tidecloak/nextjs
 
 ### 2. Add Provider
 
+Download `tidecloak.json` (your client adapter config) from your TideCloak admin console and put it in your project root. `TideCloakProvider` takes its contents as `config`.
+
 **App Router:** `app/layout.tsx`
 
 ```tsx
 import { TideCloakProvider } from '@tidecloak/nextjs';
-import adapter from '../tidecloakAdapter.json';
+import adapter from '../tidecloak.json';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -37,7 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 ```tsx
 import { TideCloakProvider } from '@tidecloak/nextjs';
-import adapter from '../tidecloakAdapter.json';
+import adapter from '../tidecloak.json';
 
 function MyApp({ Component, pageProps }) {
   return (
@@ -49,21 +51,6 @@ function MyApp({ Component, pageProps }) {
 
 export default MyApp;
 ```
-
-### Session Mode
-
-Control how the SDK handles tokens on startup:
-
-```tsx
-<TideCloakProvider config={{ ...adapter, sessionMode: 'offline' }}>
-```
-
-| Mode | Behavior | Best For |
-|------|----------|----------|
-| `'online'` | Validates tokens with server, refreshes if needed, requires login if invalid | Always-connected apps |
-| `'offline'` | Accepts stored tokens without server validation, even if expired | Offline-first apps, PWAs |
-
-**Offline mode** lets users access your app even when their session has expired. You can then prompt for re-login only when an API call fails with 401.
 
 ### 3. Create Redirect Page
 
@@ -172,7 +159,7 @@ Create `proxy.ts` at your project root:
 
 ```ts
 import { NextResponse } from 'next/server';
-import tidecloakConfig from './tidecloakAdapter.json';
+import tidecloakConfig from './tidecloak.json';
 import { createTideCloakProxy } from '@tidecloak/nextjs/server';
 
 export const proxy = createTideCloakProxy({
@@ -184,17 +171,22 @@ export const proxy = createTideCloakProxy({
   onFailure: ({ token }, req) => NextResponse.redirect(new URL('/login', req.url)),
   onError: (err, req) => NextResponse.rewrite(new URL('/error', req.url)),
 });
+
+// Optional: limit which paths run the proxy
+export const config = {
+  matcher: ['/admin/:path*', '/api/private/:path*'],
+};
 ```
 
-> **Important:** Do NOT add `export const config` to proxy.ts - it's not supported and will cause errors. Proxy files always run on Node.js runtime and don't need a matcher config.
+> `export const config = { matcher }` works in `proxy.ts`. Don't set `runtime` there: proxy always runs on the Node.js runtime.
 
-### Next.js 13-15 (middleware.ts)
+### Next.js 13.5 to 15 (middleware.ts)
 
 Create `middleware.ts` at your project root:
 
 ```ts
 import { NextResponse } from 'next/server';
-import tidecloakConfig from './tidecloakAdapter.json';
+import tidecloakConfig from './tidecloak.json';
 import { createTideCloakMiddleware } from '@tidecloak/nextjs/server';
 
 export default createTideCloakMiddleware({
@@ -221,7 +213,7 @@ Both `createTideCloakProxy` and `createTideCloakMiddleware` accept the same opti
 
 | Option            | Type                                              | Description                                                                                  |
 | ----------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `config`          | adapter JSON                                      | Your TideCloak client adapter config.                                                        |
+| `config`          | `tidecloak.json` contents                         | Your TideCloak client adapter config.                                                        |
 | `protectedRoutes` | `Record<string, string[]>`                        | Map of route pattern → allowed roles (see pattern rules below).                              |
 | `cookieName`      | `string` (default `"kcToken"`)                    | Name of the cookie holding the access token.                                                 |
 | `onRequest`       | `(ctx, req) => NextResponse \| void`              | Runs before auth checks; return a response to short-circuit.                                 |
@@ -231,9 +223,9 @@ Both `createTideCloakProxy` and `createTideCloakMiddleware` accept the same opti
 
 **`protectedRoutes` pattern rules:**
 
-- **Prefix** — `"/dashboard"` matches `/dashboard` and any sub-path.
-- **Glob** — `*` becomes a wildcard. A trailing `/*` also matches the bare base path, so `"/admin/*"` protects **both** `/admin` and `/admin/anything` (it will not match `/administrator`).
-- **`"OPTIONS"`** — matches requests by HTTP method instead of path.
+- **Prefix**: `"/dashboard"` matches `/dashboard` and any sub-path.
+- **Glob**: `*` becomes a wildcard. A trailing `/*` also matches the bare base path, so `"/admin/*"` protects **both** `/admin` and `/admin/anything` (it will not match `/administrator`).
+- **`"OPTIONS"`**: matches requests by HTTP method instead of path.
 
 ---
 
@@ -244,7 +236,7 @@ Both `createTideCloakProxy` and `createTideCloakMiddleware` accept the same opti
 ```ts
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyTideCloakToken } from '@tidecloak/nextjs/server';
-import config from '../../../tidecloakAdapter.json';
+import config from '../../../tidecloak.json';
 
 export async function GET(req: NextRequest) {
   const token = req.cookies.get('kcToken')?.value || '';
