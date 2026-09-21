@@ -30,7 +30,7 @@
     "build:esm": "tsc -p tsconfig.esm.json",
     "build:types": "tsc -p tsconfig.types.json",
     "build:copy-css": "node scripts/copy-css.cjs",
-    "build": "npm run build:cjs && npm run build:esm && npm run build:types && npm run build:copy-css && cp ./silent-check-sso.html dist/ && node scripts/postbuild.cjs",
+    "build": "npm run build:cjs && npm run build:esm && npm run build:types && npm run build:copy-css && cp ./silent-check-sso.html dist/ && cp ./tide_dpop_auth.html dist/ && node scripts/postbuild.cjs",
     "prepare": "npm run build"
   },
   "files": [
@@ -38,7 +38,8 @@
     "docs",
     "lib/README.md",
     "scripts/postinstall.cjs",
-    "silent-check-sso.html"
+    "silent-check-sso.html",
+    "tide_dpop_auth.html"
   ],
   "publishConfig": {
     "access": "public"
