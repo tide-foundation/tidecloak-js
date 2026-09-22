@@ -21,6 +21,11 @@
       "import": "./dist/esm/src/dpopServer.js",
       "require": "./dist/cjs/src/dpopServer.js"
     },
+    "./vite": {
+      "types": "./dist/types/src/vite.d.ts",
+      "import": "./dist/esm/src/vite.js",
+      "require": "./dist/cjs/src/vite.js"
+    },
     "./dpop-route": {
       "types": "./dist/types/src/dpopRoute.d.ts",
       "import": "./dist/esm/src/dpopRoute.js",
