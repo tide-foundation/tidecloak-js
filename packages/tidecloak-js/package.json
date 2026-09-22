@@ -16,6 +16,11 @@
       "require": "./dist/cjs/src/index.js",
       "default": "./dist/esm/src/index.js"
     },
+    "./dpop-server": {
+      "types": "./dist/types/src/dpopServer.d.ts",
+      "import": "./dist/esm/src/dpopServer.js",
+      "require": "./dist/cjs/src/dpopServer.js"
+    },
     "./dpop-route": {
       "types": "./dist/types/src/dpopRoute.d.ts",
       "import": "./dist/esm/src/dpopRoute.js",
