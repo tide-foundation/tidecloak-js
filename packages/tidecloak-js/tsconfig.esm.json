@@ -8,7 +8,7 @@
     "rootDir": "."
   },
   "include": [
-    "src/**/*",                 // ⬅️ picks up policy-react.ts
+    "src/**/*",
     "lib/tidecloak.js",
     "lib/tidecloak-dpop.js"
   ]

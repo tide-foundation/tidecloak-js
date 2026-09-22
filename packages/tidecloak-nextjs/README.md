@@ -6,7 +6,7 @@ Add TideCloak authentication to your Next.js app.
 npm install @tidecloak/nextjs
 ```
 
-> New to TideCloak? Use our [Next.js template](../tidecloak-create-nextjs/README.md) to get started quickly.
+> New to TideCloak? Use our [Next.js template](https://github.com/tide-foundation/tidecloak-js/blob/main/packages/tidecloak-create-nextjs/README.md) to get started quickly.
 
 ---
 
@@ -27,13 +27,13 @@ npm install @tidecloak/nextjs
 | Best for | Simple apps | High-security apps |
 | Setup complexity | Easy | Medium |
 | Client-side token access | Yes | No |
-| Edge middleware | Yes | Yes |
+| Route protection (proxy/middleware) | Yes | Yes |
 
 ---
 
 ## Requirements
 
-- Next.js 13.4+ (App Router) or Next.js 12+ (Pages Router)
+- Next.js 13.5+ (App Router or Pages Router)
 - React 18+
 - A TideCloak server ([setup guide](https://github.com/tide-foundation/tidecloak-gettingstarted))
 - A registered client in your TideCloak realm
@@ -45,12 +45,12 @@ npm install @tidecloak/nextjs
 - `<TideCloakProvider>` - Application-level context
 - `useTideCloak()` - Hook for auth state and actions
 - `<Authenticated>` / `<Unauthenticated>` - UI guards
-- `createTideCloakMiddleware()` - Edge middleware for route protection
-- `createTideCloakProxy()` - Node.js proxy for route protection (recommended on Next.js 16+)
+- `createTideCloakProxy()` - Route protection in `proxy.ts` (Next.js 16+)
+- `createTideCloakMiddleware()` - Route protection in `middleware.ts` (Next.js 13.5 to 15)
 - `verifyTideCloakToken()` - Server-side JWT verification
 - `doEncrypt()` / `doDecrypt()` - Tag-based encryption
 
-> **DPoP is opt-in** (sender-constrained tokens). By default you get a plain, unbound access token. Pass `useDPoP: { mode: "auto" }` or `{ mode: "strict" }` in your provider config to turn it on — see the [`@tidecloak/js` DPoP docs](../tidecloak-js/docs/FRONT_CHANNEL.md#dpop-opt-in).
+> **DPoP is opt-in** (sender-constrained tokens). By default you get a plain, unbound access token. Pass `useDPoP: { mode: "auto" }` or `{ mode: "strict" }` in your provider config to turn it on. See the [`@tidecloak/js` DPoP docs](https://github.com/tide-foundation/tidecloak-js/blob/main/packages/tidecloak-js/docs/FRONT_CHANNEL.md#dpop-opt-in).
 
 ---
 

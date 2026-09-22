@@ -1,6 +1,6 @@
 {
   "name": "@tidecloak/create-nextjs",
-  "version": "0.14.20",
+  "version": "0.14.33",
   "type": "module",
   "description": "Scaffold a TideCloak-ready Next.js app with optional IAM setup and working auth - start building instantly with a live example",
   "bin": {
@@ -27,6 +27,7 @@
     "build:cjs": "tsc -p tsconfig.cjs.json && mv dist/cjs/create.js dist/cjs/create.cjs",
     "build:esm": "tsc -p tsconfig.esm.json",
     "build":      "npm run build:cjs && npm run build:esm",
+    "test":       "node --test test/*.test.mjs",
     "prepare": "npm run build"
   },
 

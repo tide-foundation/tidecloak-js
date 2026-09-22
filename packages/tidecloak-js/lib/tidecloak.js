@@ -33,10 +33,10 @@ const CONTENT_TYPE_JSON = 'application/json'
 
 // Post-logout marker. After an explicit logout there is no session to silently
 // resume, so the immediately-following init() must skip the racy silent
-// check-sso (whose hidden iframe can net::ERR_ABORTED and wedge the app) and go
-// straight to interactive login. `logout()` stamps this durable localStorage
-// marker (survives the logout redirect round-trip); init() consumes it exactly
-// once and forces an interactive login when present + fresh.
+// check-sso (whose hidden iframe can net::ERR_ABORTED and wedge the app).
+// `logout()` stamps this durable localStorage marker (it survives the logout
+// redirect round-trip); init() consumes it exactly once and, on the `check-sso`
+// path, settles as not-authenticated so the app shows its logged-out state.
 const POST_LOGOUT_MARKER_KEY = 'tide-post-logout'
 const POST_LOGOUT_MARKER_TTL_MS = 60000
 
@@ -969,17 +969,22 @@ export default class TideCloak {
     }
 
     const onLoad = async () => {
-      // Post-logout deterministic path: if the previous logout stamped a fresh
-      // marker, skip silent check-sso entirely and go straight to interactive
-      // login. There is no session to silently resume after an explicit logout,
-      // and the silent path is exactly where the ERR_ABORTED wedge lives.
-      if (this.#consumePostLogoutMarker()) {
-        this.#logInfo('[TIDE-POSTLOGOUT] marker honored in init(); forcing interactive login, bypassing silent check-sso')
-        await doLogin(true)
-        return
-      }
+      // A fresh marker means we just came back from an explicit logout. The
+      // marker is here to skip the silent check-sso, which is racy (its hidden
+      // iframe can net::ERR_ABORTED and wedge the app) and pointless: there is
+      // no session left to resume. So `check-sso` settles as not-authenticated
+      // and the app renders its logged-out state. `login-required` still means
+      // what it says, so that path is unchanged. Consumed here either way, so
+      // the marker stays one-shot.
+      const afterLogout = this.#consumePostLogoutMarker()
+
       switch (initOptions.onLoad) {
         case 'check-sso':
+          if (afterLogout) {
+            this.#logInfo('[TIDE-POSTLOGOUT] marker honored in init(); settling as not-authenticated, bypassing silent check-sso')
+            return
+          }
+
           if (this.#loginIframe.enable) {
             await this.#setupCheckLoginIframe()
             const unchanged = await this.#checkLoginIframe()
@@ -1522,8 +1527,9 @@ export default class TideCloak {
    */
   logout = async (options) => {
     await this.#dpopProvider?.flush()
-    // Stamp the post-logout marker so the next init() forces interactive login
-    // instead of running the racy silent check-sso. See POST_LOGOUT_MARKER_KEY.
+    // Stamp the post-logout marker so the next init() skips the racy silent
+    // check-sso instead of trying to resume a session we just ended. See
+    // POST_LOGOUT_MARKER_KEY.
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem(POST_LOGOUT_MARKER_KEY, Date.now().toString())
@@ -1538,8 +1544,8 @@ export default class TideCloak {
    * Read + clear the post-logout marker. Returns true only when a marker was
    * present AND fresh (set within POST_LOGOUT_MARKER_TTL_MS). Always clears the
    * marker when present, so it fires at most once and a stale marker (a tab
-   * left open across a much later load) is discarded rather than forcing an
-   * unexpected interactive login.
+   * left open across a much later load) is discarded rather than suppressing
+   * an SSO check that should have run.
    * @returns {boolean}
    */
   #consumePostLogoutMarker () {

@@ -8,7 +8,7 @@ Jump to:
 ---
 # Quickstart
 
-Secure your Next.js app with TideCloak: authentication, session management, data encryption, and edge-middleware integration all in minutes.
+Secure your Next.js app with TideCloak: authentication, session management, data encryption, and server-side route protection, all in minutes.
 
 [![Developer Walkthrough](http://img.youtube.com/vi/dVpDUF_XJdw/0.jpg)](https://www.youtube.com/watch?v=dVpDUF_XJdw "Provably secure your Next.js apps in 5 mins, with TideCloak")
 
@@ -18,10 +18,9 @@ Before you begin, ensure you have:
 
 * A [running](https://github.com/tide-foundation/tidecloak-gettingstarted) TideCloak server you have admin control over. No need to set anything up - just start the server.
 
-As well as 
-* Next.js 13.5.7 or later
-* React 18 or later
-* Node.js ≥18.17.0
+As well as
+* Node.js 20.9 or later (the template is a Next.js 16 app with React 19)
+* `curl` and `jq`, if you let the scaffolder initialize TideCloak for you
 
 
 ### 2. Initialize the template project
@@ -36,26 +35,42 @@ npm init @tidecloak/nextjs@latest my-app
 
 #### 2.a Project structure
 
+The JavaScript template is shown. The TypeScript one has the same layout with `.ts`/`.tsx` files and a `tsconfig.json`, and puts the provider straight into `app/layout.tsx`.
+
 ```
 my-app/
 ├── app/
-|   ├── api/
-|   │   └── protected/
-|   │       └── route.js            <- A protected API on your NextJS server that verifies the user's access token
-|   ├── auth/
-|   │   └── redirect/
-|   │       └── page.jsx            <- A dedicated page to redirect the user back to once authentication is complete
-|   ├── home/
-|   |   └── page.jsx                <- Your home page the user goes to once authenticated
-|   ├── layout.jsx                  <- Entry point of your app before the user sees any actual pages
-|   └── page.jsx                    <- Your login page the user is brought to when they need to authenticate
+│   ├── api/
+│   │   └── protected/
+│   │       └── route.js            <- A protected API route that verifies the user's access token
+│   ├── auth/
+│   │   └── redirect/
+│   │       └── page.jsx            <- Where the user lands once authentication is complete
+│   ├── home/
+│   │   └── page.jsx                <- Home page for authenticated users (includes an encrypted note)
+│   ├── protected/
+│   │   └── page.jsx                <- Example page guarded server-side by proxy.js
+│   ├── tide_dpop/
+│   │   └── [...path]/
+│   │       └── route.js            <- Serves tide_dpop_auth.html, only needed if you turn on useDPoP
+│   ├── layout.jsx                  <- Root layout
+│   ├── page.jsx                    <- Login page
+│   └── provider.jsx                <- Wraps the app in TideCloakProvider
+├── init/
+│   ├── .env.example                <- Defaults for tcinit.sh
+│   ├── realm.json                  <- Realm template used by tcinit.sh
+│   └── tcinit.sh                   <- Provisions the realm and writes tidecloak.json (npm run init)
 ├── public/
-│   └── silent-check-sso.html       <- Silent SSO check page served at the site root
-├── tidecloak.json                  <- Where your Tidecloak configuration sits
+│   ├── silent-check-sso.html       <- Silent SSO check page
+│   └── tide_dpop_auth.html         <- DPoP helper page (only used with useDPoP)
+├── tidecloak.json                  <- Your TideCloak adapter config (a {} placeholder until init runs)
+├── proxy.js                        <- Verifies the token server-side before protected pages load
+├── jsconfig.json
 ├── next.config.js
-├── middleware.js                   <- Run on each page navigation - this is where the Tidecloak token is verified
 └── package.json
 ```
+
+If you skipped initialization, run `npm run init` inside the app later. It writes `tidecloak.json` to the app root; set `ADAPTER_OUTPUT_PATH` to write it somewhere else.
 
 ### 3. Test your app!
 
@@ -69,12 +84,7 @@ Here it is - [localhost:3000](http://localhost:3000)
 
 
 ### Implementing encryption/decryption
-You will first need to create the required realm roles that enable each user to encrypt/decrypt their own date of births.
-
-> [!NOTE]
-> You have already completed the pre-requisites asked for in the documentation to set up encrypt/decrypt roles AND also set up the required client.
-
-[Set up encrypt/decrypt roles](https://docs.tidecloak.com/docs/EncryptDecrypt/SetupED)
+The realm created by init already gives every user the `_tide_message.selfencrypt` and `_tide_message.selfdecrypt` roles, which the home page uses for its encrypted note. To encrypt data under other tags, [set up matching roles](https://docs.tidecloak.com/docs/EncryptDecrypt/SetupED).
 
 TideCloak lets you protect sensitive fields with **tag-based** encryption. Pass in an array of `{ data, tags }` objects and receive encrypted strings (or vice versa).
 
@@ -109,7 +119,8 @@ This bundle provides:
 * `verifyTideCloakToken()` - server-side JWT verification
 * `<Authenticated>` / `<Unauthenticated>` - UI guards
 * `doEncrypt()` / `doDecrypt()` - tag-based encryption/decryption
-* `createTideCloakMiddleware()` - Edge middleware for route protection (supports both Pages & App routers)
+* `createTideCloakProxy()` - route protection in `proxy.ts` (Next.js 16+, used by the template)
+* `createTideCloakMiddleware()` - route protection in `middleware.ts` (Next.js 13.5 to 15)
 
 
 ### Using the `useTideCloak` Hook
@@ -159,13 +170,13 @@ function Header() {
 | `authenticated`                       | `boolean`                                    | Whether the user is logged in.                                          |
 | `login()` / `logout()`                | `() => void`                                 | Trigger the login or logout flows.                                      |
 | `token`, `tokenExp`                   | `string`, `number`                           | Access token and its expiration timestamp.                              |
-| Automatic token refresh               | built-in                                     | Tokens refresh silently on expiration-no manual setup needed.           |
+| Automatic token refresh               | built-in                                     | Tokens refresh silently on expiration, no manual setup needed.          |
 | `refreshToken()`                      | `() => Promise<boolean>`                     | Force a silent token renewal.                                           |
 | `getValueFromToken(key)`              | `(key: string) => any`                       | Read a custom claim from the access token.                              |
 | `getValueFromIdToken(key)`            | `(key: string) => any`                       | Read a custom claim from the ID token.                                  |
 | `hasRealmRole(role)`                  | `(role: string) => boolean`                  | Check a realm-level role.                                               |
 | `hasClientRole(role, client?)`        | `(role: string, client?: string) => boolean` | Check a client-level role; defaults to your app’s client ID if omitted. |
-| `doEncrypt(data)` / `doDecrypt(data)` | `(data: any) => Promise<any>`                | Encrypt or decrypt payloads via TideCloak’s built-in service.           |
+| `doEncrypt(data, policy?)` / `doDecrypt(data, policy?)` | `(data: any, policy?: Uint8Array) => Promise<any>` | Encrypt or decrypt payloads, optionally under a signed decryption policy. |
 
 
 ### Guard Components
@@ -202,21 +213,21 @@ TideCloak provides server-side route protection for both the **Pages Router** an
 
 #### Options
 
-* **`config`** (`TidecloakConfig`): Your Tidecloak adapter JSON (downloaded from your TideCloak client settings).
+* **`config`** (`TidecloakConfig`): The contents of your `tidecloak.json` adapter config.
 * **`protectedRoutes`** (`ProtectedRoutesMap`): Map of path patterns to arrays of required roles. A trailing `/*` glob (e.g. `"/admin/*"`) also matches the bare base path (`/admin`).
 * **`cookieName`** (`string`, default `"kcToken"`): Name of the cookie that holds the access token.
 * **`onRequest`**<br>`(ctx: { token: string | null }, req: NextRequest) => NextResponse | void`<br>Hook before auth logic; can short-circuit by returning a `NextResponse`.
 * **`onSuccess`**<br>`(ctx: { payload: Record<string, any> }, req: NextRequest) => NextResponse | void`<br>Hook after successful auth & role checks; override the response by returning one.
 * **`onFailure`**<br>`(ctx: { token: string | null }, req: NextRequest) => NextResponse | void`<br>Hook when auth or role check fails; return a `NextResponse` to override.
-* **`onError`**<br>`(err: any, req: NextRequest) => NextResponse`<br>Hook for unexpected errors in middleware logic.
+* **`onError`**<br>`(err: any, req: NextRequest) => NextResponse`<br>Hook for unexpected errors during verification.
 
 #### Next.js 16+ (proxy.ts)
 
-Create `proxy.ts` at your project root. Proxy runs on Node.js runtime.
+Create `proxy.ts` at your project root. Proxy runs on the Node.js runtime.
 
 ```ts
 import { NextResponse } from 'next/server';
-import tidecloakConfig from './tidecloakAdapter.json';
+import tidecloakConfig from './tidecloak.json';
 import { createTideCloakProxy } from '@tidecloak/nextjs/server';
 
 export const proxy = createTideCloakProxy({
@@ -228,17 +239,22 @@ export const proxy = createTideCloakProxy({
   onFailure: ({ token }, req) => NextResponse.redirect(new URL('/login', req.url)),
   onError: (err, req) => NextResponse.rewrite(new URL('/error', req.url)),
 });
+
+// Optional: limit which paths run the proxy
+export const config = {
+  matcher: ['/admin/:path*', '/api/private/:path*'],
+};
 ```
 
-> **Important:** Do NOT add `export const config` to proxy.ts - it's not supported and will cause errors. Proxy files always run on Node.js runtime and don't need a matcher config.
+> `export const config = { matcher }` works in `proxy.ts`. Don't set `runtime` there: proxy always runs on the Node.js runtime.
 
-#### Next.js 13-15 (middleware.ts)
+#### Next.js 13.5 to 15 (middleware.ts)
 
 Create `middleware.ts` at your project root. Middleware runs on Edge runtime.
 
 ```ts
 import { NextResponse } from 'next/server';
-import tidecloakConfig from './tidecloakAdapter.json';
+import tidecloakConfig from './tidecloak.json';
 import { createTideCloakMiddleware } from '@tidecloak/nextjs/server';
 
 export default createTideCloakMiddleware({
@@ -261,14 +277,13 @@ export const config = {
 
 **Flow:**
 
-1. Bypass any `publicRoutes`
-2. Read the `kcToken` cookie
-3. Invoke `onRequest` hook (if provided)
-4. Match path against `protectedRoutes` patterns
-5. Verify signature, issuer, and roles via `verifyTideCloakToken()`
-6. On success: `onSuccess` hook or `NextResponse.next()`
-7. On failure: `onFailure` hook or default 403 response
-8. On unexpected errors: `onError` hook
+1. Read the `kcToken` cookie
+2. Invoke `onRequest` hook (if provided)
+3. Match path against `protectedRoutes` patterns
+4. Verify signature, issuer, and roles via `verifyTideCloakToken()`
+5. On success: `onSuccess` hook or `NextResponse.next()`
+6. On failure: `onFailure` hook or default 403 response
+7. On unexpected errors: `onError` hook
 
 
 #### Server‑Side Token Verification
@@ -280,7 +295,7 @@ import { verifyTideCloakToken } from '@tidecloak/nextjs/server';
 
 // Returns the decoded payload if valid and roles pass, otherwise null
 const payload = await verifyTideCloakToken(
-  config,       // Your TideCloak adapter JSON
+  config,       // Your tidecloak.json contents
   token,        // Raw access token to verify
   ['admin', 'user'] // Optional roles; user must have at least one
 );
@@ -303,13 +318,13 @@ export async function verifyTideCloakToken(config, token, allowedRoles = []) {
 
 **Parameters:**
 
-* `config` (`object`): Your TideCloak adapter JSON (parsed Tidecloak client adapter config).
+* `config` (`object`): Your parsed `tidecloak.json` adapter config.
 * `token` (`string`): Access token string to verify.
 * `allowedRoles` (`string[]`, optional): Array of realm or client roles; user must have at least one.
 
 **Returns:**
 
-* `Promise<object | null>`: Decoded JWT payload if valid and role check passes; otherwise `null`.
+* `Promise<TideTokenClaims | null>`: Decoded token claims if valid and the role check passes; otherwise `null`.
 
 #### Example: Protecting an API Route
 
@@ -321,7 +336,7 @@ Protect your server-side endpoints by verifying the JWT before proceeding.
 // pages/api/secure.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { verifyTideCloakToken } from '@tidecloak/nextjs/server';
-import config from '../../tidecloakAdapter.json';
+import config from '../../tidecloak.json';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // Extract token from cookie or Authorization header
@@ -344,7 +359,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 // app/api/secure/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyTideCloakToken } from '@tidecloak/nextjs/server';
-import config from '../../../tidecloakAdapter.json';
+import config from '../../../tidecloak.json';
 
 export async function GET(req: NextRequest) {
   // Extract token from cookie
@@ -363,7 +378,7 @@ export async function GET(req: NextRequest) {
 
 ### Advanced & Best Practices
 
-* **Auto-Refresh**: built into the provider-no manual timers.
+* **Auto-Refresh**: built into the provider, no manual timers.
 * **Error Handling**: use the `initError` value from `useTideCloak`.
 * **Custom Claims**: read via `getValueFromToken()` / `getValueFromIdToken()`.
 * **Role-Based UI**: combine hooks & guard components for fine-grained control.

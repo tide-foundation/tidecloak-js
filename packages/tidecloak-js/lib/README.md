@@ -34,12 +34,12 @@ TideCloak-js ->> Client: TideSerializedFields
 ## Initialization
 
 ```bash
-npm install tidecloak-js
+npm install @tidecloak/js
 ```
 
 ```javascript
-import TideCloak from "tidecloak-js"
-import tcData from "/tidecloak.json";
+import { TideCloak } from "@tidecloak/js";
+import tcData from "./tidecloak.json";
 
 const tidecloak = new TideCloak({
   url: tcData['auth-server-url'],
@@ -95,12 +95,12 @@ There are 2 Response Headers you MUST add when executing a request for tide_dpop
 ```javascript
 // tidecloak.encrypt returns string[] where the list are the encrypted strings
 // passed in the parameter object. Order returned is same order as what was passed.
-const encrypted_dob = await tidecloak.encrypt([
+const encrypted_dob = (await tidecloak.encrypt([
   {
     "data": "03/04/2005",
     "tags": ["dob"]
   }
-])[0];
+]))[0];
 
 // before testing the below code, make sure you've set up the respected roles
 const multi_encrypted_addresses = await tidecloak.encrypt([
@@ -125,12 +125,12 @@ When encrypting or decrypting data, a user must have permission for all the tags
 
 // tidecloak.decrypt returns string[] where the list are the decrypted strings
 // passed in the parameter object. Order returned is same order as what was passed.
-const decrypted_dob = await tidecloak.decrypt([
+const decrypted_dob = (await tidecloak.decrypt([
   {
     "encrypted": encrypted_dob, // from the encrypt code block above
     "tags": ["dob"]
   }
-]);
+]))[0];
 
 // before testing the below code, make sure you've set up the respected roles
 const decrypted_addresses = await tidecloak.decrypt([
@@ -155,12 +155,14 @@ Encryption and decryption can be governed by a **Tide Policy + Forseti Contract*
 
 There are two ways to use a policy:
 
-1. **Inline policy** — pass the policy directly to `encrypt()` / `decrypt()`. The ORKs enforce the policy, but no separate approval step is needed.
-2. **Approval flow** — use a draft/approve/commit cycle where Tide operators must approve each request before encryption or decryption can proceed. This is suited for custom Forseti contracts with multi-party approval requirements.
+1. **Inline policy**: pass the policy directly to `encrypt()` / `decrypt()`. The ORKs enforce the policy, but no separate approval step is needed.
+2. **Approval flow**: use a draft/approve/commit cycle where Tide operators must approve each request before encryption or decryption can proceed. This is suited for custom Forseti contracts with multi-party approval requirements.
 
 ### Inline policy (no approval step)
 
-Pass the signed policy as the second argument. When a policy is provided, the default realm-role tag checks are skipped — the policy itself controls access.
+Pass the signed policy as the second argument. When a policy is provided, the default realm-role tag checks are skipped and the policy itself controls access.
+
+`IAMService.doEncrypt` and `IAMService.doDecrypt` take the policy the same way in front-channel mode. Native mode doesn't support policies and throws if you pass one.
 
 ```javascript
 const policy = yourSignedPolicy; // Uint8Array
@@ -186,9 +188,9 @@ const decrypted_dob = (await tidecloak.decrypt([
 
 This flow splits the operation into three steps:
 
-1. **Draft** — prepare the request locally.
-2. **Approve** — submit the draft to Tide operators for approval via `requestTideOperatorApproval()`.
-3. **Commit** — once approved, finalize the operation with the policy.
+1. **Draft**: prepare the request locally.
+2. **Approve**: submit the draft to Tide operators for approval via `requestTideOperatorApproval()`.
+3. **Commit**: once approved, finalize the operation with the policy.
 
 > **Note:** `draftEncryption()` and `draftDecryption()` require data as `Uint8Array`. Use `new TextEncoder().encode(str)` to convert strings.
 
@@ -253,7 +255,7 @@ if (status !== "approved") {
 
 // 3. Commit with the approved request and policy
 const decrypted_dob = (await tidecloak.commitDecryption(approvedRequest, policy))[0];
-// decrypted_dob is a Uint8Array — decode with new TextDecoder().decode(decrypted_dob)
+// decrypted_dob is a Uint8Array; decode it with new TextDecoder().decode(decrypted_dob)
 ```
 
 # Reference guide
@@ -271,8 +273,8 @@ You also need to configure `Valid Redirect URIs` and `Web Origins`. Be as specif
 The following example shows how to initialize the adapter. Make sure that you replace the options passed to the `TideCloak` constructor with those of the client you have configured.
 
 ```javascript
-import TideCloak from 'tidecloak-js';
-import tcData from "/tidecloak.json";
+import { TideCloak } from '@tidecloak/js';
+import tcData from "./tidecloak.json";
 
 const tidecloak = new TideCloak({
   url: tcData['auth-server-url'],
@@ -464,7 +466,7 @@ Furthermore, we recommend the following steps to improve compatibility with the 
 In some situations, you may need to run the adapter in environments that are not supported by default, such as Capacitor. To use the JavasScript client in these environments, you can pass a custom adapter. For example, a third-party library could provide such an adapter to make it possible to reliably run the adapter:
 
 ```javascript
-import TideCloak from 'tidecloak-js';
+import { TideCloak } from '@tidecloak/js';
 import KeycloakCapacitorAdapter from 'keycloak-capacitor-adapter';
 
 const tidecloak = new TideCloak({
@@ -480,16 +482,15 @@ await tidecloak.init({
 
 This specific package does not exist, but it gives a pretty good example of how such an adapter could be passed into the client.
 
-It's also possible to make your own adapter, to do so you will have to implement the methods described in the `TideCloakAdapter` interface. For example the following TypeScript code ensures that all the methods are properly implemented:
+It's also possible to make your own adapter. It must implement `login`, `logout`, `register`, `accountManagement` and `redirectUri`:
 
 ```javascript
-import TideCloak, { TideCloakAdapter } from 'tidecloak-js';
+import { TideCloak } from '@tidecloak/js';
 
-// Implement the 'TideCloakAdapter' interface so that all required methods are guaranteed to be present.
-const MyCustomAdapter: TideCloakAdapter = {
+const MyCustomAdapter = {
     async login(options) {
         // Write your own implementation here.
-    }
+    },
 
     // The other methods go here...
 };
@@ -505,7 +506,7 @@ await tidecloak.init({
 });
 ```
 
-Naturally you can also do this without TypeScript by omitting the type information, but ensuring implementing the interface properly will then be left entirely up to you.
+`@tidecloak/js` doesn't export a type for the adapter, so checking that every method is present is up to you.
 
 ## Modern Browsers with Tracking Protection
 
@@ -533,7 +534,7 @@ An affected browser is for example Safari starting with version 13.1.
 
 ```javascript
 // Recommended way to initialize the adapter.
-import tcData from "/tidecloak.json";
+import tcData from "./tidecloak.json";
 
 new TideCloak({
   url: tcData['auth-server-url'],
@@ -773,7 +774,7 @@ Returns a promise resolving to an array of decrypted values (`string` if input w
 
 Begins the approval-based encryption flow by creating a draft request.
 
-* **toEncrypt** - Array of objects, each with `data` (`Uint8Array`) and `tags` (`string[]`). Unlike `encrypt()`, strings are **not** accepted — convert with `new TextEncoder().encode(str)`.
+* **toEncrypt** - Array of objects, each with `data` (`Uint8Array`) and `tags` (`string[]`). Unlike `encrypt()`, strings are **not** accepted, so convert with `new TextEncoder().encode(str)`.
 
 Returns a promise resolving to a `Uint8Array` draft request, which should be submitted to `requestTideOperatorApproval()`.
 

@@ -36,7 +36,12 @@ async function main(): Promise<void> {
     ? 'template-ts-app'
     : 'template-js-app'
   const templateDir = path.resolve(packageRoot, templateName)
-  fs.cpSync(templateDir, targetDir, { recursive: true })
+  // Skip local build output and installs that may exist in a dev checkout of the template.
+  const skipped = new Set(['.next', 'node_modules', 'package-lock.json'])
+  fs.cpSync(templateDir, targetDir, {
+    recursive: true,
+    filter: (src) => !skipped.has(path.basename(src)),
+  })
   console.log(`Scaffolded ${language} template into "${targetDir}"`)
 
   // 3. Prompt for initialization
