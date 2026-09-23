@@ -16,6 +16,21 @@
       "require": "./dist/cjs/src/index.js",
       "default": "./dist/esm/src/index.js"
     },
+    "./dpop-server": {
+      "types": "./dist/types/src/dpopServer.d.ts",
+      "import": "./dist/esm/src/dpopServer.js",
+      "require": "./dist/cjs/src/dpopServer.js"
+    },
+    "./vite": {
+      "types": "./dist/types/src/vite.d.ts",
+      "import": "./dist/esm/src/vite.js",
+      "require": "./dist/cjs/src/vite.js"
+    },
+    "./dpop-route": {
+      "types": "./dist/types/src/dpopRoute.d.ts",
+      "import": "./dist/esm/src/dpopRoute.js",
+      "require": "./dist/cjs/src/dpopRoute.js"
+    },
     "./policy-react": {
       "types": "./dist/types/src/policy-react.d.ts",
       "import": "./dist/esm/src/policy-react.js",
@@ -30,7 +45,8 @@
     "build:esm": "tsc -p tsconfig.esm.json",
     "build:types": "tsc -p tsconfig.types.json",
     "build:copy-css": "node scripts/copy-css.cjs",
-    "build": "npm run build:cjs && npm run build:esm && npm run build:types && npm run build:copy-css && cp ./silent-check-sso.html dist/ && node scripts/postbuild.cjs",
+    "build:dpop-asset": "node scripts/gen-dpop-asset.cjs",
+    "build": "npm run build:dpop-asset && npm run build:cjs && npm run build:esm && npm run build:types && npm run build:copy-css && cp ./silent-check-sso.html dist/ && cp ./tide_dpop_auth.html dist/ && node scripts/postbuild.cjs",
     "prepare": "npm run build"
   },
   "files": [
@@ -38,7 +54,8 @@
     "docs",
     "lib/README.md",
     "scripts/postinstall.cjs",
-    "silent-check-sso.html"
+    "silent-check-sso.html",
+    "tide_dpop_auth.html"
   ],
   "publishConfig": {
     "access": "public"

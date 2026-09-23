@@ -3,6 +3,7 @@ import {
   fetchJson,
   resolveSilentCheckSsoRedirectUri,
   buildInitOptions,
+  preflightDpopAuthPage,
 } from "./utils/index.js";
 import TideCloak, { RequestEnclave } from "../lib/tidecloak.js";
 
@@ -599,6 +600,17 @@ class IAMService {
       console.debug(
         `[IAMService] silentCheckSsoRedirectUri derived from ${silentSso.source}: ${silentSso.uri}`
       );
+    }
+
+    // Not awaited: a diagnostic must not slow init.
+    if (pick("useDPoP")) {
+      const cfg = this._config ?? config;
+      void preflightDpopAuthPage({
+        origin: window.location.origin,
+        authServerUrl: cfg?.["auth-server-url"],
+        realm: cfg?.realm,
+        clientId: cfg?.resource,
+      });
     }
 
     let authenticated = false;
