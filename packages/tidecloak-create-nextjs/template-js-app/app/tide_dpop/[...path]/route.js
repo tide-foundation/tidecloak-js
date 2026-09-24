@@ -3,7 +3,7 @@ import path from "path"
 
 // Tide DPoP resource-server endpoint.
 //
-// DPoP is opt-in. This route is only used when you pass `useDPoP` in the
+// DPoP is opt-in. This route is only used when you pass `dpopConfig` in the
 // provider config; without it nothing requests this page and you can delete it.
 // With DPoP on, the SDK loads this page from your own origin at:
 //   /tide_dpop/iss/<issuer-hex>/aud/<client-hex>/tide_dpop_auth.html

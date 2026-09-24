@@ -39,8 +39,8 @@
  *   `undefined` => TideCloak skips silent check-sso and falls back to an
  *   interactive login rather than emitting a URI that would 400.
  * - `pkceMethod` - always `"S256"`, as it was before PR #91.
- * - `useDPoP` / `checkLoginIframe` - the two options `initIAM` has always
- *   forwarded. `useDPoP` is forwarded ONLY when the caller actually set it, and
+ * - `dpopConfig` / `checkLoginIframe` - the two options `initIAM` has always
+ *   forwarded. `dpopConfig` is forwarded ONLY when the caller actually set it, and
  *   VERBATIM. DPoP is opt-in: nothing upstream may default it on, because
  *   enabling it appends `dpop_jkt` to the authorization request and the realm
  *   then issues a `cnf.jkt`-BOUND token, which a plain-Bearer consumer cannot
@@ -72,7 +72,7 @@ export function buildInitOptions({
     onLoad: "check-sso",
     silentCheckSsoRedirectUri,
     pkceMethod: "S256",
-    ...(config?.useDPoP && { useDPoP: config.useDPoP }),
+    ...(config?.dpopConfig && { dpopConfig: config.dpopConfig }),
     ...(config?.checkLoginIframe === false && { checkLoginIframe: false }),
   };
 }

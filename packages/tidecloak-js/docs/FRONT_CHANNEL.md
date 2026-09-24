@@ -64,30 +64,31 @@ await IAMService.initIAM(config);
 
 ### DPoP (opt-in)
 
-DPoP (sender-constrained tokens, [RFC 9449](https://datatracker.ietf.org/doc/html/rfc9449)) binds an access token to a per-session key, so a stolen token can't be replayed. It is **opt-in**: set `useDPoP` and the SDK turns it on; omit it and the SDK requests an ordinary (unbound) token.
+DPoP (sender-constrained tokens, [RFC 9449](https://datatracker.ietf.org/doc/html/rfc9449)) binds an access token to a per-session key, so a stolen token can't be replayed. It is **opt-in**: set `dpopConfig` and the SDK turns it on; omit it and the SDK requests an ordinary (unbound) token.
 
-> **DPoP is not a flag you can flip in isolation.** Asking for it appends `dpop_jkt` to the authorization request, and the realm then issues a token carrying `typ: "DPoP"` and `cnf.jkt`. Such a token is **invalid** if it is later presented as a plain `Authorization: Bearer …`, and the resource server answers a bare `401`. So enable DPoP only if every call that carries the token attaches a `DPoP:` proof (use `IAMService.secureFetch`, which does this for you). This is why the SDK will not turn DPoP on for you.
+> **DPoP is not a flag you can flip in isolation.** Asking for it appends `dpop_jkt` to the authorization request, and the realm then issues a token carrying `typ: "DPoP"` and `cnf.jkt`. Such a token is **invalid** if it is later presented as a plain `Authorization: Bearer …`, and the resource server answers a bare `401`. So enable DPoP only if every call that carries the token attaches a `DPoP:` proof (use `IAMService.fetch`, which does this for you). This is why the SDK will not turn DPoP on for you.
 
 ```js
 // Opt in, enforced: init fails if the realm doesn't advertise DPoP support
-await IAMService.initIAM({ ...config, useDPoP: { mode: "strict" } });
+await IAMService.initIAM({ ...config, dpopConfig: { mode: "strict" } });
 
 // Use DPoP only when the realm supports it, otherwise fall back to bearer:
-await IAMService.initIAM({ ...config, useDPoP: { mode: "auto" } });
+await IAMService.initIAM({ ...config, dpopConfig: { mode: "auto" } });
 
 // Pick the proof signing algorithm (default "ES256"):
-await IAMService.initIAM({ ...config, useDPoP: { mode: "strict", alg: "EdDSA" } });
+await IAMService.initIAM({ ...config, dpopConfig: { mode: "strict", alg: "EdDSA" } });
 
 // No DPoP, a plain unbound access token (the default)
 await IAMService.initIAM({ ...config });
 ```
 
-| `useDPoP` value            | Behavior                                                                 |
-| -------------------------- | ------------------------------------------------------------------------ |
-| *(omitted)* / `false`      | **Default.** No DPoP. No `dpop_jkt`, plain unbound access token.          |
-| `{ mode: "auto" }`         | Use DPoP when the realm advertises it; otherwise fall back to bearer.    |
-| `{ mode: "strict" }`       | Enforce DPoP; init fails if the realm lacks DPoP support.                |
-| `{ mode: …, alg }`         | As above, with a specific proof algorithm (`ES256` default).            |
+| `dpopConfig` value             | Behavior                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------- |
+| *(omitted)* / `false`          | **Default.** No DPoP. No `dpop_jkt`, plain unbound access token.          |
+| `{ mode: "auto" }`             | Use DPoP when the realm advertises it; otherwise fall back to bearer.     |
+| `{ mode: "strict" }`           | Enforce DPoP; init fails if the realm lacks DPoP support.                 |
+| `{ mode: …, alg }`             | As above, with a specific proof algorithm (`ES256` default).              |
+| `{ mode: …, strictStorage }`   | `true` fails init if IndexedDB is unavailable instead of using memory.    |
 
 > Your **resource server** must validate DPoP proofs for the binding to be meaningful. See [`lib/README.md`](../lib/README.md#dpop-resource-server-setup) for serving `tide_dpop_auth.html`.
 

@@ -55,7 +55,13 @@ const tidecloak = new TideCloak({
 const authenticated = await tidecloak.init({
   onLoad: "login-required",
   checkLoginIframe: false,
-  useDPoP: { mode: "strict", alg: "EdDSA" },
+  dpopConfig: { mode: "strict", alg: "EdDSA" },
+});
+
+// Call DPoP-protected APIs with tidecloak.fetch. It swaps the SDK's own Bearer
+// token for `Authorization: DPoP` plus a proof; any other request goes out as-is.
+const response = await tidecloak.fetch("https://api.example.com/user", {
+  headers: { Authorization: `Bearer ${tidecloak.token}` },
 });
 ```
 **Also ensure your resource server has DPoP JWT validation - this could be through using a package like Asgard or any other open sourced SDK**

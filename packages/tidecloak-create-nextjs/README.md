@@ -52,7 +52,7 @@ my-app/
 │   │   └── page.jsx                <- Example page guarded server-side by proxy.js
 │   ├── tide_dpop/
 │   │   └── [...path]/
-│   │       └── route.js            <- Serves tide_dpop_auth.html, only needed if you turn on useDPoP
+│   │       └── route.js            <- Serves tide_dpop_auth.html, only needed if you turn on dpopConfig
 │   ├── layout.jsx                  <- Root layout
 │   ├── page.jsx                    <- Login page
 │   └── provider.jsx                <- Wraps the app in TideCloakProvider
@@ -62,7 +62,7 @@ my-app/
 │   └── tcinit.sh                   <- Provisions the realm and writes tidecloak.json (npm run init)
 ├── public/
 │   ├── silent-check-sso.html       <- Silent SSO check page
-│   └── tide_dpop_auth.html         <- DPoP helper page (only used with useDPoP)
+│   └── tide_dpop_auth.html         <- DPoP helper page (only used with dpopConfig)
 ├── tidecloak.json                  <- Your TideCloak adapter config (a {} placeholder until init runs)
 ├── proxy.js                        <- Verifies the token server-side before protected pages load
 ├── jsconfig.json

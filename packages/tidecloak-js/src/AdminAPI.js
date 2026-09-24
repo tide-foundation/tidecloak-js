@@ -34,7 +34,7 @@ class AdminAPI {
    * When DPoP is enabled the issued token is sender-constrained (`typ: DPoP`,
    * `cnf.jkt`), and RFC 9449 says a bound token presented as a plain `Bearer` is
    * invalid - the server answers a bare `401` explaining nothing. So every admin
-   * call goes through `IAMService.secureFetch`, which:
+   * call goes through `IAMService.fetch`, which:
    *
    *   - with a DPoP provider: upgrades `Authorization: Bearer <our token>` to
    *     `Authorization: DPoP <our token>` + a `DPoP:` proof (and handles nonces);
@@ -44,9 +44,9 @@ class AdminAPI {
    * @private
    */
   async _authFetch(url, init) {
-    // Hybrid mode keeps tokens server-side and `secureFetch` refuses to run.
+    // Hybrid mode keeps tokens server-side and `IAMService.fetch` refuses to run.
     if (IAMService.isHybridMode?.()) return fetch(url, init);
-    return IAMService.secureFetch(url, init);
+    return IAMService.fetch(url, init);
   }
 
   /**

@@ -14,9 +14,9 @@
  *     token     -> { "typ": "DPoP", "cnf": { "jkt": "b9Yzg4…" } }
  *     admin     -> `Authorization: Bearer <bound tok>` with NO `DPoP:` proof -> 401
  *
- * The chain: `IAMService.loadConfig` had started NORMALISING an absent `useDPoP`
+ * The chain: `IAMService.loadConfig` had started NORMALISING an absent `dpopConfig`
  * into `{ mode: "strict" }` ("DPoP enabled by default", commit 556d34d, shipped in
- * 0.13.31). `buildInitOptions` forwards `useDPoP` whenever it is truthy, so the
+ * 0.13.31). `buildInitOptions` forwards `dpopConfig` whenever it is truthy, so the
  * invented default reached `TideCloak.init()`, which built a DPoP provider, which
  * appended `dpop_jkt` to the authorization request, which made Keycloak issue a
  * `cnf.jkt`-BOUND token. The console's bootstrap path deliberately runs WITHOUT
@@ -24,10 +24,10 @@
  * presented as a plain `Bearer` is invalid. Bare `401`, naming none of this.
  *
  * The guards in `lib/tidecloak.js` were never wrong and are unchanged:
- *   - a provider is built only `if (this.useDPoP && this.dpopSigningAlgValuesSupported?.length)`
+ *   - a provider is built only `if (this.dpopConfig && this.dpopSigningAlgValuesSupported?.length)`
  *   - `dpop_jkt` is appended only `if (this.#dpopProvider)`
- *   - `this.useDPoP` is set only `if (initOptions.useDPoP)`
- * `useDPoP` simply had no business being there.
+ *   - `this.dpopConfig` is set only `if (initOptions.dpopConfig)`
+ * `dpopConfig` simply had no business being there.
  *
  * THE INVARIANT PINNED HERE: DPoP is OPT-IN. A config that does not ask for DPoP
  * must produce an `init()` that does not mention DPoP - so no provider, so no
@@ -119,8 +119,8 @@ async function freshIAMService(FakeTideCloak) {
 
 /**
  * The tide-admin console's BOOTSTRAP config, verbatim in shape. The console does
- *   `...(isBootstrap ? {} : { useDPoP: { mode: 'auto', alg: 'EdDSA' } })`
- * i.e. bootstrap gets NO `useDPoP` key at all.
+ *   `...(isBootstrap ? {} : { dpopConfig: { mode: 'auto', alg: 'EdDSA' } })`
+ * i.e. bootstrap gets NO `dpopConfig` key at all.
  */
 const BOOTSTRAP_CONFIG = () => ({
   'auth-server-url': 'https://app.test',
@@ -142,27 +142,27 @@ async function initOptionsFor(config) {
 // The regression: bootstrap must get a PLAIN, unbound token
 // ---------------------------------------------------------------------------
 
-test('no `useDPoP` in config -> `init()` receives no `useDPoP` -> no DPoP provider -> no dpop_jkt', async () => {
+test('no `dpopConfig` in config -> `init()` receives no `dpopConfig` -> no DPoP provider -> no dpop_jkt', async () => {
   const { opts } = await initOptionsFor(BOOTSTRAP_CONFIG());
 
   assert.ok(
-    !('useDPoP' in opts),
-    'DPoP is OPT-IN. A config that never mentions `useDPoP` must not grow one: ' +
-      '`TideCloak.init` sets `this.useDPoP` whenever `initOptions.useDPoP` is truthy, ' +
+    !('dpopConfig' in opts),
+    'DPoP is OPT-IN. A config that never mentions `dpopConfig` must not grow one: ' +
+      '`TideCloak.init` sets `this.dpopConfig` whenever `initOptions.dpopConfig` is truthy, ' +
       'builds a DPoP provider off it, and then appends `dpop_jkt` to the authorization ' +
       'request - which makes Keycloak issue a `cnf.jkt`-bound token that the console\'s ' +
       'plain-Bearer bootstrap fetch cannot use (RFC 9449) -> bare 401.'
   );
 });
 
-test('loadConfig does not INVENT a `useDPoP` on the stored config', async () => {
+test('loadConfig does not INVENT a `dpopConfig` on the stored config', async () => {
   // The leak was upstream of `buildInitOptions`: `loadConfig` normalised an absent
-  // `useDPoP` to `{ mode: "strict" }`, and the (correct, conditional) forwarding in
+  // `dpopConfig` to `{ mode: "strict" }`, and the (correct, conditional) forwarding in
   // `buildInitOptions` then dutifully passed the invention along.
   const { IAMService } = await initOptionsFor(BOOTSTRAP_CONFIG());
 
   assert.equal(
-    IAMService.getConfig().useDPoP,
+    IAMService.getConfig().dpopConfig,
     undefined,
     '`loadConfig` must store the caller\'s config as-is, not default DPoP on'
   );
@@ -176,52 +176,52 @@ test('loadConfig does not mutate the caller\'s config object', async () => {
   const callerConfig = BOOTSTRAP_CONFIG();
   await IAMService.initIAM(callerConfig);
 
-  assert.ok(!('useDPoP' in callerConfig), 'the caller\'s object must come back untouched');
+  assert.ok(!('dpopConfig' in callerConfig), 'the caller\'s object must come back untouched');
 });
 
 // ---------------------------------------------------------------------------
-// The other direction: an EXPLICIT `useDPoP` still works, verbatim
+// The other direction: an EXPLICIT `dpopConfig` still works, verbatim
 // ---------------------------------------------------------------------------
 
-test('an explicit `useDPoP` is forwarded VERBATIM - the caller\'s mode is not rewritten', async () => {
+test('an explicit `dpopConfig` is forwarded VERBATIM - the caller\'s mode is not rewritten', async () => {
   // The console's non-bootstrap path asks for `{ mode: 'auto', alg: 'EdDSA' }`.
   // "auto" means "use DPoP only if the realm advertises it". The DPoP-by-default
   // revision also silently upgraded a caller's mode to `strict`, which turns a
   // realm that does not advertise DPoP from a graceful degrade into a hard init
   // failure. The caller's stated mode is the caller's decision.
-  const useDPoP = { mode: 'auto', alg: 'EdDSA' };
-  const { opts } = await initOptionsFor({ ...BOOTSTRAP_CONFIG(), useDPoP });
+  const dpopConfig = { mode: 'auto', alg: 'EdDSA' };
+  const { opts } = await initOptionsFor({ ...BOOTSTRAP_CONFIG(), dpopConfig });
 
-  assert.deepEqual(opts.useDPoP, useDPoP);
+  assert.deepEqual(opts.dpopConfig, dpopConfig);
 });
 
-test('`useDPoP: false` is an explicit opt-out and never reaches init()', async () => {
-  const { opts } = await initOptionsFor({ ...BOOTSTRAP_CONFIG(), useDPoP: false });
+test('`dpopConfig: false` is an explicit opt-out and never reaches init()', async () => {
+  const { opts } = await initOptionsFor({ ...BOOTSTRAP_CONFIG(), dpopConfig: false });
 
-  assert.ok(!('useDPoP' in opts));
+  assert.ok(!('dpopConfig' in opts));
 });
 
 // ---------------------------------------------------------------------------
 // The forwarding seam itself (pure, no client)
 // ---------------------------------------------------------------------------
 
-test('buildInitOptions omits `useDPoP` entirely when the config has none', () => {
+test('buildInitOptions omits `dpopConfig` entirely when the config has none', () => {
   const opts = buildInitOptions({
     config: BOOTSTRAP_CONFIG(),
     setupRequestEnclave: true,
     silentCheckSsoRedirectUri: 'https://app.test/silent-check-sso.html',
   });
 
-  assert.ok(!('useDPoP' in opts));
+  assert.ok(!('dpopConfig' in opts));
 });
 
-test('buildInitOptions omits `useDPoP` when the config is null/undefined', () => {
+test('buildInitOptions omits `dpopConfig` when the config is null/undefined', () => {
   for (const config of [null, undefined]) {
     const opts = buildInitOptions({
       config,
       setupRequestEnclave: true,
       silentCheckSsoRedirectUri: 'https://app.test/silent-check-sso.html',
     });
-    assert.ok(!('useDPoP' in opts), `config=${config}`);
+    assert.ok(!('dpopConfig' in opts), `config=${config}`);
   }
 });

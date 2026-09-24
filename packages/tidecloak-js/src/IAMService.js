@@ -214,7 +214,7 @@ class IAMService {
     // ---------------------------------------------------------------------
     // DPoP is OPT-IN. Do NOT default it on. Ever.
     //
-    // `useDPoP` is passed through to `TideCloak.init()` VERBATIM and only when
+    // `dpopConfig` is passed through to `TideCloak.init()` VERBATIM and only when
     // the caller actually set it (see ./utils/initOptions.js). If it is absent,
     // no DPoP provider is constructed, no `dpop_jkt` is appended to the
     // authorization request, and the realm issues a PLAIN access token.
@@ -227,7 +227,7 @@ class IAMService {
     // for the flow it thought it was in - was rejected with a bare `401`
     // (RFC 9449: a DPoP-bound token presented as a plain Bearer is invalid).
     // The TideCloak admin console's bootstrap path is exactly this: it omits
-    // `useDPoP` on purpose and fetches with a plain Bearer.
+    // `dpopConfig` on purpose and fetches with a plain Bearer.
     //
     // Enabling a sender-constraint the caller did not ask for changes the
     // shape of the issued token. That is never a safe default to invent.
@@ -365,23 +365,24 @@ class IAMService {
 
       this._nativeCallbackPromise = (async () => {
         // Initialize DPoP if configured
-        if (this._config?.useDPoP && !this._dpopProvider) {
+        if (this._config?.dpopConfig && !this._dpopProvider) {
           try {
             const { authServerUrl, realm, clientId } = this._getNativeOIDCConfig();
             const issuerUrl = `${authServerUrl}/realms/${encodeURIComponent(realm)}`;
             const { DPoPSignatureProvider, BrowserSignatureAlgs } = await import('../lib/tidecloak-dpop.js');
-            const alg = this._config.useDPoP.alg || 'ES256';
+            const alg = this._config.dpopConfig.alg || 'ES256';
             this._dpopProvider = new DPoPSignatureProvider({
               issuerUrl: new URL(issuerUrl),
               clientId: clientId,
               serverSupportedAlgorithms: [alg],
               requestedAlgorithm: BrowserSignatureAlgs[alg] || BrowserSignatureAlgs.ES256,
+              strictStorage: this._config.dpopConfig.strictStorage ?? false,
             });
             await this._dpopProvider.init();
             console.debug("[IAMService] DPoP initialized for native mode");
           } catch (err) {
             console.warn("[IAMService] Failed to initialize DPoP:", err);
-            if (this._config.useDPoP.mode === 'strict') {
+            if (this._config.dpopConfig.mode === 'strict') {
               throw err;
             }
             // In 'auto' mode, continue without DPoP
@@ -529,7 +530,7 @@ class IAMService {
       // refreshing its own token underneath.
       //
       // That desync is exactly how a `401` is manufactured: the consumer sends a
-      // stale `Authorization: Bearer <old token>`, `TideCloak.secureFetch` no
+      // stale `Authorization: Bearer <old token>`, `TideCloak.fetch` no
       // longer recognises it as the token it holds, silently falls back to a plain
       // non-DPoP `fetch`, and a `dpop.bound.access.tokens` realm rejects a
       // DPoP-bound token presented as a plain Bearer.
@@ -603,7 +604,7 @@ class IAMService {
     }
 
     // Not awaited: a diagnostic must not slow init.
-    if (pick("useDPoP")) {
+    if (pick("dpopConfig")) {
       const cfg = this._config ?? config;
       void preflightDpopAuthPage({
         origin: window.location.origin,
@@ -1155,7 +1156,7 @@ class IAMService {
    * @example
    * ```js
    * const token = await IAMService.getToken();
-   * const response = await IAMService.secureFetch('https://api.example.com/data', {
+   * const response = await IAMService.fetch('https://api.example.com/data', {
    *   method: 'POST',
    *   headers: {
    *     'Authorization': `Bearer ${token}`,
@@ -1165,21 +1166,21 @@ class IAMService {
    * });
    * ```
    */
-  async secureFetch(url, init) {
+  async fetch(url, init) {
     if (this.isHybridMode()) {
-      throw new Error("secureFetch() not available in hybrid mode - tokens are server-side");
+      throw new Error("IAMService.fetch() not available in hybrid mode - tokens are server-side");
     }
     if (this.isNativeMode()) {
-      return this._nativeSecureFetch(url, init);
+      return this._nativeFetch(url, init);
     }
-    return this.getTideCloakClient().secureFetch(url, init);
+    return this.getTideCloakClient().fetch(url, init);
   }
 
   /**
    * Native mode secure fetch with DPoP support.
    * @private
    */
-  async _nativeSecureFetch(url, init = {}) {
+  async _nativeFetch(url, init = {}) {
     if (!this._dpopProvider) {
       // No DPoP configured, fall through to regular fetch
       return fetch(url, init);

@@ -122,14 +122,14 @@ test("an undefined silentCheckSsoRedirectUri is passed through as undefined", ()
   assert.equal(opts.silentCheckSsoRedirectUri, undefined);
 });
 
-test("useDPoP and checkLoginIframe are still forwarded (long-standing behaviour)", () => {
-  const useDPoP = { mode: "auto", alg: "EdDSA" };
+test("dpopConfig and checkLoginIframe are still forwarded (long-standing behaviour)", () => {
+  const dpopConfig = { mode: "auto", alg: "EdDSA" };
   const opts = buildInitOptions({
-    config: consoleLikeConfig({ useDPoP, checkLoginIframe: false }),
+    config: consoleLikeConfig({ dpopConfig, checkLoginIframe: false }),
     ...OPTS,
   });
 
-  assert.deepEqual(opts.useDPoP, useDPoP);
+  assert.deepEqual(opts.dpopConfig, dpopConfig);
   assert.equal(opts.checkLoginIframe, false);
 });
 
@@ -148,7 +148,7 @@ test("the full option set is exactly the allowlist - nothing leaks through", () 
     config: consoleLikeConfig({
       scope: "openid profile email",
       silentCheckSsoTimeout: 3000,
-      useDPoP: { mode: "auto", alg: "EdDSA" },
+      dpopConfig: { mode: "auto", alg: "EdDSA" },
       somethingElseEntirely: "junk",
       vendorId: "abc123",
     }),
@@ -162,7 +162,7 @@ test("the full option set is exactly the allowlist - nothing leaks through", () 
       "pkceMethod",
       "setupRequestEnclave",
       "silentCheckSsoRedirectUri",
-      "useDPoP",
+      "dpopConfig",
     ].sort()
   );
 });

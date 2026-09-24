@@ -27,18 +27,9 @@
  */
 
 // MODIFIED: Added dependency to external Tide helper libraries.
-import { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew } from "heimdall-tide"
+import { RequestEnclave, ApprovalEnclaveNew } from "heimdall-tide"
 
 const CONTENT_TYPE_JSON = 'application/json'
-
-// Post-logout marker. After an explicit logout there is no session to silently
-// resume, so the immediately-following init() must skip the racy silent
-// check-sso (whose hidden iframe can net::ERR_ABORTED and wedge the app).
-// `logout()` stamps this durable localStorage marker (it survives the logout
-// redirect round-trip); init() consumes it exactly once and, on the `check-sso`
-// path, settles as not-authenticated so the app shows its logged-out state.
-const POST_LOGOUT_MARKER_KEY = 'tide-post-logout'
-const POST_LOGOUT_MARKER_TTL_MS = 60000
 
 /**
  * @typedef {Object} Endpoints
@@ -60,11 +51,9 @@ const POST_LOGOUT_MARKER_TTL_MS = 60000
  * @property {string=} iframeOrigin
  */
 
-import { shouldAttachDpopProof } from './secureFetchPolicy.js'
+export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, PolicySignRequest } from "heimdall-tide"
+export { Tools, Models } from "@tideorg/js"
 
-export { shouldAttachDpopProof } from './secureFetchPolicy.js'
-export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, PolicySignRequest } from "heimdall-tide";
-export { Tools, Models } from "@tideorg/js";
 export default class TideCloak {
   /** @type {Pick<PromiseWithResolvers<boolean>, 'resolve' | 'reject'>[]} */
   #refreshQueue = []
@@ -85,14 +74,6 @@ export default class TideCloak {
   /** @type {import('./tidecloak-dpop.js').DPoPSignatureProvider=} */
   #dpopProvider
 
-  /**
-   * The last non-matching `Authorization: Bearer …` value `secureFetch` warned
-   * about, so a consumer stuck in a stale-token state gets ONE warning per stale
-   * token rather than one per request. See `secureFetch`.
-   * @type {string|null}
-   */
-  #warnedStaleBearer = null
-
   /** @type {TideCloakConfig} config */
   #config
   didInitialize = false
@@ -112,15 +93,6 @@ export default class TideCloak {
   silentCheckSsoRedirectUri
   /** @type {boolean} */
   silentCheckSsoFallback = true
-  /**
-   * Max time (ms) to wait for the hidden silent-check-sso iframe to post back
-   * before treating the attempt as "not authenticated". Guards against the
-   * post-logout wedge where the check-sso (or the Tide enclave it spins up)
-   * never responds and init() would otherwise hang forever. Overridable via
-   * initOptions.silentCheckSsoTimeout.
-   * @type {number}
-   */
-  silentCheckSsoTimeout = 10000
   /** @type {TideCloakPkceMethod} */
   pkceMethod = 'S256'
   enableLogging = false
@@ -141,9 +113,9 @@ export default class TideCloak {
   refreshToken
   /** @type {TideCloakTokenParsed=} */
   refreshTokenParsed
-  /** @type {string | undefined} */
+  /** @type {string=} */
   doken
-  /** @type {TideCloakTokenParsed | undefined} */
+  /** @type {TideCloakTokenParsed=} */
   dokenParsed
   /** @type {any} */
   requestEnclave
@@ -211,8 +183,8 @@ export default class TideCloak {
     if (!globalThis.isSecureContext) {
       this.#logWarn(
         "[TIDECLOAK] TideCloak JS must be used in a 'secure context' to function properly as it relies on browser APIs that are otherwise not available.\n" +
-        'Continuing to run your application insecurely will lead to unexpected behavior and breakage.\n\n' +
-        'For more information see: https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts'
+                'Continuing to run your application insecurely will lead to unexpected behavior and breakage.\n\n' +
+                'For more information see: https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts'
       )
     }
 
@@ -300,10 +272,6 @@ export default class TideCloak {
       this.silentCheckSsoFallback = initOptions.silentCheckSsoFallback
     }
 
-    if (typeof initOptions.silentCheckSsoTimeout === 'number' && initOptions.silentCheckSsoTimeout > 0) {
-      this.silentCheckSsoTimeout = initOptions.silentCheckSsoTimeout
-    }
-
     if (typeof initOptions.pkceMethod !== 'undefined') {
       if (initOptions.pkceMethod !== 'S256' && initOptions.pkceMethod !== false) {
         throw new TypeError(`Invalid value for pkceMethod', expected 'S256' or false but got ${initOptions.pkceMethod}.`)
@@ -328,29 +296,30 @@ export default class TideCloak {
       this.messageReceiveTimeout = initOptions.messageReceiveTimeout
     }
 
-    if (initOptions.useDPoP) {
-      this.useDPoP = initOptions.useDPoP
+    if (initOptions.dpopConfig) {
+      this.dpopConfig = initOptions.dpopConfig
     }
 
     await this.#loadConfig()
 
-    if (this.useDPoP?.mode === 'strict' && (!this.dpopSigningAlgValuesSupported || this.dpopSigningAlgValuesSupported.length === 0)) {
+    if (this.dpopConfig?.mode === 'strict' && (!this.dpopSigningAlgValuesSupported || this.dpopSigningAlgValuesSupported.length === 0)) {
       throw new Error('DPoP is set to strict mode but the server does not advertise DPoP support (dpop_signing_alg_values_supported is missing or empty).')
     }
 
     // Initialize DPoP if enabled and server supports it
-    if (this.useDPoP && this.dpopSigningAlgValuesSupported?.length) {
+    if (this.dpopConfig && this.dpopSigningAlgValuesSupported?.length) {
       const issuerUrl = this.#getIssuerUrl()
       if (!issuerUrl) throw new Error('Cannot initialize DPoP: issuer URL is not available. Ensure authServerUrl and realm are configured, or use OIDC provider mode with a valid issuer.')
       if (!this.clientId) throw new Error('Cannot initialize DPoP: clientId is not configured.')
-
+      
       const { DPoPSignatureProvider, BrowserSignatureAlgs } = await import('./tidecloak-dpop.js')
       this.#dpopProvider = new DPoPSignatureProvider({
         issuerUrl: new URL(issuerUrl),
         clientId: this.clientId,
         serverSupportedAlgorithms: this.dpopSigningAlgValuesSupported,
-        requestedAlgorithm: !this.useDPoP.alg ? BrowserSignatureAlgs.ES256 : BrowserSignatureAlgs[this.useDPoP.alg],
-        getTimeSkew: () => this.timeSkew ?? 0 
+        requestedAlgorithm: !this.dpopConfig.alg ? BrowserSignatureAlgs.ES256 : BrowserSignatureAlgs[this.dpopConfig.alg],
+        strictStorage: this.dpopConfig.strictStorage ?? false,
+        getTimeSkew: () => this.timeSkew ?? 0
       })
       await this.#dpopProvider.init()
       this.#logInfo('[TIDECLOAK] DPoP initialized')
@@ -361,33 +330,11 @@ export default class TideCloak {
 
     this.onReady?.(this.authenticated)
 
-    // Do NOT eagerly open the Tide RequestEnclave during init().
-    //
-    // On a post-logout silent re-auth, the doken returned by the silent
-    // check-sso can be STALE: its session key no longer matches the session the
-    // hidden enclave cached from the previous login. Opening the hidden enclave
-    // here makes it sit "waiting for doken refresh" forever - a refresh that
-    // never comes because no fresh doken exists - which is exactly the
-    // "[ENCLAVE] Received init but waiting for doken refresh" ... hang that
-    // wedges the SPA on "Signing you in..." on the second login. (The enclave
-    // silently WAITS rather than emitting an error, so heimdall's own
-    // requireReloginCallback recovery never fires.)
-    //
-    // Instead we DEFER enclave setup: it is created lazily on the first real
-    // Tide operation (encrypt / decrypt / approve / signDpopApproval - each
-    // calls initRequestEnclave()), by which point a fresh interactive login has
-    // minted a current doken and the enclave can complete its handshake. We
-    // still register the user-gesture listener so the popup fallback can open
-    // once an enclave has actually been created; #ensureRequestEnclaveOpen
-    // no-ops while there is no enclave or no doken.
+    // The RequestEnclave is created lazily on the first Tide operation. Popups
+    // need a user gesture, so reopen it on click.
     if (initOptions.setupRequestEnclave) {
-      if (this.doken) {
-        this.#logInfo('[TIDECLOAK] Deferring Tide RequestEnclave setup until first use (not opening during init to avoid a stale-doken handshake stall on silent re-auth).')
-      }
-
-      // to get around popups requiring user gestures
       document.addEventListener('click', () => {
-        this.#ensureRequestEnclaveOpen();
+        this.#ensureRequestEnclaveOpen()
       })
     }
 
@@ -781,7 +728,7 @@ export default class TideCloak {
    */
   async #setupEndpoints () {
     // Fetch OIDC metadata to get DPoP supported algorithms (only if DPoP is enabled)
-    if (this.useDPoP) {
+    if (this.dpopConfig) {
       const issuerUrl = this.#getIssuerUrl()
       if (!issuerUrl) {
         this.#logWarn('[TIDECLOAK] Cannot fetch OIDC metadata: issuer URL is not available')
@@ -875,15 +822,6 @@ export default class TideCloak {
   }
 
   /**
-   * @returns {string=}
-   */
-  #getIssuerUrl () {
-    if (this.issuer) return this.issuer
-    const realmUrl = this.#getRealmUrl()
-    return realmUrl || undefined
-  }
-
-  /**
    * @returns {Promise<void>}
    */
   async #check3pCookiesSupported () {
@@ -913,9 +851,9 @@ export default class TideCloak {
         } else if (event.data === 'unsupported') {
           this.#logWarn(
             '[TIDECLOAK] Your browser is blocking access to 3rd-party cookies, this means:\n\n' +
-            ' - It is not possible to retrieve tokens without redirecting to the TideCloak server (a.k.a. no support for silent authentication).\n' +
-            ' - It is not possible to automatically detect changes to the session status (such as the user logging out in another tab).\n\n' +
-            'For more information see: https://www.keycloak.org/securing-apps/javascript-adapter#_modern_browsers'
+                        ' - It is not possible to retrieve tokens without redirecting to the TideCloak server (a.k.a. no support for silent authentication).\n' +
+                        ' - It is not possible to automatically detect changes to the session status (such as the user logging out in another tab).\n\n' +
+                        'For more information see: https://www.keycloak.org/securing-apps/javascript-adapter#_modern_browsers'
           )
 
           this.#loginIframe.enable = false
@@ -969,22 +907,8 @@ export default class TideCloak {
     }
 
     const onLoad = async () => {
-      // A fresh marker means we just came back from an explicit logout. The
-      // marker is here to skip the silent check-sso, which is racy (its hidden
-      // iframe can net::ERR_ABORTED and wedge the app) and pointless: there is
-      // no session left to resume. So `check-sso` settles as not-authenticated
-      // and the app renders its logged-out state. `login-required` still means
-      // what it says, so that path is unchanged. Consumed here either way, so
-      // the marker stays one-shot.
-      const afterLogout = this.#consumePostLogoutMarker()
-
       switch (initOptions.onLoad) {
         case 'check-sso':
-          if (afterLogout) {
-            this.#logInfo('[TIDE-POSTLOGOUT] marker honored in init(); settling as not-authenticated, bypassing silent check-sso')
-            return
-          }
-
           if (this.#loginIframe.enable) {
             await this.#setupCheckLoginIframe()
             const unchanged = await this.#checkLoginIframe()
@@ -1126,38 +1050,14 @@ export default class TideCloak {
    */
   async #checkSsoSilently () {
     const iframe = document.createElement('iframe')
+    const src = await this.createLoginUrl({ prompt: 'none', redirectUri: this.silentCheckSsoRedirectUri })
+    iframe.setAttribute('src', src)
+    iframe.setAttribute('sandbox', 'allow-storage-access-by-user-activation allow-scripts allow-same-origin')
+    iframe.setAttribute('title', 'keycloak-silent-check-sso')
+    iframe.style.display = 'none'
+    document.body.appendChild(iframe)
 
-    return await new Promise((resolve) => {
-      let settled = false
-      /** @type {ReturnType<typeof setTimeout>=} */
-      let timer
-      /** @type {ReturnType<typeof setTimeout>=} */
-      let loadGraceTimer
-
-      const cleanup = () => {
-        if (timer) clearTimeout(timer)
-        if (loadGraceTimer) clearTimeout(loadGraceTimer)
-        window.removeEventListener('message', messageCallback)
-        iframe.removeEventListener('error', onIframeError)
-        iframe.removeEventListener('load', onIframeLoad)
-        if (iframe.parentNode) document.body.removeChild(iframe)
-      }
-
-      // Every NON-authenticating terminal outcome funnels through here exactly
-      // once: onerror / onabort / load-without-message / timeout /
-      // createLoginUrl-failure. Resolving (never rejecting) as NOT-authenticated
-      // lets init() complete cleanly so the app falls through to interactive
-      // login. This is what makes the silent path structurally un-hangable: no
-      // matter which DOM event (or none) the aborted iframe produces, one of
-      // these fires. `via` is logged so QA can prove which path was taken.
-      const settleNotAuthenticated = (via) => {
-        if (settled) return
-        settled = true
-        this.#logWarn('[TIDE-SILENTSSO] terminal=' + via + ' -> not-authenticated (authenticated=' + this.authenticated + ')')
-        cleanup()
-        resolve()
-      }
-
+    return await new Promise((resolve, reject) => {
       /**
        * @param {MessageEvent} event
        */
@@ -1165,64 +1065,21 @@ export default class TideCloak {
         if (event.origin !== window.location.origin || iframe.contentWindow !== event.source) {
           return
         }
-        if (settled) return
-        settled = true
-        cleanup()
+
+        const oauth = this.#parseCallback(event.data)
 
         try {
-          const oauth = this.#parseCallback(event.data)
           await this.#processCallback(oauth)
-          this.#logInfo('[TIDE-SILENTSSO] terminal=message -> processed (authenticated=' + this.authenticated + ')')
           resolve()
         } catch (error) {
-          // A failed silent callback must NOT reject: rejecting would surface as
-          // an init() error / AuthWall wall instead of a clean fall-through to
-          // interactive login. Resolve as not-authenticated.
-          this.#logWarn('[TIDE-SILENTSSO] terminal=message-error -> not-authenticated: ' + (error instanceof Error ? error.message : String(error)))
-          resolve()
+          reject(error)
         }
+
+        document.body.removeChild(iframe)
+        window.removeEventListener('message', messageCallback)
       }
 
-      const onIframeError = () => settleNotAuthenticated('onerror')
-
-      const onIframeLoad = () => {
-        // The iframe finished navigating. On the happy path it landed on the
-        // real silent-check-sso.html and `messageCallback` settles first. If it
-        // loaded an error page, or a cross-origin KC page that never posts, or
-        // an aborted navigation that still fired `load`, no message arrives - so
-        // arm a short grace timer that settles NOT-authenticated well before the
-        // outer ceiling.
-        if (settled) return
-        const grace = Math.max(250, Math.min(2000, Math.floor(this.silentCheckSsoTimeout / 4)))
-        if (loadGraceTimer) clearTimeout(loadGraceTimer)
-        loadGraceTimer = setTimeout(() => settleNotAuthenticated('load-no-message'), grace)
-      }
-
-      // Wire ALL listeners before the navigation starts so no immediate event is
-      // missed. `error` covers the browsers that surface a failed iframe
-      // navigation as an error/abort event; `load` + the grace timer cover the
-      // ones that fire load on an error document; the outer `timer` covers
-      // net::ERR_ABORTED that produces NO DOM event at all.
       window.addEventListener('message', messageCallback)
-      iframe.addEventListener('error', onIframeError)
-      iframe.addEventListener('load', onIframeLoad)
-
-      // Hard ceiling. Created synchronously (NOT after an awaited createLoginUrl)
-      // so it is always armed regardless of what the iframe navigation does.
-      timer = setTimeout(() => settleNotAuthenticated('timeout'), this.silentCheckSsoTimeout)
-
-      // Build the URL and start the navigation. Failure here must still settle
-      // (not reject) so init() stays deterministic.
-      this.createLoginUrl({ prompt: 'none', redirectUri: this.silentCheckSsoRedirectUri })
-        .then((src) => {
-          if (settled) return
-          iframe.setAttribute('src', src)
-          iframe.setAttribute('sandbox', 'allow-storage-access-by-user-activation allow-scripts allow-same-origin')
-          iframe.setAttribute('title', 'keycloak-silent-check-sso')
-          iframe.style.display = 'none'
-          document.body.appendChild(iframe)
-        })
-        .catch(() => settleNotAuthenticated('createLoginUrl-error'))
     })
   };
 
@@ -1407,18 +1264,6 @@ export default class TideCloak {
   }
 
   /**
-   * Ensure the access token is valid, refreshing if needed.
-   * @returns {Promise<void>}
-   */
-  async ensureTokenReady () {
-    if (!this.tokenParsed) return
-
-    if (this.isTokenExpired()) {
-      await this.updateToken(-1)
-    }
-  }
-
-  /**
    * @param {TideCloakLoginOptions} [options]
    * @returns {Promise<string>}
    */
@@ -1512,8 +1357,7 @@ export default class TideCloak {
     }
 
     if (this.#dpopProvider) {
-      const thumbprint = await this.#dpopProvider.generateJWKThumbprint();
-      params.append('dpop_jkt', thumbprint);
+      params.append('dpop_jkt', await this.#dpopProvider.generateJWKThumbprint())
     }
 
     this.#callbackStorage.add(callbackState)
@@ -1527,43 +1371,7 @@ export default class TideCloak {
    */
   logout = async (options) => {
     await this.#dpopProvider?.flush()
-    // Stamp the post-logout marker so the next init() skips the racy silent
-    // check-sso instead of trying to resume a session we just ended. See
-    // POST_LOGOUT_MARKER_KEY.
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem(POST_LOGOUT_MARKER_KEY, Date.now().toString())
-      }
-    } catch (e) {
-      this.#logWarn('[TIDE-POSTLOGOUT] could not set marker: ' + (e instanceof Error ? e.message : String(e)))
-    }
     return this.#adapter.logout(options)
-  }
-
-  /**
-   * Read + clear the post-logout marker. Returns true only when a marker was
-   * present AND fresh (set within POST_LOGOUT_MARKER_TTL_MS). Always clears the
-   * marker when present, so it fires at most once and a stale marker (a tab
-   * left open across a much later load) is discarded rather than suppressing
-   * an SSO check that should have run.
-   * @returns {boolean}
-   */
-  #consumePostLogoutMarker () {
-    try {
-      if (typeof window === 'undefined' || !window.localStorage) return false
-      const raw = window.localStorage.getItem(POST_LOGOUT_MARKER_KEY)
-      if (!raw) return false
-      window.localStorage.removeItem(POST_LOGOUT_MARKER_KEY)
-      const ts = Number(raw)
-      const fresh = Number.isFinite(ts) && (Date.now() - ts) < POST_LOGOUT_MARKER_TTL_MS
-      if (!fresh) {
-        this.#logWarn('[TIDE-POSTLOGOUT] marker present but stale (age > ' + POST_LOGOUT_MARKER_TTL_MS + 'ms); ignoring')
-      }
-      return fresh
-    } catch (e) {
-      this.#logWarn('[TIDE-POSTLOGOUT] could not read marker: ' + (e instanceof Error ? e.message : String(e)))
-      return false
-    }
   }
 
   /**
@@ -1782,64 +1590,35 @@ export default class TideCloak {
     return await promise
   }
 
-  clearToken = () => {
+  clearToken = async () => {
     if (this.token) {
+      await this.#dpopProvider?.flush()
+      await this.#dpopProvider?.init()
       this.#setToken()
       this.onAuthLogout?.()
       if (this.loginRequired) {
-        this.login()
+        await this.login()
       }
     }
   }
 
-  secureFetch = async (url, init = {}) => {
+  fetch = async (url, init = {}) => {
     const dpopProvider = this.#dpopProvider
     if (dpopProvider && this.authenticated && this.token) {
       const existingAuth = new Headers(init.headers).get('Authorization')
-      const isOurBearerToken = shouldAttachDpopProof(existingAuth, this.token)
+      const isOurBearerToken = existingAuth === `Bearer ${this.token}`
 
       if (!isOurBearerToken) {
-        // Quick escape - didn't put this check in first if statement as it's more expensive than other checks.
-        //
-        // BEHAVIOUR IS UNCHANGED: a request carrying some OTHER Bearer token is a
-        // legitimate pass-through (a third-party API), so it goes out as a plain
-        // fetch with no DPoP proof.
-        //
-        // But make it OBSERVABLE. When the caller hands us a Bearer token that is
-        // almost-but-not-quite ours - i.e. a token this client issued them earlier
-        // and that has since gone stale because they cached it and missed a refresh
-        // - this silent downgrade is fatal and mute: a `dpop.bound.access.tokens`
-        // realm rejects a DPoP-bound token presented as a plain Bearer with a bare
-        // `401`, and nothing anywhere explains why. One warning per distinct stale
-        // token (not per request), so a wedged consumer gets a clear signal instead
-        // of a scrolling wall.
-        if (
-          typeof existingAuth === 'string' &&
-          existingAuth.startsWith('Bearer ') &&
-          existingAuth !== this.#warnedStaleBearer
-        ) {
-          this.#warnedStaleBearer = existingAuth
-          console.warn(
-            '[TIDECLOAK] secureFetch: the Authorization header carries a Bearer token that is NOT the ' +
-            'token this client currently holds. Sending it as a PLAIN fetch with no DPoP proof. If that ' +
-            'token came from this SDK it has gone STALE (the caller cached a copy and missed a refresh) ' +
-            'and a DPoP-bound realm will answer 401. Read the token from the SDK at call time ' +
-            '(IAMService.getToken()) instead of holding a copy, or omit the Authorization header entirely ' +
-            'and let secureFetch attach it.'
-          )
-        }
-        return fetch(url, init)
+        // Quick escape - didn't put this check in first if statement as it's more expensive than other checks
+        return fetch(url, init);
       }
 
-      const urlString = url instanceof URL ? url.href : url.toString()
-      const origin = new URL(urlString).origin
+      const requestUrl = new URL(String(url), document.baseURI)
+      const urlString = requestUrl.href
+      const origin = requestUrl.origin
       const method = init.method ?? 'GET'
       const resourceNonce = dpopProvider.getResourceServerNonce(origin)
-      const proof = await dpopProvider.generateDPoPProof(urlString, method, this.token, resourceNonce)
-      const headers = new Headers(init.headers)
-      headers.set('Authorization', `DPoP ${this.token}`)
-      headers.set('DPoP', proof)
-      const resp = await fetch(url, { ...init, headers })
+      const resp = await this.#fetchWithDPoPProof(url, init, urlString, method, resourceNonce)
 
       // Check for new nonce in response
       const newNonce = resp.headers.get('DPoP-Nonce')
@@ -1852,11 +1631,7 @@ export default class TideCloak {
       if (resp.status === 401 && newNonce) {
         const wwwAuth = resp.headers.get('WWW-Authenticate') ?? ''
         if (wwwAuth.includes('DPoP') && wwwAuth.includes('error="use_dpop_nonce"')) {
-          const retryProof = await dpopProvider.generateDPoPProof(urlString, method, this.token, newNonce)
-          const retryHeaders = new Headers(init.headers)
-          retryHeaders.set('Authorization', `DPoP ${this.token}`)
-          retryHeaders.set('DPoP', retryProof)
-          const retryResp = await fetch(url, { ...init, headers: retryHeaders })
+          const retryResp = await this.#fetchWithDPoPProof(url, init, urlString, method, newNonce)
           // Capture nonce from retry response for future requests
           const retryNonce = retryResp.headers.get('DPoP-Nonce')
           if (retryNonce) {
@@ -1867,41 +1642,11 @@ export default class TideCloak {
       }
       return resp
     } else {
-      // SAFETY INVARIANT: if a DPoP provider exists, this client's tokens are
-      // sender-constrained (`cnf.jkt`), and a DPoP-bound token presented as a
-      // plain `Bearer` is INVALID per RFC 9449 - the resource server answers a
-      // bare `401` that names none of this. The silent fallback below is what
-      // hid exactly that bug. So when we are about to drop out of the DPoP path
-      // while STILL carrying an Authorization header, say so loudly - once per
-      // distinct header value, so a wedged consumer gets a signal rather than a
-      // scrolling wall.
-      if (dpopProvider) {
-        const existingAuth = new Headers(init.headers).get('Authorization')
-        if (
-          typeof existingAuth === 'string' &&
-          existingAuth.startsWith('Bearer ') &&
-          existingAuth !== this.#warnedStaleBearer
-        ) {
-          this.#warnedStaleBearer = existingAuth
-          console.error(
-            '[TIDECLOAK] secureFetch: DPoP is ENABLED on this client, but the request is going out as a ' +
-            'plain `Authorization: Bearer …` with NO DPoP proof' +
-            (!this.authenticated
-              ? ' (the client is not authenticated yet)'
-              : !this.token
-                ? ' (the client holds no access token yet)'
-                : '') +
-            '. If that token is DPoP-bound (`cnf.jkt`), the server will reject it with a bare 401. ' +
-            'Wait for the SDK to be authenticated and read the token from it at call time, or turn DPoP ' +
-            'off for this flow (omit `useDPoP` from the config).'
-          )
-        }
-      }
-      return fetch(url, init)
+      return fetch(url, init);
     }
   }
 
-  /**
+    /**
    * @typedef {Object} AccessTokenResponse The successful token response from the authorization server, based on the {@link https://datatracker.ietf.org/doc/html/rfc6749#section-5.1 OAuth 2.0 Authorization Framework specification}.
    * @property {string} access_token The access token issued by the authorization server.
    * @property {string} token_type The type of the token issued by the authorization server.
@@ -1933,37 +1678,112 @@ export default class TideCloak {
       body.append('code_verifier', pkceCodeVerifier)
     }
 
-    /** @type {Record<string, string>} */
-    const headers = {}
-
     if (this.#dpopProvider) {
-      const nonce = await this.#dpopProvider.getAuthServerNonce()
-      headers['DPoP'] = await this.#dpopProvider.generateDPoPProof(url, 'POST', undefined, nonce)
-    }
-
-    try {
+      return await this.#fetchDPoPToken(url, body)
+    } else {
       return await fetchJSON(url, {
         method: 'POST',
         credentials: 'include',
-        headers,
         body
       })
-    } catch (error) {
-      // Handle DPoP nonce retry for token endpoint
-      if (this.#dpopProvider && error instanceof NetworkError) {
-        const newNonce = error.response.headers.get('DPoP-Nonce')
-        if (newNonce) {
-          await this.#dpopProvider.updateAuthServerNonce(newNonce)
-          headers['DPoP'] = await this.#dpopProvider.generateDPoPProof(url, 'POST', undefined, newNonce)
-          return await fetchJSON(url, {
-            method: 'POST',
-            credentials: 'include',
-            headers,
-            body
-          })
+    }
+  }
+
+  /**
+   * Validate token_type matches DPoP expectations.
+   * Per RFC 9449 Section 5:
+   * - If we sent DPoP proof but got Bearer, the token isn't bound (disable DPoP or error in strict mode)
+   * @param {AccessTokenResponse} tokenResponse
+   * @returns {AccessTokenResponse} The validated response
+   * @throws {Error} If strict mode and token_type doesn't match expectations
+   */
+  #validateDPoPTokenType (tokenResponse) {
+    const tokenType = tokenResponse.token_type?.toLowerCase()
+    const hasDPoPProvider = !!this.#dpopProvider
+
+    if (hasDPoPProvider && tokenType !== 'dpop') {
+      // We sent a DPoP proof but server returned non-DPoP token
+      if (this.dpopConfig?.mode === 'strict') {
+        throw new Error('DPoP strict mode enabled but server returned non-DPoP token (token_type: ' + tokenResponse.token_type + ')')
+      }
+      // Auto mode: disable DPoP and fall back to Bearer
+      this.#logWarn('[TIDECLOAK] Server returned token_type "' + tokenResponse.token_type + '" instead of "DPoP". Disabling DPoP for this session.')
+      this.#dpopProvider = undefined
+    }
+
+    return tokenResponse
+  }
+
+  /**
+   * @param {RequestInfo | URL} url
+   * @param {RequestInit} init
+   * @param {string} urlString
+   * @param {string} method
+   * @param {string} [nonce]
+   * @returns {Promise<Response>}
+   */
+  async #fetchWithDPoPProof (url, init, urlString, method, nonce) {
+    const dpopProvider = this.#dpopProvider
+    if (!dpopProvider) {
+      throw new Error('DPoP provider not initialized')
+    }
+
+    const proof = await dpopProvider.generateDPoPProof(urlString, method, this.token, nonce)
+    const headers = new Headers(init.headers)
+    headers.set('Authorization', `DPoP ${this.token}`)
+    headers.set('DPoP', proof)
+    return fetch(url, { ...init, headers })
+  }
+
+  /**
+   * Fetch tokens from the authorization server with DPoP proof attached.
+   * Handles nonce requirements per RFC 9449 Section 8.
+   * @param {string} url
+   * @param {URLSearchParams} body
+   * @returns {Promise<AccessTokenResponse>}
+   */
+  async #fetchDPoPToken (url, body) {
+    const dpopProvider = this.#dpopProvider
+    if (!dpopProvider) {
+      throw new Error('DPoP provider not initialized')
+    }
+
+    const fetchToken = async (nonce) => {
+      const proof = await dpopProvider.generateDPoPProof(url, 'POST', undefined, nonce)
+      const headers = new Headers()
+      headers.set('DPoP', proof)
+      headers.set('Accept', CONTENT_TYPE_JSON)
+      const resp = await fetchWithErrorHandling(url, {
+        method: 'POST',
+        credentials: 'include',
+        body,
+        headers
+      })
+      // RFC 9449 Section 8.2: new nonce values may be returned in successful responses
+      const newNonce = resp.headers.get('DPoP-Nonce')
+      if (newNonce) {
+        await dpopProvider.updateAuthServerNonce(newNonce)
+      }
+      const tokenResponse = await resp.json()
+      return this.#validateDPoPTokenType(tokenResponse)
+    }
+
+    try {
+      const nonce = await dpopProvider.getAuthServerNonce()
+      return await fetchToken(nonce)
+    } catch (ex) {
+      // Check if this is a DPoP nonce error per RFC 9449 Section 8
+      if (ex instanceof NetworkError && ex.response.status === 400) {
+        const dpopNonce = ex.response.headers.get('DPoP-Nonce')
+        if (dpopNonce) {
+          const errorBody = await ex.response.json().catch(() => ({}))
+          if (errorBody.error === 'use_dpop_nonce') {
+            await dpopProvider.updateAuthServerNonce(dpopNonce)
+            return await fetchToken(dpopNonce)
+          }
         }
       }
-      throw error
+      throw ex
     }
   }
 
@@ -1981,55 +1801,39 @@ export default class TideCloak {
       ['client_id', clientId]
     ])
 
-    /** @type {Record<string, string>} */
-    const headers = {}
-
     if (this.#dpopProvider) {
-      const nonce = await this.#dpopProvider.getAuthServerNonce()
-      headers['DPoP'] = await this.#dpopProvider.generateDPoPProof(url, 'POST', undefined, nonce)
-    }
-
-    try {
+      return await this.#fetchDPoPToken(url, body)
+    } else {
       return await fetchJSON(url, {
         method: 'POST',
         credentials: 'include',
-        headers,
         body
       })
-    } catch (error) {
-      // Handle DPoP nonce retry for token endpoint
-      if (this.#dpopProvider && error instanceof NetworkError) {
-        const newNonce = error.response.headers.get('DPoP-Nonce')
-        if (newNonce) {
-          await this.#dpopProvider.updateAuthServerNonce(newNonce)
-          headers['DPoP'] = await this.#dpopProvider.generateDPoPProof(url, 'POST', undefined, newNonce)
-          return await fetchJSON(url, {
-            method: 'POST',
-            credentials: 'include',
-            headers,
-            body
-          })
-        }
-      }
-      throw error
     }
   }
 
   /**
-   * Make sure enclave is up - attach this function to a user gesture.
+   * Ensure the access token is valid, refreshing if needed.
+   * @returns {Promise<void>}
    */
-  #ensureRequestEnclaveOpen() {
-    // Never (re)open the enclave without a doken. Post-logout the doken is
-    // flushed; reopening a dokenless hidden enclave wedges it with
-    // "Expecting doken in request".
-    if(!this.requestEnclave || !this.doken) return;
-    this.requestEnclave.checkEnclaveOpen();
+  async ensureTokenReady () {
+    if (!this.tokenParsed) return
+
+    if (this.isTokenExpired()) {
+      await this.updateToken(-1)
+    }
   }
 
   /**
-   * Trigger a full interactive login redirect. Used as the recovery leg when a
-   * silent flow cannot proceed (e.g. the enclave asks for a doken refresh but
-   * the doken was flushed at logout). Navigates the whole page to Keycloak.
+   * Make sure the enclave is open. Attached to a user gesture so popups are allowed.
+   */
+  #ensureRequestEnclaveOpen () {
+    if (!this.requestEnclave || !this.doken) return
+    this.requestEnclave.checkEnclaveOpen()
+  }
+
+  /**
+   * Full interactive login, used when an enclave needs a doken we don't have.
    * @returns {Promise<void>}
    */
   async #reloginInteractively () {
@@ -2041,17 +1845,12 @@ export default class TideCloak {
   }
 
   /**
-   * Provide the current doken to the enclave, or fall through to interactive
-   * login when there is none (post-logout / flushed state). Throwing a bare
-   * error here would leave the enclave (and whatever awaits its doken-refresh
-   * completion) hanging; instead we redirect to a full interactive login, which
-   * recovers cleanly.
    * @returns {Promise<string>}
    */
   async #provideDokenOrRelogin () {
     await this.ensureTokenReady()
     if (!this.doken) {
-      this.#logWarn('[TIDECLOAK] Enclave requested a doken refresh but no doken is present (post-logout). Falling through to interactive login.')
+      this.#logWarn('[TIDECLOAK] Enclave requested a doken refresh but no doken is present. Falling through to interactive login.')
       await this.#reloginInteractively()
       throw new Error('[TIDECLOAK] No doken found - redirecting to interactive login')
     }
@@ -2071,7 +1870,7 @@ export default class TideCloak {
         signed_client_origin: this.#config['clientOriginAuth'],
         vendorId: this.#config.vendorId,
         voucherURL: this.#getVoucherUrl(),
-        isRunningLocal: new URL(this.#getVoucherUrl()).hostname === "localhost"
+        isRunningLocal: new URL(this.#getVoucherUrl()).hostname === 'localhost'
       }).init({
         doken: this.doken,
         dokenRefreshCallback: async () => this.#provideDokenOrRelogin(),
@@ -2117,10 +1916,10 @@ export default class TideCloak {
   /**
    * Role-based encryption via Tide RequestEnclave.
    * @param {{ data: string | Uint8Array, tags: string[] }[]} toEncrypt
-   * @param {Uint8Array} decryption_policy If you'd like the data to be protected by a decryption policy
+   * @param {Uint8Array | null} [decryption_policy] If you'd like the data to be protected by a decryption policy
    * @returns {Promise<(string | Uint8Array)[]>}
    */
-  async encrypt (toEncrypt, decryption_policy=null) {
+  async encrypt (toEncrypt, decryption_policy = null) {
     await this.ensureTokenReady()
     if (!Array.isArray(toEncrypt)) {
       throw new Error('Pass array as parameter')
@@ -2131,7 +1930,7 @@ export default class TideCloak {
 
     const dataToSend = toEncrypt.map((e) => {
       if (!isObject(e)) throw new Error('All entries must be an object to encrypt')
-      for (const property of ['data', 'tags']) {
+      for (const property of /** @type {const} */ (['data', 'tags'])) {
         if (!e[property]) {
           throw new Error(`The configuration object is missing the required '${property}' property.`)
         }
@@ -2143,8 +1942,8 @@ export default class TideCloak {
 
       for (const tag of e.tags) {
         if (typeof tag !== 'string') throw new Error('tags must be provided as an array of strings')
-        if(!decryption_policy){
-          // if using standard encryption, check for doken includes default self encrypt roles
+        if (!decryption_policy) {
+          // Without a policy, the user needs the default self-encrypt role for the tag.
           const tagAccess = this.hasRealmRole(`_tide_${tag}.selfencrypt`)
           if (!tagAccess) throw new Error(`User has not been given any access to '${tag}'`)
         }
@@ -2153,23 +1952,22 @@ export default class TideCloak {
       return {
         data: typeof e.data === 'string' ? StringToUint8Array(e.data) : e.data,
         tags: e.tags,
-        isRaw: typeof e.data === 'string' ? false : true
+        isRaw: typeof e.data !== 'string'
       }
     })
 
     this.initRequestEnclave()
 
     const encrypted = await this.requestEnclave.encrypt(dataToSend, decryption_policy)
-    return encrypted.map((cipher, i) => (dataToSend[i].isRaw ? cipher : bytesToBase64(cipher)))
+    return encrypted.map((/** @type {Uint8Array} */ cipher, /** @type {number} */ i) => (dataToSend[i].isRaw ? cipher : bytesToBase64(cipher)))
   }
 
-  
   /**
-   * Begin the process of drafting a encryption request
-   * @param {{ data: string | Uint8Array, tags: string[] }[]} toEncrypt
-   * @returns 
+   * Begin drafting an encryption request.
+   * @param {{ data: Uint8Array, tags: string[] }[]} toEncrypt
+   * @returns {Promise<Uint8Array>}
    */
-  async draftEncryption(toEncrypt) {
+  async draftEncryption (toEncrypt) {
     await this.ensureTokenReady()
     if (!Array.isArray(toEncrypt)) {
       throw new Error('Pass array as parameter')
@@ -2180,7 +1978,7 @@ export default class TideCloak {
 
     const dataToSend = toEncrypt.map((e) => {
       if (!isObject(e)) throw new Error('All entries must be an object to encrypt')
-      for (const property of ['data', 'tags']) {
+      for (const property of /** @type {const} */ (['data', 'tags'])) {
         if (!e[property]) {
           throw new Error(`The configuration object is missing the required '${property}' property.`)
         }
@@ -2196,33 +1994,32 @@ export default class TideCloak {
 
       return {
         data: e.data,
-        tags: e.tags,
+        tags: e.tags
       }
     })
 
     this.initRequestEnclave()
-    return await this.requestEnclave.draftEncryption(dataToSend);
+    return await this.requestEnclave.draftEncryption(dataToSend)
   }
 
   /**
-   * Commit a encryption request with a specified policy
-   * @param {Uint8Array} request 
-   * @param {Uint8Array} decryption_policy 
+   * Commit an encryption request with a specified policy.
+   * @param {Uint8Array} request
+   * @param {Uint8Array} decryption_policy
    * @returns {Promise<Uint8Array[]>}
    */
-  async commitEncryption(request, decryption_policy) {
-    // Commit the encryption request and return data similar to encrypt()
+  async commitEncryption (request, decryption_policy) {
     await this.ensureTokenReady()
     this.initRequestEnclave()
-    return await this.requestEnclave.commitEncryption(request, decryption_policy);
+    return await this.requestEnclave.commitEncryption(request, decryption_policy)
   }
 
   /**
-   * Begin the process of drafting a encryption request
-   * @param {{ encrypted: string | Uint8Array, tags: string[] }[]} toDecrypt
-   * @returns {Uint8Array}
+   * Begin drafting a decryption request.
+   * @param {{ encrypted: Uint8Array, tags: string[] }[]} toDecrypt
+   * @returns {Promise<Uint8Array>}
    */
-  async draftDecryption(toDecrypt) {
+  async draftDecryption (toDecrypt) {
     await this.ensureTokenReady()
     if (!Array.isArray(toDecrypt)) {
       throw new Error('Pass array as parameter')
@@ -2233,7 +2030,7 @@ export default class TideCloak {
 
     const dataToSend = toDecrypt.map((e) => {
       if (!isObject(e)) throw new Error('All entries must be an object to decrypt')
-      for (const property of ['encrypted', 'tags']) {
+      for (const property of /** @type {const} */ (['encrypted', 'tags'])) {
         if (!e[property]) {
           throw new Error(`The configuration object is missing the required '${property}' property.`)
         }
@@ -2254,21 +2051,19 @@ export default class TideCloak {
     })
 
     this.initRequestEnclave()
-
-    const decryptionRequest = await this.requestEnclave.draftDecryption(dataToSend)
-    return decryptionRequest;
+    return await this.requestEnclave.draftDecryption(dataToSend)
   }
+
   /**
-   * Commit a decryption request with a specified policy
-   * @param {Uint8Array} request 
-   * @param {Uint8Array} decryption_policy 
+   * Commit a decryption request with a specified policy.
+   * @param {Uint8Array} request
+   * @param {Uint8Array} decryption_policy
    * @returns {Promise<Uint8Array[]>}
    */
-  async commitDecryption(request, decryption_policy) {
-    // Commit the encryption request and return data similar to encrypt()
+  async commitDecryption (request, decryption_policy) {
     await this.ensureTokenReady()
     this.initRequestEnclave()
-    return await this.requestEnclave.commitDecryption(request, decryption_policy);
+    return await this.requestEnclave.commitDecryption(request, decryption_policy)
   }
 
   /**
@@ -2294,24 +2089,24 @@ export default class TideCloak {
   }
 
   /**
-   * Execute a Tide Sign Request
+   * Execute a Tide Sign Request.
    * @param {Uint8Array} request
    * @param {boolean} [waitForAll=false]
-   * @returns {Promise<Array>} Array of signatures
+   * @returns {Promise<any[]>} Array of signatures
    */
   async executeSignRequest (request, waitForAll = false) {
-    await this.ensureTokenReady();
-    this.initRequestEnclave();
-    return this.requestEnclave.execute(request, waitForAll);
+    await this.ensureTokenReady()
+    this.initRequestEnclave()
+    return this.requestEnclave.execute(request, waitForAll)
   }
 
   /**
    * Role-based decryption via Tide RequestEnclave.
    * @param {{ encrypted: string | Uint8Array, tags: string[] }[]} toDecrypt
-   * @param {Uint8Array} decryption_policy If the data is protected by a decryption policy
+   * @param {Uint8Array | null} [decryption_policy] If the data is protected by a decryption policy
    * @returns {Promise<(string | Uint8Array)[]>}
    */
-  async decrypt (toDecrypt, decryption_policy=null) {
+  async decrypt (toDecrypt, decryption_policy = null) {
     await this.ensureTokenReady()
     if (!Array.isArray(toDecrypt)) {
       throw new Error('Pass array as parameter')
@@ -2322,7 +2117,7 @@ export default class TideCloak {
 
     const dataToSend = toDecrypt.map((e) => {
       if (!isObject(e)) throw new Error('All entries must be an object to decrypt')
-      for (const property of ['encrypted', 'tags']) {
+      for (const property of /** @type {const} */ (['encrypted', 'tags'])) {
         if (!e[property]) {
           throw new Error(`The configuration object is missing the required '${property}' property.`)
         }
@@ -2334,25 +2129,24 @@ export default class TideCloak {
 
       for (const tag of e.tags) {
         if (typeof tag !== 'string') throw new Error('tags must be provided as an array of strings')
-        if(!decryption_policy){
-          // if using standard decryption, check for doken includes default self decrypt roles
+        if (!decryption_policy) {
+          // Without a policy, the user needs the default self-decrypt role for the tag.
           const tagAccess = this.hasRealmRole(`_tide_${tag}.selfdecrypt`)
           if (!tagAccess) throw new Error(`User has not been given any access to '${tag}'`)
         }
-        
       }
 
       return {
         encrypted: typeof e.encrypted === 'string' ? base64ToBytes(e.encrypted) : e.encrypted,
         tags: e.tags,
-        isRaw: typeof e.encrypted === 'string' ? false : true
+        isRaw: typeof e.encrypted !== 'string'
       }
     })
 
     this.initRequestEnclave()
 
     const decrypted = await this.requestEnclave.decrypt(dataToSend, decryption_policy)
-    return decrypted.map((d, i) => (dataToSend[i].isRaw ? d : StringFromUint8Array(d)))
+    return decrypted.map((/** @type {Uint8Array} */ d, /** @type {number} */ i) => (dataToSend[i].isRaw ? d : StringFromUint8Array(d)))
   }
 
   /**
@@ -2397,7 +2191,7 @@ export default class TideCloak {
         this.timeSkew = Math.floor(timeLocal / 1000) - this.tokenParsed.iat
       }
 
-      if (typeof this.timeSkew === 'number') {
+      if (this.timeSkew !== null) {
         this.#logInfo('[TIDECLOAK] Estimated time difference between browser and server is ' + this.timeSkew + ' seconds')
 
         if (this.onTokenExpired) {
@@ -2420,41 +2214,28 @@ export default class TideCloak {
       this.authenticated = false
     }
 
-    // Tide doken handling
     if (doken) {
       this.doken = doken
       this.dokenParsed = decodeToken(doken)
-      if (this.requestEnclave && typeof this.requestEnclave.updateDoken === 'function') {
-        this.requestEnclave.updateDoken(this.doken)
-      }
+      this.requestEnclave?.updateDoken?.(this.doken)
     } else {
       delete this.doken
       delete this.dokenParsed
-      // No doken present (e.g. post-logout / flushed state). Do NOT push a
-      // "doken refresh" into the enclave: refreshing with an undefined doken
-      // wedges the hidden enclave ("Expecting doken in request",
-      // TIDE-SWE-UNHANDLED) and blocks the silent re-auth that runs after
-      // logout. Instead tear the stale enclave(s) down so (a) no dokenless
-      // refresh is ever sent, (b) the persistent user-gesture listener can no
-      // longer reopen a dokenless hidden enclave (#ensureRequestEnclaveOpen
-      // no-ops once requestEnclave is cleared), and (c) the next authenticated
-      // flow re-creates a fresh enclave from a valid doken via
-      // initRequestEnclave(). The app is then free to fall through to an
-      // interactive login, which recovers cleanly.
+      // A dokenless enclave can't be driven, so close it; the next Tide
+      // operation creates a fresh one from a new doken.
       this.#teardownEnclaves()
     }
   }
 
   /**
-   * Close and discard any open Tide enclaves. Called when the doken is cleared
-   * (logout / flushed state) so stale enclaves can't be driven without a doken.
+   * Close and discard any open Tide enclaves.
    */
   #teardownEnclaves () {
-    for (const key of ['requestEnclave', 'approvalEnclave']) {
+    for (const key of /** @type {const} */ (['requestEnclave', 'approvalEnclave'])) {
       const enclave = this[key]
       if (!enclave) continue
       try {
-        if (typeof enclave.close === 'function') enclave.close()
+        enclave.close?.()
       } catch (error) {
         this.#logWarn('[TIDECLOAK] Failed to close ' + key + ': ' + (error instanceof Error ? error.message : error))
       }
@@ -2471,6 +2252,21 @@ export default class TideCloak {
     }
 
     return `${stripTrailingSlash(this.authServerUrl)}/realms/${encodeURIComponent(/** @type {string} */ (this.realm))}`
+  }
+
+  /**
+   * Gets the issuer URL.
+   * Returns the OIDC issuer if available, otherwise constructs from realm URL.
+   * @returns {string=}
+   */
+  #getIssuerUrl () {
+    // For OIDC provider mode, use the issuer from metadata
+    if (this.issuer) {
+      return this.issuer
+    }
+
+    // For TideCloak mode, use the realm URL
+    return this.#getRealmUrl()
   }
 
   /**
@@ -2781,7 +2577,7 @@ class CookieStorage {
    */
   #setCookie (key, value, expirationDate) {
     const cookie = key + '=' + value + '; ' +
-      'expires=' + expirationDate.toUTCString() + '; '
+            'expires=' + expirationDate.toUTCString() + '; '
     document.cookie = cookie
   }
 
@@ -2814,7 +2610,7 @@ function base64ToBytes (base64) {
   const len = binString.length
   const bytes = new Uint8Array(len)
   for (let i = 0; i < len; i++) {
-    bytes[i] = binString.codePointAt(i)
+    bytes[i] = /** @type {number} */ (binString.codePointAt(i))
   }
   return bytes
 }
@@ -2951,6 +2747,7 @@ async function fetchJsonConfig (url) {
 async function fetchOpenIdConfig (url) {
   return await fetchJSON(url)
 }
+
 
 /**
  * @template [T=unknown]

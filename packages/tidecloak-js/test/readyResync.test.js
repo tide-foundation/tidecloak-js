@@ -15,7 +15,7 @@
  *      NOTHING, forever. React kept serving the `token` it last cached while the
  *      SDK went on refreshing its own underneath.
  *   4. Consumers read that stale `token` from context into an
- *      `Authorization: Bearer …` header. `TideCloak.secureFetch` compares it
+ *      `Authorization: Bearer …` header. `TideCloak.fetch` compares it
  *      against the token it actually holds (lib/tidecloak.js), no longer recognises
  *      it as its own, and silently falls back to a plain non-DPoP `fetch`.
  *   5. A `dpop.bound.access.tokens=true` realm rejects a DPoP-bound token presented

@@ -74,7 +74,7 @@ export interface TideCloakContextValue {
   doDecrypt: (data: any, decryptionPolicy?: Uint8Array) => Promise<any>;
 
   // DPoP-aware fetch
-  secureFetch: (url: string | URL | RequestInfo, init?: RequestInit) => Promise<Response>;
+  fetch: (url: string | URL | RequestInfo, init?: RequestInit) => Promise<Response>;
   // Tide request signing (for policy creation)
   initializeTideRequest: <T extends { encode: () => Uint8Array }>(request: T) => Promise<T>
   /**
@@ -250,7 +250,7 @@ export function TideCloakContextProvider({
       }
 
       // Check if configProp contains server connection info (realm, url, etc.)
-      // If it does, use it directly. If it only has options (sessionMode, useDPoP, etc.),
+      // If it does, use it directly. If it only has options (sessionMode, dpopConfig, etc.),
       // fetch adapter.json and merge.
       const hasServerConfig = configProp && (
         configProp.realm || configProp.url || configProp['auth-server-url'] || configProp.authServerUrl
@@ -270,7 +270,7 @@ export function TideCloakContextProvider({
         return;
       }
 
-      // Fetch adapter.json and merge with any config options (sessionMode, useDPoP, etc.)
+      // Fetch adapter.json and merge with any config options (sessionMode, dpopConfig, etc.)
       try {
         console.debug(`[TideCloak] Fetching config from ${configUrl}`);
         const response = await fetch(configUrl);
@@ -557,7 +557,7 @@ export function TideCloakContextProvider({
     //
     // That desync is how a `401` gets manufactured: consumers read `token` from
     // this context and put it in an `Authorization: Bearer …` header;
-    // `IAMService.secureFetch` compares it against the token the SDK actually
+    // `IAMService.fetch` compares it against the token the SDK actually
     // holds, no longer recognises it as its own, and falls back to a plain
     // non-DPoP fetch - which a `dpop.bound.access.tokens` realm rejects outright.
     //
@@ -750,8 +750,8 @@ export function TideCloakContextProvider({
     
     // DPoP-aware fetch - falls back to regular fetch during initialization
     
-    secureFetch: (url: string | URL | RequestInfo, init?: RequestInit) =>
-      isInitializing ? fetch(url, init) : IAMService.secureFetch(url, init),
+    fetch: (url: string | URL | RequestInfo, init?: RequestInit) =>
+      isInitializing ? fetch(url, init) : IAMService.fetch(url, init),
     doEncrypt: async (data: any, decryptionPolicy?: Uint8Array) => {
       if (isInitializing) return null;
       try {
@@ -951,7 +951,7 @@ const defaultContextValue: TideCloakContextValue = {
   resetWasOffline: () => {},
   doEncrypt: async () => null,
   doDecrypt: async () => null,
-  secureFetch: (url: string | URL | RequestInfo, init?: RequestInit) => fetch(url, init),
+  fetch: (url: string | URL | RequestInfo, init?: RequestInit) => fetch(url, init),
   initializeTideRequest: async () => { throw new Error("TideCloakContextProvider not available"); },
   executeTideRequest: async () => { throw new Error("TideCloakContextProvider not available"); },
   getVendorId: () => "",
