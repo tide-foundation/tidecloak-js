@@ -175,7 +175,7 @@ function Header() {
 | `getValueFromToken(key)`              | `(key: string) => any`                       | Read a custom claim from the access token.                              |
 | `getValueFromIdToken(key)`            | `(key: string) => any`                       | Read a custom claim from the ID token.                                  |
 | `hasRealmRole(role)`                  | `(role: string) => boolean`                  | Check a realm-level role.                                               |
-| `hasClientRole(role, client?)`        | `(role: string, client?: string) => boolean` | Check a client-level role; defaults to your app’s client ID if omitted. |
+| `hasClientRole(role)`                 | `(role: string) => boolean`                  | Check a client-level role on your app’s client.                        |
 | `doEncrypt(data, policy?)` / `doDecrypt(data, policy?)` | `(data: any, policy?: Uint8Array) => Promise<any>` | Encrypt or decrypt payloads, optionally under a signed decryption policy. |
 
 

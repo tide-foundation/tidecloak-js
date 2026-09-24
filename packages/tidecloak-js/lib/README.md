@@ -170,7 +170,7 @@ There are two ways to use a policy:
 
 Pass the signed policy as the second argument. When a policy is provided, the default realm-role tag checks are skipped and the policy itself controls access.
 
-`IAMService.doEncrypt` and `IAMService.doDecrypt` take the policy the same way in front-channel mode. Native mode doesn't support policies and throws if you pass one.
+`IAMService.tide.encrypt` and `IAMService.tide.decrypt` take the policy the same way.
 
 ```javascript
 const policy = yourSignedPolicy; // Uint8Array

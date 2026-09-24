@@ -5,7 +5,7 @@
  * using the IAMService for authentication.
  */
 
-import IAMService from './IAMService.js';
+import { IAMService } from './IAMService.js';
 
 class AdminAPI {
   constructor(realm) {
@@ -44,8 +44,6 @@ class AdminAPI {
    * @private
    */
   async _authFetch(url, init) {
-    // Hybrid mode keeps tokens server-side and `IAMService.fetch` refuses to run.
-    if (IAMService.isHybridMode?.()) return fetch(url, init);
     return IAMService.fetch(url, init);
   }
 

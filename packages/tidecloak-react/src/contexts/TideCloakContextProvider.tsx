@@ -1,5 +1,5 @@
 import React from "react";
-import { IAMService, NativeAdapter, AdminAPI } from '@tidecloak/js';
+import { IAMService, AdminAPI } from '@tidecloak/js';
 
 // Event callback types
 type AuthSuccessCallback = () => void | Promise<void>;
@@ -56,7 +56,7 @@ export interface TideCloakContextValue {
   refreshToken: () => Promise<boolean>;
   forceRefreshToken: () => Promise<boolean>;
   hasRealmRole: (role: string) => boolean;
-  hasClientRole: (role: string, resource?: string) => boolean;
+  hasClientRole: (role: string) => boolean;
   getValueFromToken: (key: string) => any;
   getValueFromIdToken: (key: string) => any;
 
@@ -113,30 +113,6 @@ export interface TideCloakContextProviderProps {
    */
   configUrl?: string;
 
-  /**
-   * Authentication mode. Must be explicitly specified.
-   * - 'native': For Electron/Tauri/React Native apps (requires adapter prop)
-   * - 'hybrid': Server-side token exchange (tokens held server-side)
-   * - undefined: Standard frontchannel mode (browser-based)
-   */
-  authMode?: 'native' | 'hybrid';
-
-  /**
-   * Native adapter for Electron/Tauri/React Native apps.
-   * Required when authMode is 'native'.
-   *
-   * @example
-   * ```tsx
-   * <TideCloakContextProvider
-   *   authMode="native"
-   *   adapter={createElectronAdapter()}
-   * >
-   *   <App />
-   * </TideCloakContextProvider>
-   * ```
-   */
-  adapter?: NativeAdapter;
-
   // Event callbacks for custom handling
   onAuthSuccess?: AuthSuccessCallback;
   onAuthError?: AuthErrorCallback;
@@ -164,8 +140,6 @@ const TideCloakContext = React.createContext<TideCloakContextValue | undefined>(
 export function TideCloakContextProvider({
   config: configProp,
   configUrl = '/adapter.json',
-  authMode,
-  adapter,
   children,
   onAuthSuccess,
   onAuthError,
@@ -239,18 +213,8 @@ export function TideCloakContextProvider({
     let mounted = true;
 
     const resolveConfig = async () => {
-      // Validate native mode requirements
-      if (authMode === 'native' && !adapter) {
-        const err = new Error('[TideCloak] authMode="native" requires an adapter prop');
-        if (mounted) {
-          setInitError(err);
-          setIsInitializing(false);
-        }
-        return;
-      }
-
       // Check if configProp contains server connection info (realm, url, etc.)
-      // If it does, use it directly. If it only has options (sessionMode, dpopConfig, etc.),
+      // If it does, use it directly. If it only has options (dpopConfig, etc.),
       // fetch adapter.json and merge.
       const hasServerConfig = configProp && (
         configProp.realm || configProp.url || configProp['auth-server-url'] || configProp.authServerUrl
@@ -258,11 +222,7 @@ export function TideCloakContextProvider({
 
       if (configProp && hasServerConfig) {
         // Config prop has full server config - use it directly
-        const finalConfig = {
-          ...configProp,
-          ...(authMode && { authMode }),
-          ...(adapter && { adapter }),
-        };
+        const finalConfig = { ...configProp };
 
         if (mounted) {
           setResolvedConfig(finalConfig);
@@ -270,7 +230,7 @@ export function TideCloakContextProvider({
         return;
       }
 
-      // Fetch adapter.json and merge with any config options (sessionMode, dpopConfig, etc.)
+      // Fetch adapter.json and merge with any config options (dpopConfig, etc.)
       try {
         console.debug(`[TideCloak] Fetching config from ${configUrl}`);
         const response = await fetch(configUrl);
@@ -282,16 +242,10 @@ export function TideCloakContextProvider({
         const finalConfig = {
           ...fetchedConfig,
           ...(configProp || {}),
-          ...(authMode && { authMode }),
-          ...(adapter && { adapter }),
         };
 
         if (mounted) {
-          console.debug('[TideCloak] Config loaded:', {
-            realm: finalConfig.realm,
-            authMode: finalConfig.authMode || 'frontchannel',
-            hasAdapter: !!finalConfig.adapter,
-          });
+          console.debug('[TideCloak] Config loaded:', { realm: finalConfig.realm });
           setResolvedConfig(finalConfig);
         }
       } catch (err) {
@@ -308,7 +262,7 @@ export function TideCloakContextProvider({
     return () => {
       mounted = false;
     };
-  }, [configProp, configUrl, authMode, adapter]);
+  }, [configProp, configUrl]);
 
   // Main IAMService initialization and event handling
   React.useEffect(() => {
@@ -737,7 +691,7 @@ export function TideCloakContextProvider({
 
     // Role checks - return false during initialization
     hasRealmRole: (role: string) => isInitializing ? false : IAMService.hasRealmRole(role),
-    hasClientRole: (role: string, resource?: string) => isInitializing ? false : IAMService.hasClientRole(role, resource),
+    hasClientRole: (role: string) => isInitializing ? false : IAMService.hasClientRole(role),
 
     // Token claims - return undefined during initialization or when not authenticated
     getValueFromToken: (key: string) => (isInitializing || !authenticated) ? undefined : IAMService.getValueFromToken(key),

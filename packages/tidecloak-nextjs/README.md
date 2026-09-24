@@ -10,27 +10,6 @@ npm install @tidecloak/nextjs
 
 ---
 
-## Choose Your Mode
-
-| I'm building... | Use this mode |
-|-----------------|---------------|
-| A standard Next.js app | [Front-channel](docs/FRONT_CHANNEL.md) |
-| A secure app where tokens should stay on my server | [Hybrid/BFF](docs/HYBRID_MODE.md) |
-
----
-
-## Quick Comparison
-
-| | Front-channel | Hybrid/BFF |
-|---|---|---|
-| Tokens stored in | Browser | Server (API routes) |
-| Best for | Simple apps | High-security apps |
-| Setup complexity | Easy | Medium |
-| Client-side token access | Yes | No |
-| Route protection (proxy/middleware) | Yes | Yes |
-
----
-
 ## Requirements
 
 - Next.js 13.5+ (App Router or Pages Router)
@@ -54,7 +33,6 @@ npm install @tidecloak/nextjs
 
 ---
 
-## Mode-Specific Guides
+## Guides
 
 - **[Front-channel Mode](docs/FRONT_CHANNEL.md)** - Standard Next.js apps
-- **[Hybrid/BFF Mode](docs/HYBRID_MODE.md)** - Server-side token handling with API routes

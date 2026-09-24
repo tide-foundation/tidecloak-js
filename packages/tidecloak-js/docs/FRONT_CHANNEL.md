@@ -24,30 +24,15 @@ This file is required for silent session checks. It should be auto-copied when y
 <html><body><script>parent.postMessage(location.href, location.origin)</script></body></html>
 ```
 
-### 3. Create a Redirect Page
-
-Create `public/auth/redirect.html`:
-
-```html
-<!DOCTYPE html>
-<html>
-  <head><title>Redirecting...</title></head>
-  <body>
-    <p>Redirecting...</p>
-    <script>window.location.href = "/";</script>
-  </body>
-</html>
-```
-
-### 4. Initialize the SDK
+### 3. Initialize the SDK
 
 ```js
 import { IAMService } from "@tidecloak/js";
 import config from "./tidecloak.json";
 
-// Listen for events. Handlers get the event name first, then its arguments.
+// Listen for events
 IAMService
-  .on("ready", (_event, loggedIn) => {
+  .on("ready", (loggedIn) => {
     console.log("Ready! Logged in:", loggedIn);
     updateUI(loggedIn);
   })
@@ -59,7 +44,7 @@ IAMService
   });
 
 // Start the SDK
-await IAMService.initIAM(config);
+await IAMService.init(config);
 ```
 
 ### DPoP (opt-in)
@@ -70,16 +55,16 @@ DPoP (sender-constrained tokens, [RFC 9449](https://datatracker.ietf.org/doc/htm
 
 ```js
 // Opt in, enforced: init fails if the realm doesn't advertise DPoP support
-await IAMService.initIAM({ ...config, dpopConfig: { mode: "strict" } });
+await IAMService.init({ ...config, dpopConfig: { mode: "strict" } });
 
 // Use DPoP only when the realm supports it, otherwise fall back to bearer:
-await IAMService.initIAM({ ...config, dpopConfig: { mode: "auto" } });
+await IAMService.init({ ...config, dpopConfig: { mode: "auto" } });
 
 // Pick the proof signing algorithm (default "ES256"):
-await IAMService.initIAM({ ...config, dpopConfig: { mode: "strict", alg: "EdDSA" } });
+await IAMService.init({ ...config, dpopConfig: { mode: "strict", alg: "EdDSA" } });
 
 // No DPoP, a plain unbound access token (the default)
-await IAMService.initIAM({ ...config });
+await IAMService.init(config);
 ```
 
 | `dpopConfig` value             | Behavior                                                                  |
@@ -92,7 +77,7 @@ await IAMService.initIAM({ ...config });
 
 > Your **resource server** must validate DPoP proofs for the binding to be meaningful. See [`lib/README.md`](../lib/README.md#dpop-resource-server-setup) for serving `tide_dpop_auth.html`.
 
-### 5. Add Login/Logout Buttons
+### 4. Add Login/Logout Buttons
 
 ```js
 document.getElementById("login-btn").onclick = () => IAMService.doLogin();
@@ -108,50 +93,54 @@ document.getElementById("logout-btn").onclick = () => IAMService.doLogout();
 IAMService.isLoggedIn();           // Is user logged in?
 
 // Get tokens
-await IAMService.getToken();       // Access token (for API calls)
-IAMService.getIDToken();           // ID token
+IAMService.getToken();             // Access token (for API calls)
+IAMService.getTokenExp();          // When the access token expires (Date)
 
 // Get user info
 IAMService.getName();              // Username
-IAMService.getValueFromToken("email");
-IAMService.getValueFromIDToken("name"); // getValueFromIdToken also works
+IAMService.getClaim("email");      // Any access-token claim
 
 // Check roles
 IAMService.hasRealmRole("admin");
 IAMService.hasClientRole("editor");
 
 // Auth actions
-IAMService.doLogin();
-IAMService.doLogout();
-await IAMService.updateIAMToken(); // Refresh token
+await IAMService.doLogin();
+await IAMService.doLogout();
+await IAMService.updateToken();      // Refresh if the token expires within 5s
+await IAMService.forceUpdateToken(); // Refresh now
+
+// Call an API with the access token (adds a DPoP proof when DPoP is on)
+await IAMService.fetch("/api/data", {
+  headers: { Authorization: `Bearer ${IAMService.getToken()}` },
+});
 
 // Encryption (if configured)
-await IAMService.doEncrypt([{ data: "secret", tags: ["personal"] }]);
-await IAMService.doDecrypt([{ encrypted: "...", tags: ["personal"] }]);
+await IAMService.tide.encrypt([{ data: "secret", tags: ["personal"] }]);
+await IAMService.tide.decrypt([{ encrypted: "...", tags: ["personal"] }]);
 ```
 
 ---
 
 ## Events
 
-Every handler is called with the event name first, then the event's arguments.
-
 ```js
 IAMService
-  .on("ready", (_event, loggedIn) => {
+  .on("ready", (loggedIn) => {
     // SDK is ready - loggedIn is true/false
   })
   .on("authSuccess", () => {
     // User logged in
   })
-  .on("authError", (_event, err) => {
+  .on("authError", (err) => {
     // Login failed
   })
   .on("logout", () => {
     // User logged out
   })
   .on("tokenExpired", () => {
-    // Token expired - SDK will try to refresh
+    // Token expired - refresh it
+    IAMService.updateToken();
   });
 ```
 
@@ -163,13 +152,13 @@ Protect sensitive data with tag-based encryption:
 
 ```js
 // Encrypt one or more items
-const encrypted = await IAMService.doEncrypt([
+const encrypted = await IAMService.tide.encrypt([
   { data: "10 Smith Street", tags: ["address"] },
   { data: "john@example.com", tags: ["email"] },
 ]);
 
 // Decrypt
-const decrypted = await IAMService.doDecrypt([
+const decrypted = await IAMService.tide.decrypt([
   { encrypted: encrypted[0], tags: ["address"] },
   { encrypted: encrypted[1], tags: ["email"] },
 ]);
@@ -185,22 +174,32 @@ const decrypted = await IAMService.doDecrypt([
 
 ```js
 // Wrong - objects not allowed
-await IAMService.doEncrypt([{ data: { name: "John" }, tags: ["user"] }]);
+await IAMService.tide.encrypt([{ data: { name: "John" }, tags: ["user"] }]);
 
 // Right - stringify first
-await IAMService.doEncrypt([{ data: JSON.stringify({ name: "John" }), tags: ["user"] }]);
+await IAMService.tide.encrypt([{ data: JSON.stringify({ name: "John" }), tags: ["user"] }]);
 ```
 
 ---
 
 ## Custom Redirect Path
 
-By default, users go to `/auth/redirect` after login. To change this:
+By default, users come back to the page they logged in from. To send them somewhere else:
 
 ```js
-await IAMService.initIAM({
-  ...config,
-  redirectUri: "https://myapp.com/callback"
+await IAMService.doLogin({ redirectUri: "https://myapp.com/callback" });
+await IAMService.doLogout({ redirectUri: "https://myapp.com/" });
+```
+
+---
+
+## Silent SSO Page Location
+
+The SDK looks for `silent-check-sso.html` at your origin root. If you serve it somewhere else, pass its URL (and register it as a valid redirect URI on the client):
+
+```js
+await IAMService.init(config, {
+  silentCheckSsoRedirectUri: "https://myapp.com/app/silent-check-sso.html",
 });
 ```
 
@@ -210,7 +209,7 @@ await IAMService.initIAM({
 
 **Blank page after login**
 
-Make sure you have a page at `/auth/redirect` and your redirect URI is registered in TideCloak.
+Make sure the page you return to (or the `redirectUri` you pass to `doLogin`) is registered as a valid redirect URI in TideCloak.
 
 **"silent-check-sso.html not found" or silent SSO fails**
 
