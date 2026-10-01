@@ -68,6 +68,12 @@ function installBrowserGlobals() {
     body: { appendChild: () => {}, removeChild: () => {} },
   };
   globalThis.localStorage = localStorage;
+  const sessionData = new Map();
+  globalThis.sessionStorage = {
+    getItem: (k) => (sessionData.has(k) ? sessionData.get(k) : null),
+    setItem: (k, v) => sessionData.set(k, String(v)),
+    removeItem: (k) => sessionData.delete(k),
+  };
   globalThis.isSecureContext = true;
   return { location };
 }

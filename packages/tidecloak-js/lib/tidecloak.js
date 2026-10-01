@@ -1603,23 +1603,74 @@ export default class TideCloak {
   }
 
   fetch = async (url, init = {}) => {
-    const dpopProvider = this.#dpopProvider
-    if (dpopProvider && this.authenticated && this.token) {
-      const existingAuth = new Headers(init.headers).get('Authorization')
-      const isOurBearerToken = existingAuth === `Bearer ${this.token}`
-
-      if (!isOurBearerToken) {
-        // Quick escape - didn't put this check in first if statement as it's more expensive than other checks
-        return fetch(url, init);
+    let isRegularFetch = true;
+    let options = init; // object to hold all configurations made by extensions
+    for(let ext of this.#fetchExtensionChain){
+      if(ext.use(url, options)){
+        isRegularFetch = false;
+        const opts = await ext.configure(url, options);
+        if(opts) options = opts; // only change if a change was made
+      }else{
+        // this is really important
+        // fetchExtensionChain is a CHAIN
+        // a request might have dPoP use, then delegation use
+        // but it will NEVER have delegation use WIHTOUT dPoP use
+        // in that sense, to use tide delegation you need dpop + delegation being used first
+        break; 
       }
+    }
 
+    let response = await fetch(url, options);
+
+    if(isRegularFetch) return response;
+
+    let safeguardCounter = this.#fetchExtensionChain.length;
+    let handleableErrors = true;
+    while(safeguardCounter >= 0 && handleableErrors == true){
+      handleableErrors = false;
+      for(let ext of this.#fetchExtensionChain){
+        // we loop through the full chain since the developer might require tide delegation even though they didn't specify it
+        const updatedResponse = await ext.handleResponse(url, options, response);
+        if(updatedResponse){
+          // if updated response then we want to continue the look to run all the extension handlers again
+          response = updatedResponse;
+          handleableErrors = true;
+        }
+      }
+      safeguardCounter--; // in case the application somehow gets into a loop with dpop + delegation erros
+    }
+    return response;
+  }
+
+  #dPoPFetch = {
+    use: (url, init = {}) => {
+      const dpopProvider = this.#dpopProvider
+      if (dpopProvider && this.authenticated && this.token) {
+        const existingAuth = new Headers(init.headers).get('Authorization')
+        const isOurBearerToken = existingAuth === `Bearer ${this.token}`
+        if (isOurBearerToken) return true;
+      }
+      return false;
+    },
+    configure: async (url, init = {}) => {
+      const dpopProvider = this.#dpopProvider
       const requestUrl = new URL(String(url), document.baseURI)
       const urlString = requestUrl.href
       const origin = requestUrl.origin
       const method = init.method ?? 'GET'
       const resourceNonce = dpopProvider.getResourceServerNonce(origin)
-      const resp = await this.#fetchWithDPoPProof(url, init, urlString, method, resourceNonce)
-
+      const proof = await dpopProvider.generateDPoPProof(urlString, method, this.token, resourceNonce)
+      const headers = new Headers(init.headers)
+      headers.set('Authorization', `DPoP ${this.token}`)
+      headers.set('DPoP', proof)
+      return {...init, headers};
+    },
+    handleResponse: async (url, init, resp) => {
+      const dpopProvider = this.#dpopProvider
+      const requestUrl = new URL(String(url), document.baseURI)
+      const urlString = requestUrl.href
+      const origin = requestUrl.origin
+      const method = init.method ?? 'GET'
       // Check for new nonce in response
       const newNonce = resp.headers.get('DPoP-Nonce')
       if (newNonce) {
@@ -1640,11 +1691,77 @@ export default class TideCloak {
           return retryResp
         }
       }
-      return resp
-    } else {
-      return fetch(url, init);
+      return null; // indicate nothing was changed
     }
   }
+
+  #delegationFetch = {
+    use: (url, init = {}) => {
+      return false;
+    },
+    configure: async (url, init = {}) => undefined, // cannot configure request withotu explicit server request
+    handleResponse: async (url, init, resp) => {
+      const dpopProvider = this.#dpopProvider
+      const requestUrl = new URL(String(url), document.baseURI)
+      const urlString = requestUrl.href
+      const method = init.method ?? 'GET'
+      const delegationKey = resp.headers.get('Resource-Delegation-Key')
+      const delegationChallenge = resp.headers.get('Resource-Delegation-Challenge')
+      if (resp.status === 401 && delegationKey && delegationChallenge) {
+        const wwwAuth = resp.headers.get('WWW-Authenticate') ?? ''
+        if (wwwAuth.includes('DPoP') && wwwAuth.includes('error="DPoPDelegationProofNotFound"')) {
+          const tokenId = this.tokenParsed.jti;
+          if(!tokenId) {
+            console.warn('[KEYCLOAK] Refusing DPoP delegation, access token does not include jti claim');
+            return
+          }
+          const challengeMessage = `resource-token-id-challenge:${tokenId}`
+          let dpopDelegationJwt;
+          try {
+            dpopDelegationJwt = await dpopProvider.generateResourceDelegation(delegationKey, challengeMessage, delegationChallenge, this.token)
+          } catch (error) {
+            console.warn('[KEYCLOAK] Refusing DPoP delegation, returning original response:', error)
+            return
+          }
+          if(resp.headers.get('Require-Tide-Delegation') === 'true'){
+            try{
+              this.initRequestEnclave();
+            }catch(error){
+              console.warn('[KEYCLOAK] Refusing Tide delegation, no request enclave available:', error)
+            }
+            // provide tide delegation
+            const delegation = "hey" //this.requestEnclave.generateEnclaveDelegation(etc)
+            const headers = new Headers(init.headers)
+            headers.set('Enclave-Resource-Delegation-Signature', delegation)
+            init = { ...init, headers }
+          }
+          const retryResp = await this.#fetchWithDPoPDelegationProof(url, init, urlString, method, dpopDelegationJwt);
+          return retryResp;
+        }
+      }
+      return;
+    }
+  }
+
+  #tideDelegationFetch = {
+    use: (url, init = {}) => {
+      return false;
+    },
+    configure: async (url, init = {}) => undefined, // cannot configure request withotu explicit server request
+    handleResponse: async (url, init, resp) => {
+      const delegationKey = resp.headers.get('Resource-Delegation-Key')
+      const delegationChallenge = resp.headers.get('Resource-Delegation-Challenge')
+      if (resp.status === 401 && delegationKey && delegationChallenge) {
+        const wwwAuth = resp.headers.get('WWW-Authenticate') ?? ''
+        if (wwwAuth.includes('Tide') && wwwAuth.includes('error="TideEnclaveApprovalNotFound"')) {
+          console.log("caught it");
+          return;
+        }
+      }
+    }
+  }
+  #fetchExtensionChain = [this.#dPoPFetch, this.#delegationFetch, this.#tideDelegationFetch];
+
 
     /**
    * @typedef {Object} AccessTokenResponse The successful token response from the authorization server, based on the {@link https://datatracker.ietf.org/doc/html/rfc6749#section-5.1 OAuth 2.0 Authorization Framework specification}.
@@ -1733,6 +1850,26 @@ export default class TideCloak {
     headers.set('Authorization', `DPoP ${this.token}`)
     headers.set('DPoP', proof)
     return fetch(url, { ...init, headers })
+  }
+
+  /**
+   * @param {RequestInfo | URL} url
+   * @param {RequestInit} init
+   * @param {string} urlString
+   * @param {string} method
+   * @param {string} delegationJwt
+   * @returns {Promise<Response>}
+   */
+  async #fetchWithDPoPDelegationProof (url, init, urlString, method, delegationJwt) {
+    const dpopProvider = this.#dpopProvider
+    if (!dpopProvider) {
+      throw new Error('DPoP provider not initialized')
+    }
+    const origin = new URL(urlString).origin
+    const resourceNonce = dpopProvider.getResourceServerNonce(origin)
+    const headers = new Headers(init.headers)
+    headers.set('DPoP-Resource-Delegation', delegationJwt)
+    return this.#fetchWithDPoPProof(url, {...init, headers}, urlString, method, resourceNonce);
   }
 
   /**
