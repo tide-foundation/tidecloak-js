@@ -1742,25 +1742,7 @@ export default class TideCloak {
       return;
     }
   }
-
-  #tideDelegationFetch = {
-    use: (url, init = {}) => {
-      return false;
-    },
-    configure: async (url, init = {}) => undefined, // cannot configure request withotu explicit server request
-    handleResponse: async (url, init, resp) => {
-      const delegationKey = resp.headers.get('Resource-Delegation-Key')
-      const delegationChallenge = resp.headers.get('Resource-Delegation-Challenge')
-      if (resp.status === 401 && delegationKey && delegationChallenge) {
-        const wwwAuth = resp.headers.get('WWW-Authenticate') ?? ''
-        if (wwwAuth.includes('Tide') && wwwAuth.includes('error="TideEnclaveApprovalNotFound"')) {
-          console.log("caught it");
-          return;
-        }
-      }
-    }
-  }
-  #fetchExtensionChain = [this.#dPoPFetch, this.#delegationFetch, this.#tideDelegationFetch];
+  #fetchExtensionChain = [this.#dPoPFetch, this.#delegationFetch];
 
 
     /**
