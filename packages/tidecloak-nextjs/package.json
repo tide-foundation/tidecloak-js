@@ -53,6 +53,7 @@
     "prepare": "npm run build"
   },
   "dependencies": {
+    "@tidecloak/js": "^0.13.0",
     "@tidecloak/react": "^0.13.0",
     "@tidecloak/verify": "^0.13.0"
   },

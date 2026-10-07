@@ -9,6 +9,9 @@ export type { TideProxyOptions } from './tidecloakProxy'
 // Token verification
 export { verifyTideCloakToken } from '@tidecloak/verify'
 
+// DPoP page route handler (serves tide_dpop_auth.html when useDPoP is on)
+export { createDpopRoute } from '@tidecloak/js/dpop-route'
+
 // Hybrid mode token exchange utilities
 export {
   exchangeCodeForTokens,
