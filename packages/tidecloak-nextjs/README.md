@@ -27,9 +27,10 @@ npm install @tidecloak/nextjs
 - `createTideCloakProxy()` - Route protection in `proxy.ts` (Next.js 16+)
 - `createTideCloakMiddleware()` - Route protection in `middleware.ts` (Next.js 13.5 to 15)
 - `verifyTideCloakToken()` - Server-side JWT verification
+- `createDpopRoute()` - Route handler that serves the DPoP page (only needed with `dpopConfig`)
 - `doEncrypt()` / `doDecrypt()` - Tag-based encryption
 
-> **DPoP is opt-in** (sender-constrained tokens). By default you get a plain, unbound access token. Pass `dpopConfig: { mode: "auto" }` or `{ mode: "strict" }` in your provider config to turn it on. See the [`@tidecloak/js` DPoP docs](https://github.com/tide-foundation/tidecloak-js/blob/main/packages/tidecloak-js/docs/FRONT_CHANNEL.md#dpop-opt-in).
+> **DPoP is opt-in** (sender-constrained tokens). By default you get a plain, unbound access token. Pass `dpopConfig: { mode: "auto" }` or `{ mode: "strict" }` in your provider config to turn it on. With DPoP on, your app must also serve the DPoP page: see [Serving the DPoP page](docs/FRONT_CHANNEL.md#serving-the-dpop-page). For the options themselves, see the [`@tidecloak/js` DPoP docs](https://github.com/tide-foundation/tidecloak-js/blob/main/packages/tidecloak-js/docs/FRONT_CHANNEL.md#dpop-opt-in).
 
 ---
 

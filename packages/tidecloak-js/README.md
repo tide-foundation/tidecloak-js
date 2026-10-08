@@ -29,4 +29,4 @@ Follow the [setup guide](docs/FRONT_CHANNEL.md) for a web app or SPA.
 
 ## Deprecated
 
-`@tidecloak/js/policy-react` and `@tidecloak/js/policy.css` are deprecated. The policy editor has moved out of this package; the components exported there now throw when rendered and the stylesheet is empty. They remain only so existing imports keep resolving.
+`@tidecloak/js/policy.css` is deprecated. The policy editor has moved out of this package and the stylesheet is empty. It remains only so existing imports keep resolving.

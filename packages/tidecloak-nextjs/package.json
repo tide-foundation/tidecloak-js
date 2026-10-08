@@ -48,7 +48,8 @@
   "scripts": {
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "build:esm": "tsc -p tsconfig.esm.json",
-    "build": "npm run build:cjs && npm run build:esm && node scripts/postbuild.cjs",
+    "build:dpop-asset": "node scripts/gen-dpop-asset.cjs",
+    "build": "npm run build:dpop-asset && npm run build:cjs && npm run build:esm && node scripts/postbuild.cjs",
     "test": "npm run build && node --test test/*.test.mjs",
     "prepare": "npm run build"
   },

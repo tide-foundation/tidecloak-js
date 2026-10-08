@@ -70,19 +70,9 @@ const response = await tidecloak.fetch("https://api.example.com/user", {
 With DPoP on, TideCloak loads `tide_dpop_auth.html` from your app's origin during login to confirm the browser holds the DPoP key. The file ships in this package and is the same for every app. Your issuer and client id go in the URL, not the file.
 
 #### 1. Serve the page
-In Next.js, or anything using web `Request`/`Response`:
+This package is browser-only, so serving the page is up to your app's server or host. In Next.js, use `createDpopRoute` from [`@tidecloak/nextjs/server`](https://github.com/tide-foundation/tidecloak-js/blob/main/packages/tidecloak-nextjs/docs/FRONT_CHANNEL.md#serving-the-dpop-page).
 
-```javascript
-// app/tide_dpop/[...path]/route.js
-import { createDpopRoute } from "@tidecloak/js/dpop-route";
-import config from "../../../tidecloak.json";
-
-export const { GET, HEAD } = createDpopRoute({ config });
-```
-
-Use a route handler, not a proxy or middleware: common matchers skip paths containing a dot.
-
-Elsewhere, serve `node_modules/@tidecloak/js/tide_dpop_auth.html` for any request to
+Anywhere else, serve `node_modules/@tidecloak/js/tide_dpop_auth.html` for any request to
 `/tide_dpop/iss/{issuer as hex}/aud/{client id as hex}/tide_dpop_auth.html`
 with these response headers:
 1. `Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-utc6UrebuHOyLd/2aiMXS/p1EDy9UZBDe/XEMKDw9Mc='; style-src 'self' 'sha256-F7OJTdJYct4J+cQfuJUoDauitndqt8pAc8EbA8gwDPU='`
