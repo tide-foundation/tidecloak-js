@@ -4,13 +4,7 @@ import type { TideCloakContextValue, TideCloakContextProviderProps } from './con
 
 export { TideCloakContextProvider } from './contexts/TideCloakContextProvider.js';
 export type { TideCloakContextValue, TideCloakContextProviderProps, ActionNotification, ActionNotificationType } from './contexts/TideCloakContextProvider.js';
-export type { NativeAdapter, NativeTokenData, NativeAuthCallbackResult } from "@tidecloak/js";
 
-// Hybrid mode utilities
-export { useAuthCallback, parseCallbackUrl } from './hooks/useAuthCallback.js';
-export type { AuthCallbackState, UseAuthCallbackOptions } from './hooks/useAuthCallback.js';
-export { AuthCallback, SimpleAuthCallback } from './components/AuthCallback.js';
-export type { AuthCallbackProps } from './components/AuthCallback.js';
 export { RequestEnclave, AdminAPI } from "@tidecloak/js";
 
 /**
@@ -56,23 +50,21 @@ export function HasRealmRole({
 }
 
 /**
- * Renders children only when user has the specified client/resource role.
+ * Renders children only when user has the specified role on this app's client.
  */
 export function HasClientRole({
   role,
-  resource,
   children,
   fallback = null
 }: {
   role: string;
-  resource?: string;
   children: React.ReactNode;
   fallback?: React.ReactNode;
 }): React.ReactNode {
   const { authenticated, isInitializing, hasClientRole } = useTideCloakContext();
   if (isInitializing) return null;
   if (!authenticated) return fallback;
-  return hasClientRole(role, resource) ? children : fallback;
+  return hasClientRole(role) ? children : fallback;
 }
 
 /**

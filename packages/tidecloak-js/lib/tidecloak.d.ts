@@ -69,7 +69,23 @@ export interface OpenIdProviderMetadata {
   dpop_signing_alg_values_supported?: string[];
 }
 
-export type TideCloakConfig = TideCloakServerConfig | GenericOidcConfig
+/**
+ * Tide-specific configuration, taken from the Tide adapter config.
+ */
+export interface TideConfig {
+  /** Tide vendor identifier. */
+  vendorId?: string
+  /** Tide home ORK URL. */
+  homeOrkUrl?: string
+  /** Signed client origin for the current `window.location.origin`. */
+  clientOriginAuth?: string
+  /** Background image URL shown in the approval enclave. */
+  backgroundUrl?: string
+  /** Logo URL shown in the approval enclave. */
+  logoUrl?: string
+}
+
+export type TideCloakConfig = (TideCloakServerConfig | GenericOidcConfig) & TideConfig
 
 export interface Acr {
   /**
@@ -85,10 +101,8 @@ export interface Acr {
 }
 
 export interface TideCloakInitOptions {
-
   /**
-   * Triggers the setup and fallback of the request enclave if required by the client
-   * 
+   * Reopen the Tide request enclave on user clicks, so its popup fallback is allowed.
    */
   setupRequestEnclave?: boolean
 
@@ -241,10 +255,11 @@ export interface TideCloakInitOptions {
    */
   logoutMethod?: 'GET' | 'POST'
 
+
   /**
    * Enables DPoP token auth flows and session key generation.
    */
-  useDPoP?: DPoPConfig
+  dpopConfig?: DPoPConfig
 }
 
 export interface TideCloakLoginOptions {
@@ -341,7 +356,6 @@ export interface TideCloakAccountOptions {
    */
   redirectUri?: string
 }
-
 export interface TideCloakError {
   error: string
   error_description: string
@@ -410,92 +424,20 @@ export interface DPoPConfig {
    * 'auto' setting will only use DPoP if the TideCloak instance advertises support,
    * 'strict' setting will require the TideCloak instance to support DPoP.
    */
-  mode: 'auto' | 'strict',
+  mode: 'auto' | 'strict'
   /** Defaults to ES256 (P-256 curve) */
   alg?: 'ES256' | 'ES384' | 'ES512' | 'EdDSA'
+  /**
+   * When true, initialization fails if IndexedDB is unavailable instead of
+   * falling back to in-memory key storage.
+   */
+  strictStorage?: boolean
 }
 
 /**
  * @deprecated Instead of importing 'TideCloakInstance' you can import 'TideCloak' directly as a type.
  */
 export type TideCloakInstance = TideCloak
-
-/**
- * The successful token response from the authorization server, based on the {@link https://datatracker.ietf.org/doc/html/rfc6749#section-5.1 OAuth 2.0 Authorization Framework specification}.
- */
-export type AccessTokenResponse = {
-  /**
-   * The access token issued by the authorization server.
-   */
-  access_token: string
-  /**
-   * The type of the token issued by the authorization server.
-   */
-  token_type: string
-  /**
-   * The lifetime in seconds of the access token.
-   */
-  expires_in?: number
-  /**
-   * The refresh token issued by the authorization server.
-   */
-  refresh_token?: string
-  /**
-   * The ID token issued by the authorization server, if requested.
-   */
-  id_token?: string
-  /**
-   * The scope of the access token.
-   */
-  scope?: string
-}
-
-export type Endpoints = {
-  authorize: () => string
-  token: () => string
-  logout: () => string
-  checkSessionIframe: () => string
-  thirdPartyCookiesIframe?: (() => string) | undefined
-  register: () => string
-  userinfo: () => string
-}
-
-export type LoginIframe = {
-  enable: boolean
-  callbackList: ((error: Error | null, value?: boolean) => void)[]
-  interval: number
-  iframe?: HTMLIFrameElement | undefined
-  iframeOrigin?: string | undefined
-}
-
-export type CallbackState = {
-  state: string
-  nonce: string
-  redirectUri: string
-  loginOptions?: TideCloakLoginOptions
-  prompt?: TideCloakLoginOptions["prompt"]
-  pkceCodeVerifier?: string
-}
-
-export type CallbackStorage = {
-  get: (state?: string) => CallbackState | null
-  add: (state: CallbackState) => void
-}
-
-export type NetworkErrorOptionsProperties = {
-  response: Response
-}
-
-export type NetworkErrorOptions = ErrorOptions & NetworkErrorOptionsProperties
-
-export class NetworkError extends Error {
-  /**
-   * @param message
-   * @param options
-   */
-  constructor(message: string, options: NetworkErrorOptions)
-  response: Response
-}
 
 /**
  * A client for the TideCloak authentication server.
@@ -514,389 +456,387 @@ declare class TideCloak {
   authenticated: boolean
 
   /**
-   * The user id.
-   */
+  * The user id.
+  */
   subject?: string
 
   /**
-   * Response mode passed in init (default value is `'fragment'`).
-   */
+  * Response mode passed in init (default value is `'fragment'`).
+  */
   responseMode: TideCloakResponseMode
 
   /**
-   * Response type sent to TideCloak with login requests. This is determined
-   * based on the flow value used during initialization, but can be overridden
-   * by setting this value.
-   */
+  * Response type sent to TideCloak with login requests. This is determined
+  * based on the flow value used during initialization, but can be overridden
+  * by setting this value.
+  */
   responseType: TideCloakResponseType
 
   /**
-   * Flow passed in init.
-   */
+  * Flow passed in init.
+  */
   flow: TideCloakFlow
-  
+
   /**
-   * The realm roles associated with the token.
-   */
+  * The realm roles associated with the token.
+  */
   realmAccess?: TideCloakRoles
 
   /**
-   * The resource roles associated with the token.
-   */
+  * The resource roles associated with the token.
+  */
   resourceAccess?: TideCloakResourceAccess
 
   /**
-   * The base64 encoded token that can be sent in the Authorization header in
-   * requests to services.
-   */
+  * The base64 encoded token that can be sent in the Authorization header in
+  * requests to services.
+  */
   token?: string
 
   /**
-   * The parsed token as a JavaScript object.
-   */
+  * The parsed token as a JavaScript object.
+  */
   tokenParsed?: TideCloakTokenParsed
 
   /**
-   * The base64 encoded refresh token that can be used to retrieve a new token.
-   */
+  * The base64 encoded refresh token that can be used to retrieve a new token.
+  */
   refreshToken?: string
 
   /**
-   * The parsed refresh token as a JavaScript object.
-   */
+  * The parsed refresh token as a JavaScript object.
+  */
   refreshTokenParsed?: TideCloakTokenParsed
 
   /**
-   * The base64 encoded ID token.
-   */
+  * The base64 encoded ID token.
+  */
   idToken?: string
 
   /**
-   * The parsed id token as a JavaScript object.
-   */
+  * The parsed id token as a JavaScript object.
+  */
   idTokenParsed?: TideCloakTokenParsed
 
   /**
-   * The base64 encoded doken (Tide token).
-   */
+  * The base64 encoded doken (Tide token).
+  */
   doken?: string
 
   /**
-   * The parsed doken as a JavaScript object.
-   */
+  * The parsed doken as a JavaScript object.
+  */
   dokenParsed?: TideCloakTokenParsed
 
   /**
-   * The Tide RequestEnclave instance.
-   */
+  * The Tide RequestEnclave instance.
+  */
   requestEnclave: any
 
   /**
-   * The Tide ApprovalEnclave instance.
-   */
+  * The Tide ApprovalEnclave instance.
+  */
   approvalEnclave: any
 
   /**
-   * The estimated time difference between the browser time and the TideCloak
-   * server in seconds. This value is just an estimation, but is accurate
-   * enough when determining if a token is expired or not.
-   */
+  * The estimated time difference between the browser time and the TideCloak
+  * server in seconds. This value is just an estimation, but is accurate
+  * enough when determining if a token is expired or not.
+  */
   timeSkew: number | null
 
   /**
-   * Whether the instance has been initialized by calling `.init()`.
-   */
+  * Whether the instance has been initialized by calling `.init()`.
+  */
   didInitialize: boolean
 
   /**
-   * @private Undocumented.
-   */
+  * @private Undocumented.
+  */
   loginRequired: boolean
 
   /**
-   * @private Undocumented.
-   */
+  * @private Undocumented.
+  */
   authServerUrl?: string
 
   /**
-   * @private Undocumented.
-   */
+  * @private Undocumented.
+  */
   realm?: string
 
   /**
-   * @private Undocumented.
-   */
+  * @private Undocumented.
+  */
   clientId?: string
 
   /**
-   * @private Undocumented.
-   */
+  * @private Undocumented.
+  */
   redirectUri?: string
 
   /**
-   * @private Undocumented.
-   */
+  * @private Undocumented.
+  */
   sessionId?: string
 
   /**
-   * @private Undocumented.
-   */
+  * @private Undocumented.
+  */
   profile?: TideCloakProfile
 
   /**
-   * @private Undocumented.
-   */
+  * @private Undocumented.
+  */
   userInfo?: TideCloakUserInfo
 
   /**
-   * Called when the adapter is initialized.
-   */
+  * Called when the adapter is initialized.
+  */
   onReady? (authenticated?: boolean): void
 
   /**
-   * Called when a user is successfully authenticated.
-   */
+  * Called when a user is successfully authenticated.
+  */
   onAuthSuccess? (): void
 
   /**
-   * Called if there was an error during authentication.
-   */
+  * Called if there was an error during authentication.
+  */
   onAuthError? (errorData?: TideCloakError): void
 
   /**
-   * Called when the token is refreshed.
-   */
+  * Called when the token is refreshed.
+  */
   onAuthRefreshSuccess? (): void
 
   /**
-   * Called if there was an error while trying to refresh the token.
-   */
+  * Called if there was an error while trying to refresh the token.
+  */
   onAuthRefreshError? (): void
 
   /**
-   * Called if the user is logged out (will only be called if the session
-   * status iframe is enabled, or in Cordova mode).
-   */
+  * Called if the user is logged out (will only be called if the session
+  * status iframe is enabled, or in Cordova mode).
+  */
   onAuthLogout? (): void
 
   /**
-   * Called when the access token is expired. If a refresh token is available
-   * the token can be refreshed with TideCloak#updateToken, or in cases where
-   * it's not (ie. with implicit flow) you can redirect to login screen to
-   * obtain a new access token.
-   */
+  * Called when the access token is expired. If a refresh token is available
+  * the token can be refreshed with TideCloak#updateToken, or in cases where
+  * it's not (ie. with implicit flow) you can redirect to login screen to
+  * obtain a new access token.
+  */
   onTokenExpired? (): void
 
   /**
-   * Called when a AIA has been requested by the application.
-   * @param status the outcome of the required action
-   * @param action the alias name of the required action, e.g. UPDATE_PASSWORD, CONFIGURE_TOTP etc.
-   */
+  * Called when a AIA has been requested by the application.
+  * @param status the outcome of the required action
+  * @param action the alias name of the required action, e.g. UPDATE_PASSWORD, CONFIGURE_TOTP etc.
+  */
   onActionUpdate? (status: 'success' | 'cancelled' | 'error', action?: string): void
 
   /**
-   * Called to initialize the adapter.
-   * @param initOptions Initialization options.
-   * @returns A promise to set functions to be invoked on success or error.
-   */
+  * Called to initialize the adapter.
+  * @param initOptions Initialization options.
+  * @returns A promise to set functions to be invoked on success or error.
+  */
   init (initOptions?: TideCloakInitOptions): Promise<boolean>
 
   /**
-   * Redirects to login form.
-   * @param options Login options.
-   */
+  * Redirects to login form.
+  * @param options Login options.
+  */
   login (options?: TideCloakLoginOptions): Promise<void>
 
   /**
-   * Redirects to logout.
-   * @param options Logout options.
-   */
+  * Redirects to logout.
+  * @param options Logout options.
+  */
   logout (options?: TideCloakLogoutOptions): Promise<void>
 
   /**
-   * Redirects to registration form.
-   * @param options The options used for the registration.
-   */
+  * Redirects to registration form.
+  * @param options The options used for the registration.
+  */
   register (options?: TideCloakRegisterOptions): Promise<void>
 
   /**
-   * Redirects to the Account Management Console.
-   */
+  * Redirects to the Account Management Console.
+  */
   accountManagement (): Promise<void>
 
   /**
-   * Returns the URL to login form.
-   * @param options Supports same options as TideCloak#login.
-   */
+  * Returns the URL to login form.
+  * @param options Supports same options as TideCloak#login.
+  */
   createLoginUrl (options?: TideCloakLoginOptions): Promise<string>
 
   /**
-   * Returns the URL to logout the user.
-   * @param options Logout options.
-   */
+  * Returns the URL to logout the user.
+  * @param options Logout options.
+  */
   createLogoutUrl (options?: TideCloakLogoutOptions): string
 
   /**
-   * Returns the URL to registration page.
-   * @param options The options used for creating the registration URL.
-   */
+  * Returns the URL to registration page.
+  * @param options The options used for creating the registration URL.
+  */
   createRegisterUrl (options?: TideCloakRegisterOptions): Promise<string>
 
   /**
-   * Returns the URL to the Account Management Console.
-   * @param options The options used for creating the account URL.
-   */
+  * Returns the URL to the Account Management Console.
+  * @param options The options used for creating the account URL.
+  */
   createAccountUrl (options?: TideCloakAccountOptions): string
 
   /**
-   * Returns true if the token has less than `minValidity` seconds left before
-   * it expires.
-   * @param minValidity If not specified, `0` is used.
-   */
+  * Returns true if the token has less than `minValidity` seconds left before
+  * it expires.
+  * @param minValidity If not specified, `0` is used.
+  */
   isTokenExpired (minValidity?: number): boolean
 
   /**
-   * If the token expires within `minValidity` seconds, the token is refreshed.
-   * If the session status iframe is enabled, the session status is also
-   * checked.
-   * @param minValidity If not specified, `5` is used.
-   * @returns A promise to set functions that can be invoked if the token is
-   *          still valid, or if the token is no longer valid.
-   * @example
-   * ```js
-   * tidecloak.updateToken(5).then(function(refreshed) {
-   *   if (refreshed) {
-   *     alert('Token was successfully refreshed');
-   *   } else {
-   *     alert('Token is still valid');
-   *   }
-   * }).catch(function() {
-   *   alert('Failed to refresh the token, or the session has expired');
-   * });
-   */
+  * If the token expires within `minValidity` seconds, the token is refreshed.
+  * If the session status iframe is enabled, the session status is also
+  * checked.
+  * @param minValidity If not specified, `5` is used.
+  * @returns A promise to set functions that can be invoked if the token is
+  *          still valid, or if the token is no longer valid.
+  * @example
+  * ```js
+  * tidecloak.updateToken(5).then(function(refreshed) {
+  *   if (refreshed) {
+  *     alert('Token was successfully refreshed');
+  *   } else {
+  *     alert('Token is still valid');
+  *   }
+  * }).catch(function() {
+  *   alert('Failed to refresh the token, or the session has expired');
+  * });
+  */
   updateToken (minValidity?: number): Promise<boolean>
 
   /**
-   * Clears authentication state, including tokens. This can be useful if
-   * the application has detected the session was expired, for example if
-   * updating token fails. Invoking this results in TideCloak#onAuthLogout
-   * callback listener being invoked.
-   */
-  clearToken (): void
+  * Clears authentication state, including tokens. This can be useful if
+  * the application has detected the session was expired, for example if
+  * updating token fails. Invoking this results in TideCloak#onAuthLogout
+  * callback listener being invoked.
+  */
+  clearToken (): Promise<void>
 
   /**
-   * Returns true if the token has the given realm role.
-   * @param role A realm role name.
-   */
+  * Returns true if the token has the given realm role.
+  * @param role A realm role name.
+  */
   hasRealmRole (role: string): boolean
 
   /**
-   * Returns true if the token has the given role for the resource.
-   * @param role A role name.
-   * @param resource If not specified, `clientId` is used.
-   */
+  * Returns true if the token has the given role for the resource.
+  * @param role A role name.
+  * @param resource If not specified, `clientId` is used.
+  */
   hasResourceRole (role: string, resource?: string): boolean
 
   /**
-   * Loads the user's profile.
-   * @returns A promise to set functions to be invoked on success or error.
-   */
+  * Loads the user's profile.
+  * @returns A promise to set functions to be invoked on success or error.
+  */
   loadUserProfile (): Promise<TideCloakProfile>
 
   /**
-   * @private Undocumented.
-   */
+  * @private Undocumented.
+  */
   loadUserInfo (): Promise<TideCloakUserInfo>
 
   /**
-   * Ensure the access token is valid, refreshing if needed.
-   * @returns A promise that resolves when the token is ready.
-   */
+  * Drop-in replacement for fetch that automatically handles DPoP authentication.
+  * If the request includes the TideCloakJS-managed Bearer token, it's replaced with
+  * DPoP authorization and proof. Also manages resource server nonces automatically.
+  * Otherwise, behaves like regular fetch.
+  *
+  * @example
+  * ```typescript
+  * // Call a DPoP-protected API endpoint
+  * const response = await tidecloak.fetch('https://api.example.com/user', {
+  *   headers: {
+  *     'Authorization': `Bearer ${tidecloak.token}`
+  *   }
+  * });
+  * const data = await response.json();
+  * ```
+  *
+  * @param url The resource URL to fetch
+  * @param init Optional fetch init options (same as standard fetch)
+  * @returns A promise that resolves to the fetch Response
+  */
+  fetch (url: URL | RequestInfo, init?: RequestInit): Promise<Response>
+
+  /**
+  * Ensure the access token is valid, refreshing if needed.
+  */
   ensureTokenReady (): Promise<void>
 
   /**
-   * Drop-in replacement for fetch that automatically handles DPoP authentication.
-   * If the request includes the TideCloak-managed Bearer token, it's replaced with
-   * DPoP authorization and proof. Also manages resource server nonces automatically.
-   * Otherwise, behaves like regular fetch.
-   *
-   * @example
-   * ```typescript
-   * // Call a DPoP-protected API endpoint
-   * const response = await tidecloak.secureFetch('https://api.example.com/user', {
-   *   headers: {
-   *     'Authorization': `Bearer ${tidecloak.token}`
-   *   }
-   * });
-   * const data = await response.json();
-   * ```
-   *
-   * @param url The resource URL to fetch
-   * @param init Optional fetch init options (same as standard fetch)
-   * @returns A promise that resolves to the fetch Response
-   */
-  secureFetch (url: URL | RequestInfo, init?: RequestInit): Promise<Response>
-
-  /**
-   * Initialize Tide RequestEnclave.
-   */
+  * Initialize Tide RequestEnclave.
+  */
   initRequestEnclave (): void
 
   /**
-   * Initialize Tide ApprovalEnclave.
-   */
+  * Initialize Tide ApprovalEnclave.
+  */
   initApprovalEnclave (): void
 
   /**
-   * Role-based encryption via Tide RequestEnclave.
-   * @param toEncrypt Array of objects with data and tags to encrypt.
-   * @param decryption_policy If you'd like the data to be protected by a decryption policy.
-   * @returns A promise resolving to an array of encrypted values.
-   */
-  encrypt (toEncrypt: {
-    data: string | Uint8Array
-    tags: string[]
-  }[], decryption_policy?: Uint8Array | null): Promise<(string | Uint8Array)[]>
+  * Role-based encryption via Tide RequestEnclave.
+  * @param toEncrypt Array of objects with data and tags to encrypt.
+  * @param decryption_policy If you'd like the data to be protected by a decryption policy.
+  */
+  encrypt (toEncrypt: { data: string | Uint8Array, tags: string[] }[], decryption_policy?: Uint8Array | null): Promise<(string | Uint8Array)[]>
 
   /**
-   * Initialize a Tide request that requires operator approvals.
-   * @param encodedRequest The encoded request.
-   * @returns A promise resolving to the created request.
-   */
+  * Role-based decryption via Tide RequestEnclave.
+  * @param toDecrypt Array of objects with encrypted data and tags to decrypt.
+  * @param decryption_policy If the data is protected by a decryption policy.
+  */
+  decrypt (toDecrypt: { encrypted: string | Uint8Array, tags: string[] }[], decryption_policy?: Uint8Array | null): Promise<(string | Uint8Array)[]>
+
+  /**
+  * Begin drafting an encryption request.
+  */
+  draftEncryption (toEncrypt: { data: Uint8Array, tags: string[] }[]): Promise<Uint8Array>
+
+  /**
+  * Commit an encryption request with a specified policy.
+  */
+  commitEncryption (request: Uint8Array, decryption_policy: Uint8Array): Promise<Uint8Array[]>
+
+  /**
+  * Begin drafting a decryption request.
+  */
+  draftDecryption (toDecrypt: { encrypted: Uint8Array, tags: string[] }[]): Promise<Uint8Array>
+
+  /**
+  * Commit a decryption request with a specified policy.
+  */
+  commitDecryption (request: Uint8Array, decryption_policy: Uint8Array): Promise<Uint8Array[]>
+
+  /**
+  * Initialize a Tide request that requires operator approvals.
+  */
   createTideRequest (encodedRequest: Uint8Array): Promise<Uint8Array>
 
   /**
-   * Request Tide operator approval.
-   * @param requests Array of request objects with id and request data.
-   * @returns A promise resolving to an array of approval results.
-   */
-  requestTideOperatorApproval (requests: {
-    id: string
-    request: Uint8Array
-  }[]): Promise<{
-    id: string
-    request: Uint8Array
-    status: "approved" | "denied" | "pending"
-  }[]>
+  * Request Tide operator approval.
+  */
+  requestTideOperatorApproval (requests: { id: string, request: Uint8Array }[]): Promise<{ id: string, request: Uint8Array, status: 'approved' | 'denied' | 'pending' }[]>
 
   /**
-   * Execute a Tide Sign Request.
-   * @param request The request data.
-   * @param waitForAll Whether to wait for all signatures.
-   * @returns A promise resolving to an array of signatures.
-   */
+  * Execute a Tide Sign Request.
+  * @param waitForAll Whether to wait for all signatures.
+  */
   executeSignRequest (request: Uint8Array, waitForAll?: boolean): Promise<any[]>
-
-  /**
-   * Role-based decryption via Tide RequestEnclave.
-   * @param toDecrypt Array of objects with encrypted data and tags to decrypt.
-   * @param decryption_policy If the data is protected by a decryption policy.
-   * @returns A promise resolving to an array of decrypted values.
-   */
-  decrypt (toDecrypt: {
-    encrypted: string | Uint8Array
-    tags: string[]
-  }[], decryption_policy?: Uint8Array | null): Promise<(string | Uint8Array)[]>
 }
 
 export default TideCloak
@@ -904,7 +844,7 @@ export default TideCloak
 /**
  * @deprecated The 'TideCloak' namespace is deprecated, use named imports instead.
  */
-export as namespace TideCloak
+export as namespace TideCloak;
 
 export { RequestEnclave, ApprovalEnclave, ApprovalEnclaveNew, PolicySignRequest } from "heimdall-tide"
 export { Tools, Models } from "@tideorg/js"

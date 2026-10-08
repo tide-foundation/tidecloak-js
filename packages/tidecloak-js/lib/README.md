@@ -55,7 +55,13 @@ const tidecloak = new TideCloak({
 const authenticated = await tidecloak.init({
   onLoad: "login-required",
   checkLoginIframe: false,
-  useDPoP: { mode: "strict", alg: "EdDSA" },
+  dpopConfig: { mode: "strict", alg: "EdDSA" },
+});
+
+// Call DPoP-protected APIs with tidecloak.fetch. It swaps the SDK's own Bearer
+// token for `Authorization: DPoP` plus a proof; any other request goes out as-is.
+const response = await tidecloak.fetch("https://api.example.com/user", {
+  headers: { Authorization: `Bearer ${tidecloak.token}` },
 });
 ```
 **Also ensure your resource server has DPoP JWT validation - this could be through using a package like Asgard or any other open sourced SDK**
@@ -64,19 +70,9 @@ const authenticated = await tidecloak.init({
 With DPoP on, TideCloak loads `tide_dpop_auth.html` from your app's origin during login to confirm the browser holds the DPoP key. The file ships in this package and is the same for every app. Your issuer and client id go in the URL, not the file.
 
 #### 1. Serve the page
-In Next.js, or anything using web `Request`/`Response`:
+This package is browser-only, so serving the page is up to your app's server or host. In Next.js, use `createDpopRoute` from [`@tidecloak/nextjs/server`](https://github.com/tide-foundation/tidecloak-js/blob/main/packages/tidecloak-nextjs/docs/FRONT_CHANNEL.md#serving-the-dpop-page).
 
-```javascript
-// app/tide_dpop/[...path]/route.js
-import { createDpopRoute } from "@tidecloak/js/dpop-route";
-import config from "../../../tidecloak.json";
-
-export const { GET, HEAD } = createDpopRoute({ config });
-```
-
-Use a route handler, not a proxy or middleware: common matchers skip paths containing a dot.
-
-Elsewhere, serve `node_modules/@tidecloak/js/tide_dpop_auth.html` for any request to
+Anywhere else, serve `node_modules/@tidecloak/js/tide_dpop_auth.html` for any request to
 `/tide_dpop/iss/{issuer as hex}/aud/{client id as hex}/tide_dpop_auth.html`
 with these response headers:
 1. `Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-utc6UrebuHOyLd/2aiMXS/p1EDy9UZBDe/XEMKDw9Mc='; style-src 'self' 'sha256-F7OJTdJYct4J+cQfuJUoDauitndqt8pAc8EbA8gwDPU='`
@@ -164,7 +160,7 @@ There are two ways to use a policy:
 
 Pass the signed policy as the second argument. When a policy is provided, the default realm-role tag checks are skipped and the policy itself controls access.
 
-`IAMService.doEncrypt` and `IAMService.doDecrypt` take the policy the same way in front-channel mode. Native mode doesn't support policies and throws if you pass one.
+`IAMService.tide.encrypt` and `IAMService.tide.decrypt` take the policy the same way.
 
 ```javascript
 const policy = yourSignedPolicy; // Uint8Array

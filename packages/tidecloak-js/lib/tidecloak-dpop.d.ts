@@ -91,4 +91,11 @@ export class DPoPSignatureProvider {
    * @returns Base64url-encoded SHA-256 thumbprint
    */
   generateJWKThumbprint(): Promise<string>
+
+  /**
+   * Sign a delegation request as a JWT using the DPoP private key.
+   * The resulting JWT proves the user authorizes the delegation described by the claims.
+   * @returns The DPoP Delegation proof JWT
+   */
+  generateResourceDelegation(resourcePublicKeyInfo: string, challengeMessage: string, resourceChallengeSignature: string, accessToken: string): Promise<string>
 }

@@ -10,27 +10,6 @@ npm install @tidecloak/nextjs
 
 ---
 
-## Choose Your Mode
-
-| I'm building... | Use this mode |
-|-----------------|---------------|
-| A standard Next.js app | [Front-channel](docs/FRONT_CHANNEL.md) |
-| A secure app where tokens should stay on my server | [Hybrid/BFF](docs/HYBRID_MODE.md) |
-
----
-
-## Quick Comparison
-
-| | Front-channel | Hybrid/BFF |
-|---|---|---|
-| Tokens stored in | Browser | Server (API routes) |
-| Best for | Simple apps | High-security apps |
-| Setup complexity | Easy | Medium |
-| Client-side token access | Yes | No |
-| Route protection (proxy/middleware) | Yes | Yes |
-
----
-
 ## Requirements
 
 - Next.js 13.5+ (App Router or Pages Router)
@@ -48,14 +27,13 @@ npm install @tidecloak/nextjs
 - `createTideCloakProxy()` - Route protection in `proxy.ts` (Next.js 16+)
 - `createTideCloakMiddleware()` - Route protection in `middleware.ts` (Next.js 13.5 to 15)
 - `verifyTideCloakToken()` - Server-side JWT verification
-- `createDpopRoute()` - Route handler that serves the DPoP page (only needed with `useDPoP`)
+- `createDpopRoute()` - Route handler that serves the DPoP page (only needed with `dpopConfig`)
 - `doEncrypt()` / `doDecrypt()` - Tag-based encryption
 
-> **DPoP is opt-in** (sender-constrained tokens). By default you get a plain, unbound access token. Pass `useDPoP: { mode: "auto" }` or `{ mode: "strict" }` in your provider config to turn it on. With DPoP on, your app must also serve the DPoP page: see [Serving the DPoP page](docs/FRONT_CHANNEL.md#serving-the-dpop-page). For the options themselves, see the [`@tidecloak/js` DPoP docs](https://github.com/tide-foundation/tidecloak-js/blob/main/packages/tidecloak-js/docs/FRONT_CHANNEL.md#dpop-opt-in).
+> **DPoP is opt-in** (sender-constrained tokens). By default you get a plain, unbound access token. Pass `dpopConfig: { mode: "auto" }` or `{ mode: "strict" }` in your provider config to turn it on. With DPoP on, your app must also serve the DPoP page: see [Serving the DPoP page](docs/FRONT_CHANNEL.md#serving-the-dpop-page). For the options themselves, see the [`@tidecloak/js` DPoP docs](https://github.com/tide-foundation/tidecloak-js/blob/main/packages/tidecloak-js/docs/FRONT_CHANNEL.md#dpop-opt-in).
 
 ---
 
-## Mode-Specific Guides
+## Guides
 
 - **[Front-channel Mode](docs/FRONT_CHANNEL.md)** - Standard Next.js apps
-- **[Hybrid/BFF Mode](docs/HYBRID_MODE.md)** - Server-side token handling with API routes
