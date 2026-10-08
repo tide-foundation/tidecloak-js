@@ -1621,7 +1621,6 @@ export default class TideCloak {
     }
 
     let response = await fetch(url, options);
-
     if(isRegularFetch) return response;
 
     let safeguardCounter = this.#fetchExtensionChain.length;
@@ -1730,7 +1729,7 @@ export default class TideCloak {
               console.warn('[KEYCLOAK] Refusing Tide delegation, no request enclave available:', error)
             }
             // provide tide delegation
-            const delegation = bytesToBase64(await this.requestEnclave.requestExecutorWitnessSignature(StringToUint8Array(dpopDelegationJwt.substring(0, jwt.lastIndexOf('.'))))); // sign only header and payload of delegation jwt, not signature (3rd .)
+            const delegation = bytesToBase64(await this.requestEnclave.requestExecutorWitnessSignature(StringToUint8Array(dpopDelegationJwt.substring(0, dpopDelegationJwt.lastIndexOf('.'))))); // sign only header and payload of delegation jwt, not signature (3rd .)
             const headers = new Headers(init.headers)
             headers.set('Enclave-Resource-Delegation-Signature', delegation)
             init = { ...init, headers }
