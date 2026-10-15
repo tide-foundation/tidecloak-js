@@ -74,6 +74,8 @@ export default class TideCloak {
   #useNonce = true
   /** @type {CallbackStorage} */
   #callbackStorage
+  /** @type {(() => void) | null} */
+  #popupErrorCallback = null
   #logInfo = this.#createLogger(console.info)
   #logWarn = this.#createLogger(console.warn)
   /** @type {LoginIframe} */
@@ -2059,6 +2061,20 @@ export default class TideCloak {
   }
 
   /**
+   * Register a callback for when the browser blocks the Tide enclave popup.
+   * It replaces the default "pop-ups are blocked" header.
+   * @param {() => void} callback
+   */
+  registerPopupErrorCallback (callback) {
+    this.#popupErrorCallback = callback
+  }
+
+  #handlePopupError () {
+    if (this.#popupErrorCallback) this.#popupErrorCallback()
+    else showPopupBlockedHeader()
+  }
+
+  /**
    * Initialize Tide RequestEnclave.
    */
   initRequestEnclave () {
@@ -2075,7 +2091,8 @@ export default class TideCloak {
       }).init({
         doken: this.doken,
         dokenRefreshCallback: async () => this.#provideDokenOrRelogin(),
-        requireReloginCallback: async () => this.#reloginInteractively()
+        requireReloginCallback: async () => this.#reloginInteractively(),
+        popupBlockedCallback: () => this.#handlePopupError()
       })
     }
   }
@@ -2098,7 +2115,8 @@ export default class TideCloak {
         logoUrl: this.#config['logoUrl'],
         doken: this.doken,
         dokenRefreshCallback: async () => this.#provideDokenOrRelogin(),
-        requireReloginCallback: async () => this.#reloginInteractively()
+        requireReloginCallback: async () => this.#reloginInteractively(),
+        popupBlockedCallback: () => this.#handlePopupError()
       })
     }
   }
@@ -2489,6 +2507,35 @@ export default class TideCloak {
 /**
  * @returns {string}
  */
+const POPUP_HELP_URL = 'https://tide.org/allow-popups'
+
+/**
+ * Default popup-blocked notice: a one-line header overlaid on the top of the page.
+ */
+function showPopupBlockedHeader () {
+  if (typeof document === 'undefined' || document.getElementById('tide-popup-blocked')) return
+
+  const header = document.createElement('div')
+  header.id = 'tide-popup-blocked'
+  header.setAttribute('role', 'alert')
+  // Popover puts the header in the browser's top layer, above every z-index
+  // (and modal dialogs opened before it); z-index covers older browsers.
+  header.setAttribute('popover', 'manual')
+  header.style.cssText = 'position:fixed;inset:0 0 auto 0;margin:0;width:auto;height:auto;border:0;z-index:2147483647;' +
+    'display:flex;align-items:center;gap:8px;overflow:visible;pointer-events:auto;' +
+    'padding:8px 16px;background:#fffbeb;border-bottom:1px solid #fde68a;color:#78350f;' +
+    'font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.08)'
+  header.innerHTML =
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" aria-hidden="true" style="flex:none">' +
+    '<rect x="3" y="5" width="18" height="14" rx="1"/><rect x="13" y="8" width="5" height="4"/><line x1="3" y1="3" x2="21" y2="21"/></svg>' +
+    '<span style="flex:1">Pop-ups are currently blocked. For <a href="' + POPUP_HELP_URL + '" target="_blank" rel="noopener" ' +
+    'style="color:inherit;font-weight:500;text-decoration:underline">advanced security features</a>, please allow pop-ups for this site.</span>' +
+    '<button type="button" aria-label="Dismiss" style="border:0;background:none;color:inherit;font-size:18px;line-height:1;cursor:pointer;padding:0 4px">&times;</button>'
+  header.querySelector('button').onclick = () => header.remove()
+  document.body.appendChild(header)
+  if (typeof header.showPopover === 'function') header.showPopover()
+}
+
 function createUUID () {
   if (typeof crypto === 'undefined' || typeof crypto.randomUUID === 'undefined') {
     throw new Error('Web Crypto API is not available.')

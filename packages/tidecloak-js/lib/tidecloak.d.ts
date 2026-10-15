@@ -838,6 +838,12 @@ declare class TideCloak {
   secureFetch (url: URL | RequestInfo, init?: RequestInit): Promise<Response>
 
   /**
+   * Register a callback for when the browser blocks the Tide enclave popup.
+   * It replaces the default "pop-ups are blocked" header.
+   */
+  registerPopupErrorCallback (callback: () => void): void
+
+  /**
    * Initialize Tide RequestEnclave.
    */
   initRequestEnclave (): void
