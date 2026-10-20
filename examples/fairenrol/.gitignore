@@ -1,0 +1,4 @@
+node_modules/
+dist/
+public/tidecloak.json
+!package-lock.json
