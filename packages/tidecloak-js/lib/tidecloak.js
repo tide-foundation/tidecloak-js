@@ -1708,7 +1708,7 @@ export default class TideCloak {
       const delegationChallenge = resp.headers.get('Resource-Delegation-Challenge')
       if (resp.status === 401 && delegationKey && delegationChallenge) {
         const wwwAuth = resp.headers.get('WWW-Authenticate') ?? ''
-        if (wwwAuth.includes('DPoP') && wwwAuth.includes('error="DPoPDelegationProofNotFound"')) {
+        if (wwwAuth.includes('error="DelegationProofNotFound"')) {
           const tokenId = this.tokenParsed.jti;
           if(!tokenId) {
             console.warn('[KEYCLOAK] Refusing DPoP delegation, access token does not include jti claim');
@@ -1849,7 +1849,7 @@ export default class TideCloak {
     const origin = new URL(urlString).origin
     const resourceNonce = dpopProvider.getResourceServerNonce(origin)
     const headers = new Headers(init.headers)
-    headers.set('DPoP-Resource-Delegation', delegationJwt)
+    headers.set('Resource-Delegation', delegationJwt)
     return this.#fetchWithDPoPProof(url, {...init, headers}, urlString, method, resourceNonce);
   }
 
