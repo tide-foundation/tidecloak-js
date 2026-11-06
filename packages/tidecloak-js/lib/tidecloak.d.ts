@@ -779,8 +779,14 @@ declare class TideCloak {
   ensureTokenReady (): Promise<void>
 
   /**
-  * Initialize Tide RequestEnclave.
-  */
+   * Register a callback for when the browser blocks the Tide enclave popup.
+   * It replaces the default "pop-ups are blocked" header.
+   */
+  registerPopupErrorCallback (callback: () => void): void
+
+  /**
+   * Initialize Tide RequestEnclave.
+   */
   initRequestEnclave (): void
 
   /**
