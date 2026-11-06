@@ -254,7 +254,7 @@ export async function GET(req: NextRequest) {
 
 ## Serving the DPoP page
 
-Only needed if you pass `useDPoP` in your provider config. With DPoP on, TideCloak loads `tide_dpop_auth.html` from your app's origin during login to confirm the browser holds the DPoP key. Without it, login fails.
+Only needed if you pass `dpopConfig` in your provider config. With DPoP on, TideCloak loads `tide_dpop_auth.html` from your app's origin during login to confirm the browser holds the DPoP key.
 
 The page ships with the SDK, so there is no file to copy. Add one route handler:
 
@@ -267,7 +267,7 @@ import config from '../../../tidecloak.json';
 export const { GET, HEAD } = createDpopRoute({ config });
 ```
 
-It answers `/tide_dpop/iss/{issuer as hex}/aud/{client id as hex}/tide_dpop_auth.html` with the page and the two response headers TideCloak requires (`Content-Security-Policy` and `Allow-CSP-From: *`). Passing `config` makes it return 404 for any other realm or client.
+It answers `/tide_dpop/iss/{issuer as hex}/aud/{client id as hex}/tide_dpop_auth.html` with the page and the two response headers TideCloak requires (`Content-Security-Policy` and `Allow-CSP-From: *`). Passing `config` makes it return 403 for any other realm or client.
 
 Use a route handler, not a proxy or middleware: common matchers skip paths containing a dot. Do not set `X-Frame-Options` or `frame-ancestors` on this path, or the page cannot be embedded.
 

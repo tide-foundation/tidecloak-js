@@ -4,8 +4,8 @@ import tcConfig from '../../../tidecloak.json'
 
 const ALLOWED_ROLE = 'offline_access'
 
-// Accepts plain Bearer tokens only. If you turn on useDPoP, call this with
-// secureFetch and extend it to accept the DPoP scheme and validate the proof server-side.
+// Accepts plain Bearer tokens only. If you turn on dpopConfig, call this with
+// the SDK's `fetch` and extend it to accept the DPoP scheme and validate the proof server-side.
 export async function GET(request) {
   const authHeader = request.headers.get('authorization')
   if (!authHeader?.startsWith('Bearer ')) {
