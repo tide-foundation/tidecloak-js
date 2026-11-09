@@ -52,7 +52,7 @@ my-app/
 │   │   └── page.jsx                <- Example page guarded server-side by proxy.js
 │   ├── tide_dpop/
 │   │   └── [...path]/
-│   │       └── route.js            <- Serves tide_dpop_auth.html, only needed if you turn on useDPoP
+│   │       └── route.js            <- Serves tide_dpop_auth.html, only needed if you turn on dpopConfig
 │   ├── layout.jsx                  <- Root layout
 │   ├── page.jsx                    <- Login page
 │   └── provider.jsx                <- Wraps the app in TideCloakProvider
@@ -62,7 +62,7 @@ my-app/
 │   └── tcinit.sh                   <- Provisions the realm and writes tidecloak.json (npm run init)
 ├── public/
 │   ├── silent-check-sso.html       <- Silent SSO check page
-│   └── tide_dpop_auth.html         <- DPoP helper page (only used with useDPoP)
+│   └── tide_dpop_auth.html         <- DPoP helper page (only used with dpopConfig)
 ├── tidecloak.json                  <- Your TideCloak adapter config (a {} placeholder until init runs)
 ├── proxy.js                        <- Verifies the token server-side before protected pages load
 ├── jsconfig.json
@@ -175,7 +175,7 @@ function Header() {
 | `getValueFromToken(key)`              | `(key: string) => any`                       | Read a custom claim from the access token.                              |
 | `getValueFromIdToken(key)`            | `(key: string) => any`                       | Read a custom claim from the ID token.                                  |
 | `hasRealmRole(role)`                  | `(role: string) => boolean`                  | Check a realm-level role.                                               |
-| `hasClientRole(role, client?)`        | `(role: string, client?: string) => boolean` | Check a client-level role; defaults to your app’s client ID if omitted. |
+| `hasClientRole(role)`                 | `(role: string) => boolean`                  | Check a client-level role on your app’s client.                        |
 | `doEncrypt(data, policy?)` / `doDecrypt(data, policy?)` | `(data: any, policy?: Uint8Array) => Promise<any>` | Encrypt or decrypt payloads, optionally under a signed decryption policy. |
 
 

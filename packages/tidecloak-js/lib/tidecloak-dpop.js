@@ -1,4 +1,7 @@
 // @ts-nocheck
+/**
+ * @import { DPoPState, DPoPSignatureProviderOptions } from "./tidecloak-dpop.js"
+ */
 
 /** @enum {string} */
 export const BrowserSignatureAlgs = {
@@ -11,6 +14,48 @@ export const BrowserSignatureAlgs = {
 const DB_VERSION = 1
 const STORE_NAME = 'main'
 const STATE_KEY = 'dpopState'
+const MAX_NONCE_LENGTH = 512
+// RFC 9449 doesn't specify format, but nonces should be printable ASCII for HTTP headers
+const VALID_NONCE_PATTERN = /^[\x21-\x7E]+$/
+
+/**
+ * @param {string} nonce
+ * @returns {boolean}
+ */
+function isValidNonce (nonce) {
+  return typeof nonce === 'string' &&
+    nonce.length > 0 &&
+    nonce.length <= MAX_NONCE_LENGTH &&
+    VALID_NONCE_PATTERN.test(nonce)
+}
+
+/**
+ * @param {string} nonce
+ * @throws {Error} If nonce fails validation
+ */
+function assertValidNonce (nonce) {
+  if (typeof nonce !== 'string' || nonce.length === 0) {
+    throw new Error('DPoP nonce must be a non-empty string')
+  }
+  if (nonce.length > MAX_NONCE_LENGTH) {
+    throw new Error(`DPoP nonce exceeds maximum length of ${MAX_NONCE_LENGTH} characters`)
+  }
+  if (!VALID_NONCE_PATTERN.test(nonce)) {
+    throw new Error('DPoP nonce contains invalid characters')
+  }
+}
+
+/**
+ * @param {string} value
+ * @returns {Promise<string>}
+ */
+async function hashPrefix (value) {
+  const data = new TextEncoder().encode(value)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(hashBuffer).slice(0, 8))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+}
 
 /** @type {Record<string, EcKeyGenParams | AlgorithmIdentifier>} */
 const KEY_GEN_PARAMS = {
@@ -43,24 +88,11 @@ const ECDSA_FALLBACK_ORDER = [
  * @param {string} clientId - The OIDC client identifier
  * @returns {Promise<string>} A sanitized database name
  */
-async function createDbName(issuer, clientId) {
-  const encoder = new TextEncoder()
-
-  // Hash issuer
-  const issuerData = encoder.encode(issuer)
-  const issuerHashBuffer = await crypto.subtle.digest('SHA-256', issuerData)
-  const issuerHashArray = new Uint8Array(issuerHashBuffer)
-  const issuerHash = Array.from(issuerHashArray.slice(0, 8))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-
-  // Hash clientId to prevent special character issues and injection
-  const clientData = encoder.encode(clientId)
-  const clientHashBuffer = await crypto.subtle.digest('SHA-256', clientData)
-  const clientHashArray = new Uint8Array(clientHashBuffer)
-  const clientHash = Array.from(clientHashArray.slice(0, 8))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
+async function createDbName (issuer, clientId) {
+  const [issuerHash, clientHash] = await Promise.all([
+    hashPrefix(issuer),
+    hashPrefix(clientId)
+  ])
 
   return `dpop:${issuerHash}:${clientHash}`
 }
@@ -123,7 +155,7 @@ class DPoPStoreManager {
       if (this.#strictStorage) {
         throw new Error('DPoP requires IndexedDB for secure key storage, but it is unavailable.', { cause: error })
       }
-      console.warn('[KEYCLOAK] IndexedDB unavailable, falling back to in-memory storage:', error)
+      console.warn('[TIDECLOAK] IndexedDB unavailable, falling back to in-memory storage:', error)
       this.#useMemoryFallback = true
     }
     return this
@@ -264,21 +296,8 @@ class DPoPStoreManager {
    * @returns {Promise<void>}
    * @throws {Error} If nonce fails validation
    */
-  async updateNonce(nonce) {
-    // Validate nonce to prevent DoS and injection attacks
-    const MAX_NONCE_LENGTH = 512
-    // RFC 9449 doesn't specify format, but nonces should be printable ASCII for HTTP headers
-    const VALID_NONCE_PATTERN = /^[\x21-\x7E]+$/
-
-    if (typeof nonce !== 'string' || nonce.length === 0) {
-      throw new Error('DPoP nonce must be a non-empty string')
-    }
-    if (nonce.length > MAX_NONCE_LENGTH) {
-      throw new Error(`DPoP nonce exceeds maximum length of ${MAX_NONCE_LENGTH} characters`)
-    }
-    if (!VALID_NONCE_PATTERN.test(nonce)) {
-      throw new Error('DPoP nonce contains invalid characters')
-    }
+  async updateNonce (nonce) {
+    assertValidNonce(nonce)
 
     const state = await this.get()
     if (state) {
@@ -361,6 +380,16 @@ export class DPoPSignatureProvider {
 
     // Check for existing keys or generate new ones
     let state = await this.#store.get()
+    if (state) {
+      const expectedParams = /** @type {EcKeyGenParams & Algorithm} */ (KEY_GEN_PARAMS[this.#alg])
+      const storedAlg = /** @type {EcKeyAlgorithm} */ (state.keys.publicKey.algorithm)
+      if (storedAlg.name !== expectedParams.name
+        || (expectedParams.namedCurve && storedAlg.namedCurve !== expectedParams.namedCurve)) {
+        console.warn('[TIDECLOAK] Stored DPoP key algorithm does not match requested algorithm, regenerating key pair.')
+        await this.#store.flush()
+        state = undefined
+      }
+    }
     if (!state) {
       const keys = await this.#generateKeyPair()
       state = { keys }
@@ -455,14 +484,10 @@ export class DPoPSignatureProvider {
    * @param {string} origin - The resource server origin
    * @param {string} nonce - The nonce from the DPoP-Nonce response header
    */
-  updateResourceServerNonce(origin, nonce) {
-    // Validate nonce to prevent DoS and injection attacks
-    const MAX_NONCE_LENGTH = 512
-    const VALID_NONCE_PATTERN = /^[\x21-\x7E]+$/
-
-    if (typeof nonce !== 'string' || nonce.length === 0) return
-    if (nonce.length > MAX_NONCE_LENGTH) return
-    if (!VALID_NONCE_PATTERN.test(nonce)) return
+  updateResourceServerNonce (origin, nonce) {
+    if (!isValidNonce(nonce)) {
+      return
+    }
 
     this.#resourceNonces.set(origin, nonce)
   }
@@ -514,22 +539,102 @@ export class DPoPSignatureProvider {
   }
 
   /**
-   * Compute the SHA256 thumbprint of the DPoP Public Key
-   * @returns {string} Base64 URL Encoding of the thumbprint
+   * Compute the RFC 7638 JWK thumbprint of the DPoP public key.
+   * @returns {Promise<string>} Base64url-encoded SHA-256 thumbprint
    */
-  async generateJWKThumbprint() {
-    const state = await this.#store.get() 
-    if(state === undefined) throw new Error('DPoP not initialized')
-    const exportedJwk = await crypto.subtle.exportKey("jwk", state.keys.publicKey);
-    // Note: `y` is undefined for EdDSA/OKP keys (RFC 8037) but present for EC keys.
-    // JSON.stringify omits undefined values, so this produces valid JWKs for both.
+  async generateJWKThumbprint () {
+    const state = await this.#store.get()
+    if (state === undefined) throw new Error('DPoP not initialized')
+    const exportedJwk = await crypto.subtle.exportKey('jwk', state.keys.publicKey)
+    // `y` is undefined for EdDSA/OKP keys and dropped by JSON.stringify.
     const jwk = {
       crv: exportedJwk.crv,
       kty: exportedJwk.kty,
       x: exportedJwk.x,
       y: exportedJwk.y
     }
-    return base64UrlEncodeBuffer(await sha256Digest(JSON.stringify(jwk)));
+    return base64UrlEncodeBuffer(await sha256Digest(JSON.stringify(jwk)))
+  }
+  /**
+   * Sign a delegation request as a JWT using the DPoP private key.
+   * The resulting JWT proves the user authorizes the delegation described by the claims.
+   *
+   * @param {string} resourcePublicKeyInfo Base64 URL encoded Ed25519 SubjectPublicKeyInfo
+   * @param {string} challengeMessage UTF8 text
+   * @param {string} resourceChallengeSignature Base64 URL encoded signature
+   * @param {string} accessToken Access token if calling resource server
+   * @returns {Promise<string>} Compact JWT string (header.payload.signature)
+   * @throws {Error} If the resource's challenge signature cannot be verified
+   */
+  async generateResourceDelegation(resourcePublicKeyInfo, challengeMessage, resourceChallengeSignature, accessToken) {
+    const state = await this.#store.get()
+    if (state === undefined) throw new Error('DPoP not initialized')
+
+    if (typeof resourcePublicKeyInfo !== 'string' || resourcePublicKeyInfo.length === 0) throw new Error('resourcePublicKeyInfo must be a non-empty base64url-encoded string')
+    if (typeof challengeMessage !== 'string' || challengeMessage.length === 0) throw new Error('challengeMessage must be a non-empty string')
+    if (typeof resourceChallengeSignature !== 'string' || resourceChallengeSignature.length === 0) throw new Error('resourceChallengeSignature must be a non-empty base64url-encoded signature')
+
+    /** @type {Uint8Array} */
+    let resourceSpki
+    try {
+      resourceSpki = base64UrlDecodeBuffer(resourcePublicKeyInfo)
+    } catch (error) {
+      throw new Error('resourcePublicKeyInfo is not base64url-encoded', { cause: error })
+    }
+
+    /** @type {Uint8Array} */
+    let challengeSignature
+    try {
+      challengeSignature = base64UrlDecodeBuffer(resourceChallengeSignature)
+    } catch (error) {
+      throw new Error('resourceChallengeSignature is not base64url-encoded', { cause: error })
+    }
+
+    /** @type {CryptoKey} */
+    let resourceKey
+    try {
+      resourceKey = await crypto.subtle.importKey('spki', resourceSpki, KEY_GEN_PARAMS[BrowserSignatureAlgs.ES256], true, ['verify'])
+    } catch (error) {
+      throw new Error('resourcePublicKeyInfo could not be imported as an P-256 SubjectPublicKeyInfo public key', { cause: error })
+    }
+
+    const te = new TextEncoder();
+    const challengeVerified = await crypto.subtle.verify(
+      SIGN_PARAMS[BrowserSignatureAlgs.ES256],
+      resourceKey,
+      challengeSignature,
+      te.encode(challengeMessage)
+    )
+    if (!challengeVerified) throw new Error('Resource challenge signature verification failed')
+
+    const exportedJwk = await crypto.subtle.exportKey("jwk", state.keys.publicKey);
+    const jwk = {
+      crv: exportedJwk.crv,
+      kty: exportedJwk.kty,
+      x: exportedJwk.x,
+      y: exportedJwk.y
+    }
+
+    const header = {
+      alg: this.#alg,
+      typ: "delegation+jwt",
+      jwk: jwk
+    }
+    const payload = {
+      jti: crypto.randomUUID(),
+      iat: Math.floor(Date.now() / 1000) - (this.#getTimeSkew?.() ?? 0),
+      delegate_cnf: {
+        // SubjectPublicKeyInfoThumbprint - spt (new standard)
+        spt: base64UrlEncodeBuffer(await crypto.subtle.digest('SHA-256', resourceSpki))
+      },
+
+      ath: base64UrlEncodeBuffer(await sha256Digest(accessToken))
+    }
+
+    const unsignedToken = `${base64UrlEncodeBuffer(te.encode(JSON.stringify(header)))}.${base64UrlEncodeBuffer(te.encode(JSON.stringify(payload)))}`
+    const signature = await this.#sign(te.encode(unsignedToken), state.keys.privateKey);
+
+    return `${unsignedToken}.${base64UrlEncodeBuffer(signature)}`
   }
 }
 
@@ -559,4 +664,15 @@ function base64UrlEncodeBuffer(buffer) {
     .replaceAll('+', '-')
     .replaceAll('/', '_')
     .replaceAll('=', '')
+}
+
+/**
+ * @param {string} input Base64url string, with or without padding
+ * @returns {Uint8Array}
+ */
+function base64UrlDecodeBuffer(input) {
+  if (!/^[A-Za-z0-9_-]*={0,2}$/.test(input)) throw new Error('Invalid base64url string')
+  const base64 = input.replaceAll('-', '+').replaceAll('_', '/').replace(/=+$/, '')
+  const binary = atob(base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '='))
+  return Uint8Array.from(binary, c => c.charCodeAt(0))
 }
