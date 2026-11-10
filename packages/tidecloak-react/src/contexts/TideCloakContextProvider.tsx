@@ -283,10 +283,10 @@ export function TideCloakContextProvider({
      * and it did, every time - in which the app was `authenticated` but the
      * `token` was still `null`:
      *
-     *   1. `initIAM()` finishes and calls `_emit("ready")`. `_emit` invokes its
-     *      listeners WITHOUT awaiting them (IAMService.js), so this async
+     *   1. Init finishes and emits `ready`. IAMService invokes its listeners
+     *      WITHOUT awaiting them (IAMService.js), so this async
      *      function only gets as far as its first `await` before control returns.
-     *   2. `initIAM()` resolves -> the init effect below runs
+     *   2. Init resolves -> the init effect below runs
      *      `setIsInitializing(false)`.
      *   3. React commits: `{ isInitializing: false, authenticated: true, token: null }`.
      *      The app un-gates. Consumers mount and immediately fire authenticated
@@ -325,9 +325,12 @@ export function TideCloakContextProvider({
       let idt: string | null = null;
       let exp: number | null = null;
       try {
-        t = await IAMService.getToken();
-        idt = IAMService.getIDToken();
-        exp = IAMService.getTokenExp();
+        t = IAMService.getToken() ?? null;
+        idt = IAMService.getIdToken() ?? null;
+        // getTokenExp() is a skew-adjusted Date; the context has always exposed a
+        // number, documented as the expiry timestamp in epoch seconds.
+        const expiresAt = IAMService.getTokenExp();
+        exp = expiresAt ? Math.floor(expiresAt.getTime() / 1000) : null;
       } catch (e) {
         console.error("[TideCloak] Failed to get tokens:", e);
       }
@@ -380,7 +383,8 @@ export function TideCloakContextProvider({
       }
     };
 
-    const handleAuthError = (_event: string, error: unknown) => {
+    // IAMService calls listeners with the event's arguments only, so the error comes first.
+    const handleAuthError = (error: unknown) => {
       if (!mounted) return;
       setIsLoading(false);
       const err = error instanceof Error ? error : new Error(String(error));
@@ -451,7 +455,7 @@ export function TideCloakContextProvider({
       });
 
       try {
-        await IAMService.updateIAMToken();
+        await IAMService.updateToken();
       } catch (refreshError) {
         console.error("[TideCloak] Token refresh failed:", refreshError);
       }
@@ -483,9 +487,6 @@ export function TideCloakContextProvider({
       });
     };
 
-    // IAMService calls handlers as (event, ...args), so unwrap the error first.
-    const handleInitErrorEvent = (_event: string, error: unknown) => handleInitError(error);
-
     // Subscribe to IAMService events
     IAMService
       .on('authSuccess', handleAuthSuccess)
@@ -493,60 +494,38 @@ export function TideCloakContextProvider({
       .on('authRefreshSuccess', handleAuthRefreshSuccess)
       .on('authRefreshError', handleAuthRefreshError)
       .on('logout', handleLogout)
-      .on('tokenExpired', handleTokenExpired)
-      .on('initError', handleInitErrorEvent);
-
-    // NEVER rely solely on a future event to learn the auth state.
-    //
-    // The IAMService singleton outlives this component. Whenever this effect
-    // RE-runs - a `reloadKey` bump from `reload()` / `approveTideRequests()`, a
-    // `resolvedConfig` identity change, a StrictMode double-mount - the cleanup
-    // below tears every handler down (including the `ready` handler `initIAM`
-    // registers for us) and we re-subscribe here from scratch. But the `ready`
-    // event that carried the auth state fired during the FIRST init and is long
-    // gone: an event is a moment, not a value. So the handlers we just registered
-    // would sit there hearing nothing, and this component would go on serving the
-    // `token` it happens to hold in state while the SDK refreshed its own
-    // underneath.
-    //
-    // That desync is how a `401` gets manufactured: consumers read `token` from
-    // this context and put it in an `Authorization: Bearer …` header;
-    // `IAMService.fetch` compares it against the token the SDK actually
-    // holds, no longer recognises it as its own, and falls back to a plain
-    // non-DPoP fetch - which a `dpop.bound.access.tokens` realm rejects outright.
-    //
-    // So: if init has already settled, read the CURRENT state synchronously right
-    // now. (`initIAM` also re-emits `ready` on its already-initialized
-    // short-circuit; this is the belt to that braces, and keeps the provider
-    // correct against an older @tidecloak/js that doesn't.)
-    if (typeof (IAMService as any).isInitialized === 'function' && (IAMService as any).isInitialized()) {
-      void updateAuthState('resubscribe');
-    }
+      .on('tokenExpired', handleTokenExpired);
 
     setIsInitializing(true);
 
     // Initialize
     (async () => {
       try {
-        const loaded = await IAMService.loadConfig(resolvedConfig) as Record<string, any>;
-        if (!loaded) throw new Error("Invalid config");
-        setBaseURL((loaded['auth-server-url'] as string || '').replace(/\/+$/, ''));
-        await IAMService.initIAM(resolvedConfig, updateAuthState);
+        if (Object.keys(resolvedConfig).length === 0) throw new Error("Invalid config");
+        setBaseURL(String(resolvedConfig['auth-server-url'] || '').replace(/\/+$/, ''));
+
+        // A failed init rejects (there is no 'initError' event), and lands in the catch below.
+        await IAMService.init(resolvedConfig);
         if (!mounted) return;
 
-        // `initIAM` announces the auth state by emitting `ready`, and `_emit`
-        // fires its listeners WITHOUT awaiting them - it cannot await them, the
-        // emitter is synchronous. So `initIAM` resolving tells us the SDK has
-        // settled, but NOT that our async `updateAuthState` listener has finished
-        // writing that state into React. Clearing `isInitializing` here on the
-        // strength of `initIAM` alone is what un-gated the app one render too
-        // early, before `token` had landed.
+        // NEVER rely on an event to learn the auth state - read it.
         //
-        // Await the auth state explicitly before we declare initialization done.
-        // `updateAuthState` is idempotent (it just re-reads the SDK and setStates
-        // the same values, which React bails out of), so running it once more
-        // costs a no-op render at worst and guarantees that by the time
-        // `isInitializing` flips to false the token is in state.
+        // The IAMService singleton outlives this component. Whenever this effect
+        // RE-runs - a `reloadKey` bump from `reload()` / `approveTideRequests()`, a
+        // `resolvedConfig` identity change, a StrictMode double-mount - we
+        // re-subscribe from scratch, but the `ready` event that carried the auth
+        // state fired during the FIRST init and is long gone: an event is a
+        // moment, not a value. `IAMService.init()` hands a repeat caller the same,
+        // already-settled promise, so we land here straight away and re-read the
+        // CURRENT state instead of serving whatever `token` we happen to hold
+        // while the SDK refreshed its own underneath. (That desync is how a `401`
+        // gets manufactured: `IAMService.fetch` only adds DPoP when the request
+        // carries the token the SDK actually holds, and a `dpop.bound.access.tokens`
+        // realm rejects the plain Bearer it falls back to.)
+        //
+        // On a first init this also guarantees that by the time `isInitializing`
+        // flips to false, the token is already in state. `updateAuthState` is
+        // idempotent, so a repeat costs a no-op render at worst.
         await updateAuthState('init');
         if (!mounted) return;
         setIsInitializing(false);
@@ -563,12 +542,7 @@ export function TideCloakContextProvider({
         .off('authRefreshSuccess', handleAuthRefreshSuccess)
         .off('authRefreshError', handleAuthRefreshError)
         .off('logout', handleLogout)
-        .off('tokenExpired', handleTokenExpired)
-        .off('initError', handleInitErrorEvent)
-        // initIAM(config, updateAuthState) registers updateAuthState on 'ready';
-        // remove it here too or it leaks one handler per reload/remount (the
-        // IAMService singleton outlives this component).
-        .off('ready', updateAuthState);
+        .off('tokenExpired', handleTokenExpired);
     };
   }, [resolvedConfig, reloadKey]);
 
@@ -595,7 +569,9 @@ export function TideCloakContextProvider({
 
   const getToken = React.useCallback(async (): Promise<string | null> => {
     try {
-      return await IAMService.getToken();
+      // Hand interceptors a token that is still valid: refresh first if it is about to expire.
+      await IAMService.updateToken();
+      return IAMService.getToken() ?? null;
     } catch (error) {
       console.error("[TideCloak] getToken error:", error);
       return null;
@@ -605,7 +581,7 @@ export function TideCloakContextProvider({
   const refreshToken = React.useCallback(async () => {
     setIsRefreshing(true);
     try {
-      return await IAMService.updateIAMToken();
+      return await IAMService.updateToken();
     } finally {
       setIsRefreshing(false);
     }
@@ -679,7 +655,7 @@ export function TideCloakContextProvider({
     IAMService,
     AdminAPI,
 
-    getConfig: () => isInitializing ? {} : IAMService.getConfig(),
+    getConfig: () => isInitializing ? {} : (resolvedConfig ?? {}),
     reload: () => setReloadKey((k: number) => k + 1),
 
     // Auth actions
@@ -694,8 +670,8 @@ export function TideCloakContextProvider({
     hasClientRole: (role: string) => isInitializing ? false : IAMService.hasClientRole(role),
 
     // Token claims - return undefined during initialization or when not authenticated
-    getValueFromToken: (key: string) => (isInitializing || !authenticated) ? undefined : IAMService.getValueFromToken(key),
-    getValueFromIdToken: (key: string) => (isInitializing || !authenticated) ? undefined : IAMService.getValueFromIDToken(key),
+    getValueFromToken: (key: string) => (isInitializing || !authenticated) ? undefined : (IAMService.getClaim(key) ?? null),
+    getValueFromIdToken: (key: string) => (isInitializing || !authenticated) ? undefined : (IAMService.getIdClaim(key) ?? null),
 
     // Re-auth actions
     triggerReauth,
@@ -709,7 +685,7 @@ export function TideCloakContextProvider({
     doEncrypt: async (data: any, decryptionPolicy?: Uint8Array) => {
       if (isInitializing) return null;
       try {
-        const result = await IAMService.doEncrypt(data, decryptionPolicy ?? undefined);
+        const result = await IAMService.tide.encrypt(data, decryptionPolicy ?? null);
         onActionNotificationRef.current?.({
           type: 'success',
           title: 'Encrypted',
@@ -731,7 +707,7 @@ export function TideCloakContextProvider({
     doDecrypt: async (data: any, decryptionPolicy?: Uint8Array) => {
       if (isInitializing) return null;
       try {
-        const result = await IAMService.doDecrypt(data, decryptionPolicy ?? undefined);
+        const result = await IAMService.tide.decrypt(data, decryptionPolicy ?? null);
         onActionNotificationRef.current?.({
           type: 'success',
           title: 'Decrypted',
@@ -753,12 +729,8 @@ export function TideCloakContextProvider({
 
     // Tide request signing (for policy creation)
     initializeTideRequest: async <T extends { encode: () => Uint8Array }>(request: T): Promise<T> => {
-      const tc = (IAMService as any)._tc;
-      if (!tc?.createTideRequest) {
-        throw new Error("TideCloak createTideRequest not available");
-      }
       const encodedRequest = request.encode();
-      const initializedBytes = await tc.createTideRequest(encodedRequest);
+      const initializedBytes = await IAMService.tide.createTideRequest(encodedRequest);
       const RequestClass = (request as any).constructor;
       if (typeof RequestClass.decode === "function") {
         return RequestClass.decode(initializedBytes) as T;
@@ -771,44 +743,28 @@ export function TideCloakContextProvider({
       request: { encode: () => Uint8Array } | Uint8Array,
       waitForAll: boolean = false
     ): Promise<Uint8Array[]> => {
-      const tc = (IAMService as any)._tc;
-      if (!tc?.executeSignRequest) {
-        throw new Error("TideCloak executeSignRequest not available");
-      }
       // Encoded bytes or something that can encode itself, since a caller who has already
       // initialised a request is holding bytes rather than an object.
       const encoded = request instanceof Uint8Array ? request : request.encode();
-      return await tc.executeSignRequest(encoded, waitForAll);
+      return await IAMService.tide.executeSignRequest(encoded, waitForAll);
     },
 
     // Get vendor ID from config
     getVendorId: () => {
-      const cfg = IAMService.getConfig() as any;
-      return cfg?.vendorId || cfg?.["vendor-id"] || "";
+      const cfg = resolvedConfig ?? {};
+      return cfg.vendorId || cfg["vendor-id"] || "";
     },
 
     // Get resource (client ID) from config
     getResource: () => {
-      const cfg = IAMService.getConfig() as any;
-      return cfg?.resource || cfg?.clientId || "";
+      const cfg = resolvedConfig ?? {};
+      return cfg.resource || cfg.clientId || "";
     },
 
     // Tide approval enclave (for change set approvals)
     approveTideRequests: async (requests: { id: string; request: Uint8Array }[]) => {
-      const tc = (IAMService as any)._tc;
-      if (!tc?.requestTideOperatorApproval) {
-        const error = new Error("TideCloak approval enclave not available");
-        onActionNotificationRef.current?.({
-          type: 'error',
-          title: 'Approval Failed',
-          message: error.message,
-          action: 'approval'
-        });
-        throw error;
-      }
-
       try {
-        const response = await tc.requestTideOperatorApproval(requests);
+        const response = await IAMService.tide.requestTideOperatorApproval(requests);
         const results = response.map((res: any) => {
           if (res.status === "approved") {
             return { id: res.id, approved: { request: res.request } };
@@ -859,7 +815,7 @@ export function TideCloakContextProvider({
     isInitializing, initError,
     authenticated, sessionExpired, isRefreshing, isLoading,
     isOffline, wasOffline, needsReauth,
-    token, idToken, tokenExp, baseURL,
+    token, idToken, tokenExp, baseURL, resolvedConfig,
     login, logout, getToken, refreshToken, forceRefreshToken,
     triggerReauth, clearReauth, resetWasOffline,
   ]);

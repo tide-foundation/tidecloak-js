@@ -24,7 +24,7 @@ class IAMServiceImplementation {
     /**
      * Initialize from the TideCloak adapter config (tidecloak.json)
      * @param {Record<string, any>} json The contents of tidecloak.json
-     * @param {import("../lib/tidecloak.js").TideCloakInitOptions | undefined} options Overrides the defaults
+     * @param {import("../lib/tidecloak.js").TideCloakInitOptions} [options] Overrides the defaults
      *   (check-sso, S256 PKCE, request enclave on, dpopConfig / checkLoginIframe from tidecloak.json, and
      *   silentCheckSsoRedirectUri at `<origin>/silent-check-sso.html`). Apps that serve the silent SSO page
      *   elsewhere pass their own `silentCheckSsoRedirectUri`.
@@ -53,15 +53,15 @@ class IAMServiceImplementation {
         }
     }
     /**
-     * 
-     * @param {import("../lib/tidecloak.js").TideCloakLoginOptions?} loginOpts 
+     *
+     * @param {import("../lib/tidecloak.js").TideCloakLoginOptions} [loginOpts]
      */
     async doLogin(loginOpts){
         await this.#getCore().login(loginOpts);
     }
     /**
-     * 
-     * @param {import("../lib/tidecloak.js").TideCloakLogoutOptions?} logoutOpts 
+     *
+     * @param {import("../lib/tidecloak.js").TideCloakLogoutOptions} [logoutOpts]
      */
     async doLogout(logoutOpts){
         this.#setTokenCookie();
@@ -81,6 +81,12 @@ class IAMServiceImplementation {
     }
     getClaim(name){
         return this.#getCore().tokenParsed?.[name]
+    }
+    getIdToken(){
+        return this.#getCore().idToken;
+    }
+    getIdClaim(name){
+        return this.#getCore().idTokenParsed?.[name];
     }
     getName(){
         return this.#getCore().tokenParsed?.preferred_username;

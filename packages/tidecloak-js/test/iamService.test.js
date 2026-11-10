@@ -159,6 +159,20 @@ test('a throwing listener does not stop the others', async () => {
   errorLog.mock.restore();
 });
 
+test('reads the ID token and its claims from the core', async () => {
+  const IAMService = await freshService();
+  await IAMService.init(JSON_CONFIG());
+  const core = cores[0];
+
+  assert.equal(IAMService.getIdToken(), undefined);
+  assert.equal(IAMService.getIdClaim('name'), undefined);
+
+  core.idToken = 'id-1';
+  core.idTokenParsed = { name: 'Ada' };
+  assert.equal(IAMService.getIdToken(), 'id-1');
+  assert.equal(IAMService.getIdClaim('name'), 'Ada');
+});
+
 test('methods throw a clear error before init', async () => {
   const IAMService = await freshService();
   assert.throws(() => IAMService.getToken(), /not initialized/);
